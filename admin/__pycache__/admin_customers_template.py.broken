@@ -1,0 +1,107 @@
+"""
+X87 Player - Customer Management Template
+HTML template for the customer management page
+Current Date and Time (UTC): 2025-11-22 09:04:30
+Current User: covchump
+"""
+
+# ... [First part of the file up to the JavaScript section] ...
+
+            document.getElementById('licenseModal').classList.add('show');
+        }
+        
+        function closeLicenseModal() {
+            document.getElementById('licenseModal').classList.remove('show');
+            currentEditLicense = null;
+        }
+        
+        function generateLicenseKey() {
+            // Generate random license key
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let key = 'X87-';
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 4; j++) {
+                    key += chars.charAt(Math.floor(Math.random() * chars.length));
+                }
+                if (i < 2) key += '-';
+            }
+            document.getElementById('license_key').value = key;
+        }
+        
+        function confirmDelete(licenseKey, customerName) {
+            const message = `⚠️ DELETE LICENSE CONFIRMATION\\n\\n` +
+                          `License Key: ${licenseKey}\\n` +
+                          `Customer: ${customerName}\\n\\n` +
+                          `This will permanently delete:\\n` +
+                          `• The license\\n` +
+                          `• All customizations\\n` +
+                          `• All logs\\n\\n` +
+                          `Are you absolutely sure?`;
+            
+            if (confirm(message)) {
+                // Double confirmation for safety
+                return confirm(`🔴 FINAL CONFIRMATION\\n\\nDelete license ${licenseKey}?\\n\\nThis action cannot be undone!`);
+            }
+            return false;
+        }
+        
+        function changeHardware(license) {
+            document.getElementById('hwModalTitle').textContent = license.device_id ? 'Change Hardware ID' : 'Set Hardware ID';
+            document.getElementById('licenseDisplay').value = license.license_key;
+            document.getElementById('currentHardware').value = license.device_id || 'Not bound';
+            document.getElementById('new_hardware_id').value = '';
+            document.getElementById('hardwareForm').action = '/change_hardware/' + license.id;
+            document.getElementById('hardwareModal').classList.add('show');
+        }
+        
+        function closeHardwareModal() {
+            document.getElementById('hardwareModal').classList.remove('show');
+        }
+        
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            var modal = document.getElementById('licenseModal');
+            var hwModal = document.getElementById('hardwareModal');
+            
+            if (event.target == modal) {
+                closeLicenseModal();
+            } else if (event.target == hwModal) {
+                closeHardwareModal();
+            }
+        }
+        
+        // Form validation
+        document.getElementById('licenseForm').addEventListener('submit', function(e) {
+            const customerName = document.getElementById('customer_name').value.trim();
+            
+            if (!customerName) {
+                e.preventDefault();
+                alert('Customer name is required!');
+                return false;
+            }
+            
+            // If editing and reset device is checked, confirm
+            if (currentEditLicense && document.getElementById('reset_device').checked) {
+                if (!confirm('Are you sure you want to reset the device binding? The customer will need to reactivate on their device.')) {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        // Auto-generate license key if field is empty when adding new license
+        document.getElementById('licenseForm').addEventListener('submit', function(e) {
+            const licenseKeyField = document.getElementById('license_key');
+            const isNewLicense = !currentEditLicense;
+            
+            if (isNewLicense && !licenseKeyField.value.trim()) {
+                // Generate a key automatically
+                generateLicenseKey();
+            }
+        });
+    </script>
+</body>
+</html>
+'''

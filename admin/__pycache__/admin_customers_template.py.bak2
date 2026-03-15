@@ -1,0 +1,224 @@
+"""
+X87 Player - Customer Management Template
+HTML template for the customer management page
+Current Date and Time (UTC): 2025-11-22 09:17:19
+Current User: covchump
+"""
+
+CUSTOMER_TEMPLATE = '''<!DOCTYPE html>
+<html>
+<head>
+    <title>Customer Management - X87 Player Admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; }
+        .header { 
+            background: linear-gradient(135deg, #1e40af 0%, #7c3aed 100%); 
+            color: white; 
+            padding: 1rem 2rem; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 { font-size: 1.5rem; }
+        .nav-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-right: 2rem;
+        }
+        .nav-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+        .nav-btn:hover { background: rgba(255,255,255,0.3); }
+        .nav-btn.active { background: rgba(255,255,255,0.4); font-weight: 600; }
+        .container { max-width: 1400px; margin: 2rem auto; padding: 0 2rem; }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-mini {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+        .stat-mini .number {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #1e40af;
+        }
+        .table-container { 
+            background: white; 
+            border-radius: 12px; 
+            overflow-x: auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 2rem;
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            background: #f8fafc; 
+            padding: 0.75rem; 
+            text-align: left; 
+            font-weight: 600; 
+            color: #374151; 
+            font-size: 0.875rem;
+        }
+        td { 
+            padding: 0.75rem; 
+            border-bottom: 1px solid #f1f5f9; 
+            color: #475569;
+            font-size: 0.9rem;
+        }
+        .license-key {
+            font-family: monospace;
+            background: #f3f4f6;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .btn {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            border: none;
+            margin: 0 2px;
+            transition: all 0.2s;
+        }
+        .btn-edit { background: #3b82f6; color: white; }
+        .btn-delete { background: #ef4444; color: white; }
+        .btn-unbind { background: #f59e0b; color: white; }
+        .btn:hover { opacity: 0.8; }
+        .status {
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status.active { background: #dcfce7; color: #166534; }
+        .status.expired { background: #fee2e2; color: #991b1b; }
+        .status.suspended { background: #fef3c7; color: #92400e; }
+        .status.bound { background: #e0f2fe; color: #0369a1; }
+        .status.unbound { background: #f3f4f6; color: #6b7280; }
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+        .alert-success { background: #dcfce7; color: #166534; }
+        .alert-error { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>X87 Player Business Panel</h1>
+            <small style="opacity: 0.8;">Customer & License Management</small>
+        </div>
+        <div style="display: flex; align-items: center; gap: 2rem;">
+            <div class="nav-buttons">
+                <a href="{{ url_for('dashboard.admin_dashboard') }}" class="nav-btn">Dashboard</a>
+                <a href="{{ url_for('customers.manage_customers') }}" class="nav-btn active">Customers</a>
+                <a href="{{ url_for('users.manage_users') }}" class="nav-btn">Users</a>
+                <a href="{{ url_for('profile.my_profile') }}" class="nav-btn">Profile</a>
+            </div>
+            <div class="user-info">
+                <span>{{ session.username }}</span>
+                <a href="{{ url_for('auth.logout') }}" class="nav-btn">Logout</a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        
+        <div class="stats-row">
+            <div class="stat-mini">
+                <div class="number">{{ stats.total_licenses }}</div>
+                <div>Total Licenses</div>
+            </div>
+            <div class="stat-mini">
+                <div class="number">{{ stats.active_licenses }}</div>
+                <div>Active</div>
+            </div>
+            <div class="stat-mini">
+                <div class="number">{{ stats.bound_licenses }}</div>
+                <div>Bound</div>
+            </div>
+            <div class="stat-mini">
+                <div class="number">{{ stats.expired_licenses }}</div>
+                <div>Expired</div>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>License Key</th>
+                        <th>Customer</th>
+                        <th>Status</th>
+                        <th>Hardware</th>
+                        <th>Created</th>
+                        <th>Expires</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for license in licenses %}
+                    <tr>
+                        <td><span class="license-key">{{ license['license_key'] }}</span></td>
+                        <td>
+                            {{ license['customer_name'] or 'N/A' }}<br>
+                            <small style="color: #9ca3af;">{{ license['customer_email'] or '' }}</small>
+                        </td>
+                        <td><span class="status {{ license['status'] }}">{{ license['status'] }}</span></td>
+                        <td>
+                            {% if license['device_id'] %}
+                                <span class="status bound">Bound</span>
+                            {% else %}
+                                <span class="status unbound">Not Bound</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ license['created_at'][:10] if license['created_at'] else 'N/A' }}</td>
+                        <td>{{ license['expires_at'][:10] if license['expires_at'] else 'Never' }}</td>
+                        <td>
+                            <button class="btn btn-edit" onclick="alert('Edit coming soon')">Edit</button>
+                            {% if license['device_id'] %}
+                                <form method="POST" action="{{ url_for('customers.unbind_device', license_id=license['id']) }}" style="display: inline;">
+                                    <button type="submit" class="btn btn-unbind">Unbind</button>
+                                </form>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('customers.delete_customer', license_id=license['id']) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-delete" onclick="return confirm('Delete this license?');">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>'''

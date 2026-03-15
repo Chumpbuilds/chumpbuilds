@@ -1,0 +1,80 @@
+[CUSTOMERS] Template imported successfully
+✅ License Manager imported successfully
+🔑 License API registered
+
+======================================================================
+🚀 X87 Player Business Admin Panel Starting...
+🔑 License API integrated for desktop app support
+======================================================================
+🔄 Checking database schema...
+✅ Database migration completed
+✅ Database initialized successfully
+🎯 Flask application starting...
+✅ Server ready for connections!
+🔗 License API endpoints available:
+   - GET  /api/license/test
+   - GET  /api/license/health
+   - POST /api/license/validate
+   - POST /api/license/info
+   - POST /api/settings/get
+   - POST /api/settings/update
+
+⚠️  IMPORTANT: Change default admin password after first login!
+
+ * Serving Flask app 'admin_main'
+ * Debug mode: on
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://217.154.17.128:5000
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 117-091-193
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:21:59] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:22:30] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:23:00] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:23:30] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:24:00] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:24:30] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:25:00] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:25:30] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:26:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:27:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:28:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:29:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:30:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:31:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:32:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:32:44] "[31m[1mPROPFIND / HTTP/1.0[0m" 405 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:33:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:34:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:35:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [22/Nov/2025 18:36:12] "GET /api/health HTTP/1.1" 200 -
+INFO:werkzeug: * Detected change in '/opt/iptv-panel/complete_service_manager.py', reloading
+[CUSTOMERS] Template imported successfully
+✅ License Manager imported successfully
+🔑 License API registered
+
+======================================================================
+🚀 X87 Player Business Admin Panel Starting...
+🔑 License API integrated for desktop app support
+======================================================================
+🔄 Checking database schema...
+✅ Database migration completed
+✅ Database initialized successfully
+🎯 Flask application starting...
+✅ Server ready for connections!
+🔗 License API endpoints available:
+   - GET  /api/license/test
+   - GET  /api/license/health
+   - POST /api/license/validate
+   - POST /api/license/info
+   - POST /api/settings/get
+   - POST /api/settings/update
+
+⚠️  IMPORTANT: Change default admin password after first login!
+
+INFO:werkzeug: * Restarting with stat
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 117-091-193
