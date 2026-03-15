@@ -7,7 +7,8 @@ Current User: covchump
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                             QPushButton, QSpinBox, QGroupBox, QTabWidget,
-                            QWidget, QCheckBox, QMessageBox, QSlider)
+                            QWidget, QCheckBox, QMessageBox, QSlider,
+                            QApplication)
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from PyQt6.QtGui import QFont
 
@@ -26,7 +27,7 @@ class SettingsDialog(QDialog):
     def init_ui(self):
         """Initialize the settings UI"""
         self.setWindowTitle("Settings")
-        self.setFixedSize(500, 350)
+        self.setFixedSize(500, 450)
         self.setModal(True)
         
         self.setStyleSheet("""
@@ -79,6 +80,32 @@ class SettingsDialog(QDialog):
         buffer_group.setLayout(buffer_layout)
         layout.addWidget(buffer_group)
 
+        # --- License Group ---
+        license_group = QGroupBox("License")
+        license_layout = QVBoxLayout()
+
+        deactivate_button = QPushButton("🔑 Deactivate License")
+        deactivate_button.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(239, 68, 68, 0.2);
+                color: #fc8181;
+                border: 1px solid #fc8181;
+                border-radius: 4px;
+                padding: 8px 20px;
+                font-size: 13px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background-color: rgba(239, 68, 68, 0.4);
+                color: #ffffff;
+            }
+        """)
+        deactivate_button.clicked.connect(self.deactivate_license)
+
+        license_layout.addWidget(deactivate_button)
+        license_group.setLayout(license_layout)
+        layout.addWidget(license_group)
+
         layout.addStretch()
         
         # Buttons
@@ -93,6 +120,27 @@ class SettingsDialog(QDialog):
         button_layout.addWidget(self.cancel_button)
         layout.addLayout(button_layout)
         
+    def deactivate_license(self):
+        """Prompt the user to confirm license deactivation, then clear and quit."""
+        reply = QMessageBox.warning(
+            self,
+            "Deactivate License",
+            "Are you sure you want to deactivate your license?\n\nYou will need to enter your activation code again when you restart the app.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            license_settings = QSettings('IPTVPlayer', 'License')
+            license_settings.remove('license_key')
+            license_settings.remove('user_settings')
+            license_settings.sync()
+            QMessageBox.information(
+                self,
+                "License Deactivated",
+                "Your license has been deactivated. The application will now close. Please restart to enter your activation code."
+            )
+            QApplication.instance().quit()
+
     def update_buffer_label(self, value):
         """Update the label showing the buffer description"""
         descriptions = {
