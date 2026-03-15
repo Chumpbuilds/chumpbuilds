@@ -1,1 +1,0 @@
-"""Authentication module for IPTV Player"""

@@ -1,1 +1,0 @@
-"""Player module for IPTV Player"""
