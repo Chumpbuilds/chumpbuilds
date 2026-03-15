@@ -121,23 +121,40 @@ class SettingsDialog(QDialog):
         layout.addLayout(button_layout)
         
     def deactivate_license(self):
-        """Prompt the user to confirm license deactivation, then clear and quit."""
+        """Prompt the user to confirm license deactivation, then wipe ALL data and quit."""
         reply = QMessageBox.warning(
             self,
             "Deactivate License",
-            "Are you sure you want to deactivate your license?\n\nYou will need to enter your activation code again when you restart the app.",
+            "Are you sure you want to deactivate your license?\n\nThis will permanently delete:\n• Your activation license key\n• All saved IPTV profiles & passwords\n• All app settings\n\nThis is recommended if you are on a shared or public computer.\n\nYou will need your activation code to use the app again.",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
+            # Clear ALL QSettings namespaces - full wipe for public PC safety
+            # 1. License key
             license_settings = QSettings('IPTVPlayer', 'License')
-            license_settings.remove('license_key')
-            license_settings.remove('user_settings')
+            license_settings.clear()
             license_settings.sync()
+
+            # 2. IPTV login profiles & saved passwords
+            login_settings = QSettings('IPTVPlayer', 'LoginSettings')
+            login_settings.clear()
+            login_settings.sync()
+
+            # 3. App settings
+            app_settings = QSettings('IPTVPlayer', 'Settings')
+            app_settings.clear()
+            app_settings.sync()
+
+            # 4. VLC/buffer settings
+            vlc_settings = QSettings('IPTVPlayer', 'VLCSettings')
+            vlc_settings.clear()
+            vlc_settings.sync()
+
             QMessageBox.information(
                 self,
                 "License Deactivated",
-                "Your license has been deactivated. The application will now close. Please restart to enter your activation code."
+                "All data has been wiped from this device.\n\nThe application will now close. You will need your activation code to use the app again."
             )
             QApplication.instance().quit()
 
