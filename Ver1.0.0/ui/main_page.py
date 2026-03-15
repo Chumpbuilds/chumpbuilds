@@ -1,7 +1,7 @@
 """
 Modern Professional IPTV Player UI - Main Page
 Integrated with License Validator and User Customizations
-Current Date and Time (UTC): 2025-11-30 22:15:00
+Current Date and Time (UTC): 2025-11-16 16:58:57
 Current User: covchump
 """
 
@@ -22,7 +22,7 @@ from ui.favorites.favorites_view import FavoritesView
 from ui.favorites.favorites_manager import get_favorites_manager
 from player.vlc_player import get_vlc_player
 from epg import EPGCache
-from license_validator import get_license_validator, LicenseValidator # Imported LicenseValidator class
+from license_validator import get_license_validator
 import os
 import sys
 
@@ -136,10 +136,7 @@ class MainWindow(QMainWindow):
         
         # Apply custom app name
         app_name = customizations.get('app_name', 'Stream Hub')
-        
-        # UPDATED: Show Version in Title
-        app_version = LicenseValidator.CURRENT_APP_VERSION
-        self.setWindowTitle(f"{app_name} v{app_version} - Premium IPTV Player")
+        self.setWindowTitle(f"{app_name} - Premium IPTV Player")
         
         # Update header logo and title
         if hasattr(self, 'header_title'):
@@ -207,10 +204,7 @@ class MainWindow(QMainWindow):
     def init_ui(self):
         """Initialize the main UI"""
         app_name = self.customizations.get('app_name', 'Stream Hub')
-        
-        # UPDATED: Show Version in Title
-        app_version = LicenseValidator.CURRENT_APP_VERSION
-        self.setWindowTitle(f"{app_name} v{app_version} - Premium IPTV Player")
+        self.setWindowTitle(f"{app_name} - Premium IPTV Player")
         
         # Set a reasonable minimum size for when the user unmaximizes
         self.setMinimumSize(1000, 700)
@@ -335,8 +329,8 @@ class MainWindow(QMainWindow):
     
     def revalidate_license(self):
         """Force revalidation of license"""
-        if self.license_validator.validate_license(show_dialog=False): # Updated method
-             # Reload customizations
+        if self.license_validator.force_revalidate():
+            # Reload customizations
             self.customizations = self.license_validator.get_app_customizations()
             self.apply_customizations(self.customizations)
             QMessageBox.information(self, "License Revalidated", "License has been revalidated successfully!")
@@ -567,9 +561,7 @@ class MainWindow(QMainWindow):
     
     def sync_user_settings(self):
         """Sync user settings with server"""
-        # Note: sync_user_settings is not defined in the standard LicenseValidator yet
-        # For now, we'll just force a re-validation which does the same thing (refreshes config)
-        if self.license_validator.validate_license(show_dialog=False):
+        if self.license_validator.sync_user_settings():
             # Reload customizations
             self.customizations = self.license_validator.get_app_customizations()
             self.apply_customizations(self.customizations)
@@ -585,11 +577,10 @@ class MainWindow(QMainWindow):
     def show_about(self):
         """Show about dialog"""
         app_name = self.customizations.get('app_name', 'Stream Hub')
-        app_version = LicenseValidator.CURRENT_APP_VERSION
         about_text = f"""
 <h2>{app_name}</h2>
-<p><b>Version:</b> {app_version}</p>
-<p><b>Build Date:</b> 2025-11-30</p>
+<p><b>Version:</b> 1.0.0</p>
+<p><b>Build Date:</b> 2025-11-16</p>
 <p><b>Developer:</b> covchump</p>
 <br>
 <p>Professional IPTV Player with advanced features and customization options.</p>

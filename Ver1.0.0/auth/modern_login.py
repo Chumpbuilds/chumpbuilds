@@ -1,8 +1,6 @@
 """
-Modern Login Dialog
-- Added Cloud Profiles Support (Multi-DNS)
-- Hides URL for Cloud Profiles
-- DYNAMIC APP BRANDING: Uses custom App Name in title and header
+Modern Login Dialog - Fixed switch user cancel/close behavior
+Added detailed console error logging for connection issues
 Current Date and Time (UTC): 2025-11-16 10:05:14
 Current User: covchump
 """
@@ -16,7 +14,6 @@ import json
 import sys
 import traceback
 from auth.xtreme_codes import XtremeCodesAPI
-from license_validator import get_license_validator
 
 class CustomCheckBox(QCheckBox):
     """Custom checkbox that shows a tick character when checked"""
@@ -136,35 +133,8 @@ class ModernLoginDialog(QDialog):
         super().__init__(parent)
         self.api = XtremeCodesAPI()
         self.settings = QSettings('IPTVPlayer', 'LoginSettings')
-        
-        # --- LOAD BRANDING ---
-        self.branding = QSettings('IPTVPlayer', 'Branding')
-        self.app_name = self.branding.value('app_name', 'X87 Player')
-        if not self.app_name:
-            self.app_name = 'X87 Player'
-        # ---------------------
-        
         self.switch_user = switch_user
-        
-        # Load local profiles
         self.profiles = self.load_profiles()
-        
-        # Load cloud profiles from validator
-        self.cloud_profiles = {}
-        validator = get_license_validator()
-        if validator.is_license_valid():
-            cloud_list = validator.get_cloud_profiles()
-            print(f"[Login] Found {len(cloud_list)} cloud profiles")
-            for cp in cloud_list:
-                # Use prefix to distinguish and make unique
-                key = f"☁️ {cp['name']}"
-                self.cloud_profiles[key] = {
-                    'url': cp['url'],
-                    'username': '',
-                    'password': '',
-                    'is_cloud': True
-                }
-        
         self.current_profile = None
         self.is_new_profile = False
         self.init_ui()
@@ -175,7 +145,7 @@ class ModernLoginDialog(QDialog):
                 self.profile_combo.setCurrentIndex(0)
                 if self.profile_combo.currentText() == "+ New Profile":
                     self.on_profile_changed("+ New Profile")
-        elif self.profiles or self.cloud_profiles:
+        elif self.profiles:
             self.load_saved_credentials()
         else:
             self.profile_combo.setCurrentIndex(0)
@@ -187,6 +157,8 @@ class ModernLoginDialog(QDialog):
             # For switch user, just close the dialog and return to main window
             print("[Login] Switch user dialog closed - returning to main window")
             event.accept()
+            # DO NOT call sys.exit() or quit the application
+            # Just close this dialog
             return
         else:
             # For initial login, exit the application if not authenticated
@@ -204,9 +176,9 @@ class ModernLoginDialog(QDialog):
     def init_ui(self):
         # Use consistent title based on mode
         if self.switch_user:
-            self.setWindowTitle(f"{self.app_name} - Switch Profile")
+            self.setWindowTitle("IPTV Player - Switch Profile")
         else:
-            self.setWindowTitle(f"{self.app_name} - Login")
+            self.setWindowTitle("IPTV Player - Login")
             
         # SAME size for both login and switch profile
         self.setFixedSize(440, 620)
@@ -241,11 +213,6 @@ class ModernLoginDialog(QDialog):
             QLineEdit:focus {
                 border: 1px solid #0d7377;
             }
-            QLineEdit:read-only {
-                background-color: #252525;
-                color: #808080;
-                border: 1px solid #303030;
-            }
         """
         
         # Main layout - SAME for both modes
@@ -254,7 +221,7 @@ class ModernLoginDialog(QDialog):
         layout.setSpacing(10)
         
         # Title - only difference is the text
-        title_text = "📺 Switch Profile" if self.switch_user else f"📺 {self.app_name} Login"
+        title_text = "📺 Switch Profile" if self.switch_user else "📺 IPTV Player Login"
         title = QLabel(title_text)
         title.setStyleSheet("""
             font-size: 18px;
@@ -272,16 +239,8 @@ class ModernLoginDialog(QDialog):
         
         self.profile_combo = QComboBox()
         self.profile_combo.addItem("+ New Profile")
-        
-        # Add Cloud Profiles first
-        for profile_name in sorted(self.cloud_profiles.keys()):
-            self.profile_combo.addItem(profile_name)
-            
-        # Add saved local profiles
         for profile_name in sorted(self.profiles.keys()):
-            # Skip generated saved entries for cloud profiles (which start with ☁️) to avoid duplicates
-            if not profile_name.startswith("saved_☁️"):
-                self.profile_combo.addItem(profile_name)
+            self.profile_combo.addItem(profile_name)
         
         self.profile_combo.setFixedHeight(32)
         self.profile_combo.currentTextChanged.connect(self.on_profile_changed)
@@ -314,9 +273,9 @@ class ModernLoginDialog(QDialog):
         layout.addWidget(self.profile_name_container)
         
         # Server URL - SAME for both modes
-        self.url_label = QLabel("Server URL:")
-        self.url_label.setStyleSheet("color: #b0b0b0; font-size: 12px; margin-top: 5px;")
-        layout.addWidget(self.url_label)
+        url_label = QLabel("Server URL:")
+        url_label.setStyleSheet("color: #b0b0b0; font-size: 12px; margin-top: 5px;")
+        layout.addWidget(url_label)
         
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("http://example.com:8080")
@@ -458,6 +417,7 @@ class ModernLoginDialog(QDialog):
             # For switch user, just close the dialog and return to main window
             print("[Login] Switch user cancelled - returning to main window with current user")
             self.reject()  # This closes the dialog and returns to main window
+            # DO NOT call sys.exit() here
             return
         else:
             # For initial login, exit the application ONLY if not authenticated
@@ -488,8 +448,6 @@ class ModernLoginDialog(QDialog):
         
         if profile_name == "+ New Profile":
             self.setup_new_profile()
-        elif profile_name in self.cloud_profiles:
-            self.load_cloud_profile(profile_name)
         else:
             self.load_profile(profile_name)
     
@@ -497,20 +455,6 @@ class ModernLoginDialog(QDialog):
         """Setup UI for new profile creation"""
         print(f"[Login] Setting up new profile")
         self.is_new_profile = True
-        
-        # Show URL input and label
-        self.url_label.show()
-        self.url_input.show()
-        
-        # Ensure inputs are editable
-        self.url_input.setReadOnly(False)
-        self.url_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #2d2d2d; border: 1px solid #3d3d3d;
-                border-radius: 4px; padding: 6px 10px; color: #ffffff;
-            }
-            QLineEdit:focus { border: 1px solid #0d7377; }
-        """)
         
         # Show the profile name field contents (space is already reserved)
         self.profile_name_label.show()
@@ -527,56 +471,10 @@ class ModernLoginDialog(QDialog):
         self.current_profile = None
         self.status_label.hide()
     
-    def load_cloud_profile(self, profile_name):
-        """Load data from cloud profile - HIDES URL INPUT"""
-        print(f"[Login] Loading cloud profile: {profile_name}")
-        self.is_new_profile = False
-        
-        # Hide profile name field
-        self.profile_name_label.hide()
-        self.profile_name_input.hide()
-        self.status_label.hide()
-        
-        data = self.cloud_profiles[profile_name]
-        
-        # Set URL but HIDE the field and label
-        self.url_input.setText(data.get('url', ''))
-        self.url_label.hide()
-        self.url_input.hide()
-        
-        # Try to load saved credentials for this cloud profile
-        # We use a prefix to store credentials for cloud profiles locally
-        saved_key = f"saved_{profile_name}"
-        
-        if saved_key in self.profiles:
-            print(f"[Login] Found saved credentials for cloud profile")
-            self.username_input.setText(self.profiles[saved_key].get('username', ''))
-            self.password_input.setText(self.profiles[saved_key].get('password', ''))
-        else:
-            self.username_input.clear()
-            self.password_input.clear()
-            
-        self.remember_checkbox.setChecked(True)
-        self.current_profile = profile_name
-
     def load_profile(self, profile_name):
         """Load existing profile data"""
         print(f"[Login] Loading profile: {profile_name}")
         self.is_new_profile = False
-        
-        # Show URL input and label for regular profiles
-        self.url_label.show()
-        self.url_input.show()
-        
-        # Enable editing for local profiles
-        self.url_input.setReadOnly(False)
-        self.url_input.setStyleSheet("""
-            QLineEdit {
-                background-color: #2d2d2d; border: 1px solid #3d3d3d;
-                border-radius: 4px; padding: 6px 10px; color: #ffffff;
-            }
-            QLineEdit:focus { border: 1px solid #0d7377; }
-        """)
         
         # Hide the profile name field contents (space stays reserved)
         self.profile_name_label.hide()
@@ -601,10 +499,8 @@ class ModernLoginDialog(QDialog):
             self.show_error("Please fill in all required fields")
             return
         
-        # Check if new profile needs a name (only for regular new profiles)
-        is_cloud = self.profile_combo.currentText() in self.cloud_profiles
-        
-        if not is_cloud and (self.is_new_profile or self.profile_combo.currentText() == "+ New Profile"):
+        # Check if new profile needs a name
+        if self.is_new_profile or self.profile_combo.currentText() == "+ New Profile":
             profile_name = self.profile_name_input.text().strip()
             if not profile_name:
                 self.show_error("Please enter a profile name")
@@ -679,33 +575,13 @@ class ModernLoginDialog(QDialog):
     
     def save_credentials(self):
         """Save credentials as profile"""
-        current_text = self.profile_combo.currentText()
-        
-        # Handle Cloud Profiles
-        if current_text in self.cloud_profiles:
-            # Save credential mapping for this cloud profile
-            # We prefix with 'saved_' to keep it separate in the profiles dict but link it
-            save_key = f"saved_{current_text}"
-            print(f"[Login] Saving credentials for cloud profile: {current_text}")
-            
-            self.profiles[save_key] = {
-                'url': self.url_input.text(), # Should match cloud URL
-                'username': self.username_input.text(),
-                'password': self.password_input.text()
-            }
-            self.save_profiles()
-            self.settings.setValue('last_profile', current_text)
-            self.current_profile = current_text
-            return
-
-        # Handle Standard Profiles
-        if self.is_new_profile or current_text == "+ New Profile":
+        if self.is_new_profile or self.profile_combo.currentText() == "+ New Profile":
             profile_name = self.profile_name_input.text().strip()
             if not profile_name:
                 profile_name = f"Profile_{len(self.profiles) + 1}"
             print(f"[Login] Saving new profile: {profile_name}")
         else:
-            profile_name = current_text
+            profile_name = self.profile_combo.currentText()
             print(f"[Login] Updating profile: {profile_name}")
         
         self.profiles[profile_name] = {
@@ -727,11 +603,11 @@ class ModernLoginDialog(QDialog):
     def load_saved_credentials(self):
         """Load last used profile"""
         last_profile = self.settings.value('last_profile', '')
-        if last_profile:
+        if last_profile and last_profile in self.profiles:
             index = self.profile_combo.findText(last_profile)
             if index >= 0:
                 self.profile_combo.setCurrentIndex(index)
-                # The on_profile_changed handler will call load_profile/load_cloud_profile
+                self.load_profile(last_profile)
     
     def get_api(self):
         """Return authenticated API"""

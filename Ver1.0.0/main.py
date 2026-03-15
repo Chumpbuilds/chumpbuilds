@@ -3,24 +3,23 @@ IPTV Player - Main Application Entry Point
 Windows IPTV Player with Xtreme Codes support and License Validation
 Current Date and Time (UTC): 2025-11-16 16:18:44
 Current User: covchump
-FIXED: Splash screen updates App Name dynamically from server response
 """
 
 import sys
 import os
-import time
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
-from PyQt6.QtCore import Qt, QTimer, QSettings
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor
 from ui.main_page import MainWindow
-from player.vlc_player import get_vlc_player
+from player.vlc_player import get_vlc_player  # ensure we can stop VLC on quit
 from license_validator import validate_app_license, get_license_validator
 
 # Prevent Python from writing .pyc files and creating __pycache__ directories
 sys.dont_write_bytecode = True
 
-def generate_splash_pixmap(app_name="X87 Player"):
-    """Generate the pixmap for the splash screen (reusable)"""
+def create_splash_screen():
+    """Create a professional splash screen"""
+    # Create a simple splash screen pixmap
     pixmap = QPixmap(400, 300)
     pixmap.fill(QColor(30, 30, 30))  # Dark background
     
@@ -39,14 +38,13 @@ def generate_splash_pixmap(app_name="X87 Player"):
     painter.setPen(QColor(255, 255, 255))
     painter.drawText(150, 50, 100, 100, Qt.AlignmentFlag.AlignCenter, "🎬")
     
-    # Draw app name (Dynamic)
+    # Draw app name
     title_font = QFont()
     title_font.setPointSize(24)
     title_font.setBold(True)
     painter.setFont(title_font)
     painter.setPen(QColor(255, 255, 255))
-    # Align center rectangle for text
-    painter.drawText(0, 180, 400, 40, Qt.AlignmentFlag.AlignCenter, app_name)
+    painter.drawText(0, 180, 400, 40, Qt.AlignmentFlag.AlignCenter, "Stream Hub")
     
     # Draw subtitle
     subtitle_font = QFont()
@@ -60,14 +58,10 @@ def generate_splash_pixmap(app_name="X87 Player"):
     loading_font.setPointSize(10)
     painter.setFont(loading_font)
     painter.setPen(QColor(100, 181, 246))
-    painter.drawText(0, 250, 400, 30, Qt.AlignmentFlag.AlignCenter, "Loading...")
+    painter.drawText(0, 250, 400, 30, Qt.AlignmentFlag.AlignCenter, "Validating License...")
     
     painter.end()
-    return pixmap
-
-def create_splash_screen(app_name="X87 Player"):
-    """Create the splash screen widget"""
-    pixmap = generate_splash_pixmap(app_name)
+    
     return QSplashScreen(pixmap)
 
 def apply_global_theme(app, customizations):
@@ -118,22 +112,25 @@ def apply_global_theme(app, customizations):
                 border: 2px solid {accent_color};
             }}
         """)
+    # Add other themes as needed (light, custom, etc.)
 
 def initialize_application():
-    """Initialize the main application"""
+    """Initialize the main application with all necessary setup"""
+    # Enable high DPI support for Windows
     if hasattr(Qt, 'AA_EnableHighDpiScaling'):
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
         QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     
+    # Create application
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
     
-    # Set initial defaults
-    app.setApplicationName("X87 Player")
+    # Set default application info
+    app.setApplicationName("Stream Hub")
     app.setApplicationVersion("1.0.0")
-    app.setOrganizationName("X87 Technologies")
-    app.setOrganizationDomain("x87player.xyz")
+    app.setOrganizationName("StreamHub Technologies")
+    app.setOrganizationDomain("streamhub.com")
     
     print("[Main] Application initialized")
     return app
@@ -142,112 +139,188 @@ def validate_license_with_splash(app):
     """Validate license with splash screen"""
     print("[Main] Starting license validation process...")
     
-    # 1. Load cached branding (so it looks correct immediately if possible)
-    branding_settings = QSettings('IPTVPlayer', 'Branding')
-    cached_app_name = branding_settings.value('app_name', 'X87 Player')
-    
-    # 2. Create splash
-    splash = create_splash_screen(cached_app_name)
+    # Create and show splash screen
+    splash = create_splash_screen()
     splash.show()
     app.processEvents()
     
-    start_time = time.time()
+    # Small delay to show splash screen
+    QTimer.singleShot(1000, lambda: None)
+    app.processEvents()
     
     try:
-        # 3. Validate license (Fetches new data from server)
+        # Validate license
         print("[Main] Calling license validator...")
         license_valid = validate_app_license()
         
         if not license_valid:
             splash.close()
             print("[Main] ❌ License validation failed")
-            QMessageBox.critical(None, "License Required", "A valid license is required.")
+            
+            # Show error message
+            QMessageBox.critical(
+                None, 
+                "License Required", 
+                "A valid license is required to use this application.\n\n"
+                "Please contact support if you need assistance with licensing."
+            )
             return False, None
         
         print("[Main] ✅ License validation successful")
         
-        # 4. Get new customizations from server
+        # Get customizations
         license_validator = get_license_validator()
         customizations = license_validator.get_app_customizations()
         
-        # 5. Update branding if it changed on the server
-        new_app_name = customizations.get('app_name', 'X87 Player')
+        # Update splash with custom app name if available
+        custom_app_name = customizations.get('app_name', 'Stream Hub')
+        app.setApplicationName(custom_app_name)
         
-        if new_app_name != cached_app_name:
-            print(f"[Main] Branding updated from server: {new_app_name}")
-            # Save to cache
-            branding_settings.setValue('app_name', new_app_name)
-            app.setApplicationName(new_app_name)
-            
-            # *** UPDATE SPLASH SCREEN IMAGE INSTANTLY ***
-            updated_pixmap = generate_splash_pixmap(new_app_name)
-            splash.setPixmap(updated_pixmap)
-            app.processEvents() # Force UI redraw
-        
-        # 6. Wait out the remaining 5 seconds
-        elapsed = time.time() - start_time
-        if elapsed < 5.0:
-            while time.time() - start_time < 5.0:
-                app.processEvents()
-                time.sleep(0.05)
-        
+        # Close splash after validation
         splash.close()
-        print(f"[Main] License validation complete - App Name: {new_app_name}")
+        
+        print(f"[Main] License validation complete - App Name: {custom_app_name}")
         return True, customizations
         
     except Exception as e:
         splash.close()
-        print(f"[Main] 💥 Error: {e}")
-        QMessageBox.critical(None, "Application Error", f"Error: {str(e)}")
+        print(f"[Main] 💥 Error during license validation: {e}")
+        
+        QMessageBox.critical(
+            None,
+            "Application Error",
+            f"An error occurred during license validation:\n\n{str(e)}\n\n"
+            "Please contact support for assistance."
+        )
         return False, None
 
 def setup_application_lifecycle(app):
-    """Setup cleanup on exit"""
+    """Setup application lifecycle management"""
     def cleanup_on_exit():
-        print("[Main] Shutting down...")
+        """Cleanup function called when application exits"""
+        print("[Main] Application shutting down...")
+        
         try:
+            # Stop VLC if running
             vlc_player = get_vlc_player()
-            if vlc_player: vlc_player.stop()
-        except: pass
+            if vlc_player:
+                vlc_player.stop()
+                print("[Main] VLC player stopped")
+        except Exception as e:
+            print(f"[Main] Error stopping VLC: {e}")
+        
+        try:
+            # Sync any pending settings
+            license_validator = get_license_validator()
+            if license_validator.is_license_valid():
+                # Could sync final settings here if needed
+                print("[Main] License validator cleanup complete")
+        except Exception as e:
+            print(f"[Main] Error during license cleanup: {e}")
+        
+        print("[Main] Cleanup complete")
+    
+    # Connect cleanup function to application exit
     app.aboutToQuit.connect(cleanup_on_exit)
 
 def create_main_window(customizations):
-    """Create main window"""
+    """Create and configure the main application window"""
+    print("[Main] Creating main window...")
+    
     try:
+        # Create main window
         window = MainWindow()
+        
+        # Apply customizations
         if customizations:
+            print("[Main] Applying user customizations...")
             window.apply_customizations(customizations)
+        
+        # Show the main window
         window.show()
+        
+        print("[Main] ✅ Main window created and displayed")
         return window
+        
     except Exception as e:
-        QMessageBox.critical(None, "Error", f"Failed to create window: {str(e)}")
+        print(f"[Main] ❌ Error creating main window: {e}")
+        
+        QMessageBox.critical(
+            None,
+            "Application Error", 
+            f"Failed to create main window:\n\n{str(e)}\n\n"
+            "The application will now exit."
+        )
         return None
 
 def main():
+    """Main application entry point"""
     print("=" * 60)
-    print("[Main] 🚀 Starting IPTV Player")
+    print("[Main] 🚀 Starting IPTV Player Application")
+    print(f"[Main] Date: 2025-11-16 16:18:44 UTC")
+    print(f"[Main] User: covchump")
     print("=" * 60)
     
     try:
+        # Initialize application
         app = initialize_application()
         
+        # Validate license with splash screen
         license_valid, customizations = validate_license_with_splash(app)
         if not license_valid:
+            print("[Main] Exiting due to license validation failure")
             sys.exit(1)
         
+        # Apply global theme based on customizations
         apply_global_theme(app, customizations or {})
+        
+        # Setup application lifecycle management
         setup_application_lifecycle(app)
         
+        # Create main window
         window = create_main_window(customizations)
         if not window:
+            print("[Main] Exiting due to window creation failure")
             sys.exit(1)
         
+        # Check authentication status
+        if not window.api or not window.api.is_authenticated():
+            print("[Main] No authentication found - login dialog will be shown")
+        else:
+            print("[Main] User already authenticated")
+        
+        print("[Main] ✅ Application startup complete")
+        print("[Main] Starting event loop...")
+        
+        # Start the application event loop
         exit_code = app.exec()
+        
+        print(f"[Main] Application exited with code: {exit_code}")
         return exit_code
         
+    except KeyboardInterrupt:
+        print("[Main] Application interrupted by user (Ctrl+C)")
+        return 0
+        
     except Exception as e:
-        print(f"[Main] 💥 Fatal error: {e}")
+        print(f"[Main] 💥 Fatal application error: {e}")
+        
+        # Try to show error to user if possible
+        try:
+            if 'app' in locals():
+                QMessageBox.critical(
+                    None,
+                    "Fatal Error",
+                    f"A fatal error occurred:\n\n{str(e)}\n\n"
+                    "The application will now exit."
+                )
+        except:
+            pass  # If we can't show the message box, just continue
+        
         return 1
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Set the exit code and exit
+    exit_code = main()
+    print(f"[Main] Final exit with code: {exit_code}")
+    sys.exit(exit_code)
