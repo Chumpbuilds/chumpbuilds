@@ -214,7 +214,45 @@ DASHBOARD_TEMPLATE = '''
             <h2>Welcome back, {{ session.customer_name }}! 👋</h2>
             <p>Manage your subscription.</p>
         </div>
-        
+
+        <!-- LICENSE KEY CARD -->
+        <div class="info-section" style="border-left: 4px solid #667eea; margin-bottom: 2rem;">
+            <h3 class="info-title">🔑 Your Activation Key</h3>
+            <p style="color: #6b7280; margin-bottom: 1rem;">Use this key to activate the X87 Player app on your device.</p>
+            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+                <div style="
+                    background: #1e1e2e;
+                    color: #a5f3fc;
+                    font-family: monospace;
+                    font-size: 1.4rem;
+                    font-weight: 700;
+                    letter-spacing: 3px;
+                    padding: 1rem 1.5rem;
+                    border-radius: 10px;
+                    border: 2px solid #667eea;
+                    flex: 1;
+                    min-width: 250px;
+                    text-align: center;
+                " id="licenseKeyDisplay">
+                    {% if license %}{{ license['license_key'] }}{% else %}Not available{% endif %}
+                </div>
+                <button onclick="copyLicenseKey()" style="
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    border: none;
+                    padding: 1rem 1.5rem;
+                    border-radius: 10px;
+                    font-size: 1rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    white-space: nowrap;
+                " id="copyBtn">📋 Copy Key</button>
+            </div>
+            <p style="color: #9ca3af; font-size: 0.8rem; margin-top: 0.75rem;">
+                ⚠️ Keep this key safe. You will need it to activate the app after a fresh install.
+            </p>
+        </div>
+
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-icon">📅</div>
@@ -230,6 +268,31 @@ DASHBOARD_TEMPLATE = '''
             </div>
         </div>
     </div>
+<script>
+function copyLicenseKey() {
+    const key = document.getElementById('licenseKeyDisplay').innerText.trim();
+    if (!key || key === 'Not available') return;
+    navigator.clipboard.writeText(key).then(function() {
+        const btn = document.getElementById('copyBtn');
+        btn.innerText = '✅ Copied!';
+        btn.style.background = 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)';
+        setTimeout(function() {
+            btn.innerText = '📋 Copy Key';
+            btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+        }, 2000);
+    }).catch(function() {
+        const el = document.createElement('textarea');
+        el.value = key;
+        document.body.appendChild(el);
+        el.select();
+        const success = document.execCommand('copy');
+        document.body.removeChild(el);
+        if (success) {
+            alert('License key copied!');
+        }
+    });
+}
+</script>
 </body>
 </html>
 '''
