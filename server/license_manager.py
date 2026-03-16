@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def get_db_connection():
     """Get database connection"""
-    db_path = '/opt/iptv-panel/admin/iptv_business.db'
+    db_path = '/opt/iptv-panel/iptv_business.db'
     if not os.path.exists(db_path):
         raise Exception(f"Database not found: {db_path}")
     
@@ -719,7 +719,7 @@ def license_health():
         'service': 'license_manager',
         'timestamp': datetime.now().isoformat(),
         'version': '2.1.1',
-        'database': '/opt/iptv-panel/admin/iptv_business.db',
+        'database': '/opt/iptv-panel/iptv_business.db',
         'features': ['improved_partial_key_matching', 'flexible_pattern_matching', 'enhanced_normalization', 'hardware_binding', 'force_200_ok']
     }), 200
 
