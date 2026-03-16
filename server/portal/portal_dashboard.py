@@ -8,6 +8,7 @@ from flask import Blueprint, render_template_string, session, url_for, request, 
 from portal_auth import login_required
 from portal_database import get_db_connection
 from datetime import datetime
+from urllib.parse import urlparse
 import json
 import os
 import time
@@ -21,6 +22,43 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'ico'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_public_base_url():
+    """Return the canonical public base URL for the portal.
+
+    Reads the ``PORTAL_PUBLIC_BASE_URL`` environment variable first so that
+    deployments behind a reverse proxy (e.g. nginx terminating HTTPS) can
+    provide a stable, correct base URL.  Falls back to Flask's
+    ``request.url_root`` when the variable is not set.
+    """
+    base = os.environ.get('PORTAL_PUBLIC_BASE_URL', '').rstrip('/')
+    if base:
+        return base
+    return request.url_root.rstrip('/')
+
+
+def logo_url_to_disk_path(logo_url, upload_dir):
+    """Safely resolve a stored logo URL to an absolute filesystem path.
+
+    Accepts both absolute HTTP(S) URLs and relative path strings.  Only
+    returns a path that lives directly inside *upload_dir*; any attempt at
+    path traversal returns ``None``.
+    """
+    try:
+        parsed = urlparse(logo_url)
+        # For absolute URLs use the URL path; for relative strings use as-is
+        url_path = parsed.path if parsed.scheme else logo_url
+        filename = os.path.basename(url_path)
+        if not filename:
+            return None
+        candidate = os.path.realpath(os.path.join(upload_dir, filename))
+        real_upload_dir = os.path.realpath(upload_dir)
+        if not candidate.startswith(real_upload_dir + os.sep):
+            return None
+        return candidate
+    except Exception:
+        return None
 
 DASHBOARD_TEMPLATE = '''
 <!DOCTYPE html>
@@ -160,12 +198,12 @@ DASHBOARD_TEMPLATE = '''
                             </div>
                         </div>
                         <div id="logo-preview-container" style="display: {% if customization and customization.logo_url %}flex{% else %}none{% endif %}; align-items: center;">
-                            <img id="logo-preview" src="{{ customization.logo_url if customization and customization.logo_url else '' }}" style="max-width: 80px; max-height: 80px; border-radius: 8px; object-fit: contain; border: 1px solid #e5e7eb;">
+                            <img id="logo-preview" src="{{ (customization.logo_url ~ '?v=' ~ logo_version) if customization and customization.logo_url else '' }}" style="max-width: 80px; max-height: 80px; border-radius: 8px; object-fit: contain; border: 1px solid #e5e7eb;">
                         </div>
                     </div>
                     {% if customization and customization.logo_url %}
                         <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #166534; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-                            <span>✅ Current Logo: <a href="{{ customization.logo_url }}" target="_blank">View Image</a></span>
+                            <span>✅ Current Logo: <a href="{{ customization.logo_url }}?v={{ logo_version }}" target="_blank">View Image</a></span>
                             <form method="POST" action="{{ url_for('dashboard.remove_logo') }}" style="display: inline;" onsubmit="return confirm('Remove current logo?');">
                                 <button type="submit" style="background: #dc2626; color: white; border: none; border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.8rem; cursor: pointer;">🗑️ Remove Logo</button>
                             </form>
@@ -355,7 +393,14 @@ def customer_dashboard():
         except: features = {}
     
     conn.close()
-    return render_template_string(DASHBOARD_TEMPLATE, license=license, profiles=profiles, customization=customization, days_remaining=days_remaining, features=features, session=session, url_for=url_for)
+    # Compute a URL-safe cache-busting version string from the customization timestamp
+    logo_version = ''
+    if customization and customization['updated_at']:
+        try:
+            logo_version = str(customization['updated_at']).replace(' ', '').replace(':', '').replace('-', '')
+        except Exception:
+            logo_version = ''
+    return render_template_string(DASHBOARD_TEMPLATE, license=license, profiles=profiles, customization=customization, days_remaining=days_remaining, features=features, session=session, url_for=url_for, logo_version=logo_version)
 
 @dashboard_bp.route('/update_branding', methods=['POST'])
 @login_required
@@ -393,10 +438,11 @@ def update_branding():
                 finally:
                     conn_check.close()
                 if existing and existing['logo_url']:
-                    old_filename = existing['logo_url'].rsplit('/', 1)[-1]
-                    old_path = os.path.join(save_dir, old_filename)
-                    if os.path.isfile(old_path):
+                    old_path = logo_url_to_disk_path(existing['logo_url'], save_dir)
+                    if old_path and os.path.isfile(old_path):
                         os.remove(old_path)
+                    else:
+                        current_app.logger.warning('Old logo file not found on disk: %s', existing['logo_url'])
             except Exception:
                 pass  # best-effort
 
@@ -406,10 +452,7 @@ def update_branding():
 
             try:
                 file.save(file_path)
-                # Generate full public URL for the file
-                # Assuming portal runs on port 5001, we construct the URL
-                host_url = request.host_url.rstrip('/')
-                logo_url = f"{host_url}/{UPLOAD_FOLDER}/{filename}"
+                logo_url = f"{get_public_base_url()}/{UPLOAD_FOLDER}/{filename}"
             except Exception as e:
                 flash(f'❌ Error uploading file: {e}', 'error')
                 return redirect(url_for('dashboard.customer_dashboard'))
@@ -497,11 +540,11 @@ def remove_logo():
             # Attempt to delete the file from disk
             try:
                 save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
-                logo_url = row['logo_url']
-                filename = logo_url.rsplit('/', 1)[-1]
-                file_path = os.path.join(save_dir, filename)
-                if os.path.isfile(file_path):
+                file_path = logo_url_to_disk_path(row['logo_url'], save_dir)
+                if file_path and os.path.isfile(file_path):
                     os.remove(file_path)
+                else:
+                    current_app.logger.warning('Logo file not found on disk during removal: %s', row['logo_url'])
             except Exception:
                 current_app.logger.exception('Failed to delete logo file')
         cursor.execute(
@@ -529,11 +572,11 @@ def delete_logo():
             # Attempt to delete the file from disk
             try:
                 save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
-                logo_url = row['logo_url']
-                filename = logo_url.rsplit('/', 1)[-1]
-                file_path = os.path.join(save_dir, filename)
-                if os.path.isfile(file_path):
+                file_path = logo_url_to_disk_path(row['logo_url'], save_dir)
+                if file_path and os.path.isfile(file_path):
                     os.remove(file_path)
+                else:
+                    current_app.logger.warning('Logo file not found on disk during removal: %s', row['logo_url'])
             except Exception:
                 current_app.logger.exception('Failed to delete logo file')
         cursor.execute(
