@@ -343,7 +343,8 @@ class MainWindow(QMainWindow):
     
     def show_initial_login(self):
         """Show the initial login dialog before displaying main window"""
-        login_dialog = ModernLoginDialog(None, switch_user=False)
+        cloud_profiles = self.license_validator.get_cloud_profiles()
+        login_dialog = ModernLoginDialog(None, switch_user=False, cloud_profiles=cloud_profiles)
         result = login_dialog.exec()
         
         if result == ModernLoginDialog.DialogCode.Accepted:
@@ -606,7 +607,8 @@ class MainWindow(QMainWindow):
     
     def switch_user(self):
         """Switch to different user profile using dedicated switch dialog"""
-        dialog = SwitchUserDialog(self)
+        cloud_profiles = self.license_validator.get_cloud_profiles()
+        dialog = SwitchUserDialog(self, cloud_profiles=cloud_profiles)
         
         if dialog.exec() == SwitchUserDialog.DialogCode.Accepted:
             new_api = dialog.get_api()
