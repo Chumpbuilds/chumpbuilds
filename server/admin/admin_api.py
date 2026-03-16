@@ -8,6 +8,7 @@ from flask import Blueprint, request, jsonify
 from admin_database import get_db_connection
 from datetime import datetime
 import json
+import os
 import traceback
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -58,10 +59,19 @@ def validate_license():
         
         user_settings = {}
         if cust_row:
+            logo = cust_row['logo_url'] or ''
+            # Backward compatibility: convert legacy relative paths to absolute URLs so
+            # the client (which only fetches http/https URLs) can display the logo.
+            if logo and not logo.startswith(('http://', 'https://')):
+                portal_base = os.environ.get('PORTAL_PUBLIC_BASE_URL', '').rstrip('/')
+                if portal_base:
+                    logo = f"{portal_base}/{logo.lstrip('/')}"
+                else:
+                    logo = ''
             # Convert SQLite row to dict
             user_settings = {
                 'app_name': cust_row['app_name'],
-                'logo_url': cust_row['logo_url'],
+                'logo_url': logo,
                 'theme': cust_row['theme'],
                 'primary_color': cust_row['primary_color'],
                 'accent_color': cust_row['secondary_color']
