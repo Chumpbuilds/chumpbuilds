@@ -204,9 +204,7 @@ DASHBOARD_TEMPLATE = '''
                     {% if customization and customization.logo_url %}
                         <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #166534; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
                             <span>✅ Current Logo: <a href="{{ customization.logo_url }}?v={{ logo_version }}" target="_blank">View Image</a></span>
-                            <form method="POST" action="{{ url_for('dashboard.remove_logo') }}" style="display: inline;" onsubmit="return confirm('Remove current logo?');">
-                                <button type="submit" style="background: #dc2626; color: white; border: none; border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.8rem; cursor: pointer;">🗑️ Remove Logo</button>
-                            </form>
+                            <button type="submit" formaction="{{ url_for('dashboard.remove_logo') }}" formmethod="POST" onclick="return confirm('Remove current logo?');" style="background: #dc2626; color: white; border: none; border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.8rem; cursor: pointer;">🗑️ Remove Logo</button>
                         </div>
                     {% endif %}
                     <script>
