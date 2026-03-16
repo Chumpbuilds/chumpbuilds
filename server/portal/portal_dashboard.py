@@ -450,10 +450,13 @@ def update_branding():
 
             try:
                 file.save(file_path)
-                logo_url = f"{get_public_base_url()}/{UPLOAD_FOLDER}/{filename}"
+                logo_url = f"/{UPLOAD_FOLDER}/{filename}"
             except Exception as e:
                 flash(f'❌ Error uploading file: {e}', 'error')
                 return redirect(url_for('dashboard.customer_dashboard'))
+        elif file and file.filename:
+            flash('❌ Invalid logo format. Allowed: PNG, JPG, JPEG, ICO', 'error')
+            return redirect(url_for('dashboard.customer_dashboard'))
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -560,31 +563,4 @@ def remove_logo():
 @dashboard_bp.route('/delete_logo', methods=['POST'])
 @login_required
 def delete_logo():
-    license_key = session.get('license_key')
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute('SELECT logo_url FROM customizations WHERE license_key = ?', (license_key,))
-        row = cursor.fetchone()
-        if row and row['logo_url']:
-            # Attempt to delete the file from disk
-            try:
-                save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
-                file_path = logo_url_to_disk_path(row['logo_url'], save_dir)
-                if file_path and os.path.isfile(file_path):
-                    os.remove(file_path)
-                else:
-                    current_app.logger.warning('Logo file not found on disk during removal: %s', row['logo_url'])
-            except Exception:
-                current_app.logger.exception('Failed to delete logo file')
-        cursor.execute(
-            'UPDATE customizations SET logo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?',
-            (license_key,)
-        )
-        conn.commit()
-        flash('🗑️ Logo removed successfully.', 'success')
-    except Exception as e:
-        flash(f'❌ Error removing logo: {e}', 'error')
-    finally:
-        conn.close()
-    return redirect(url_for('dashboard.customer_dashboard'))
+    return remove_logo()
