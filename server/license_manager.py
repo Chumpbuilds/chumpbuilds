@@ -228,12 +228,38 @@ def get_user_settings(license_key):
                 except Exception as e:
                     logger.error(f"[License] Error calculating days remaining: {e}")
             
+            # Query customizations table for portal-configured branding
+            theme = 'dark'
+            app_name = 'X87 Player'
+            primary_color = '#0d7377'
+            accent_color = '#64b5f6'
+            logo_url = ''
+            try:
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        'SELECT app_name, logo_url, theme, primary_color, secondary_color FROM customizations WHERE license_key = ?',
+                        (license_data['license_key'],)
+                    )
+                    cust_row = cursor.fetchone()
+                finally:
+                    conn.close()
+                if cust_row:
+                    app_name = cust_row['app_name'] or app_name
+                    logo_url = cust_row['logo_url'] or logo_url
+                    theme = cust_row['theme'] or theme
+                    primary_color = cust_row['primary_color'] or primary_color
+                    accent_color = cust_row['secondary_color'] or accent_color
+            except Exception as e:
+                logger.warning(f"[License] Could not read customizations: {e}")
+
             return {
-                'theme': 'dark',
-                'app_name': 'X87 Player',
-                'primary_color': '#0d7377',
-                'accent_color': '#64b5f6',
-                'logo_url': '',
+                'theme': theme,
+                'app_name': app_name,
+                'primary_color': primary_color,
+                'accent_color': accent_color,
+                'logo_url': logo_url,
                 'background_image': '',
                 'enabled_features': enabled_features,
                 'plan_type': 'premium',
