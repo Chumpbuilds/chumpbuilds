@@ -1,1 +1,425 @@
-"""\nVLC Player Module - Launches external VLC player and provides an embedded player.\nAdded pre-warming functionality to reduce initial startup delay.\nUpdated to include EmbeddedVLCPlayer using python-vlc bindings.\nFullscreen: re-creates the media player on the fullscreen HWND instead of redirecting.\n"""\n\nimport subprocess\nimport os\nimport platform\nimport shutil\nimport time\nimport traceback\nfrom PyQt6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QFrame, QPushButton, QHBoxLayout\nfrom PyQt6.QtCore import QSettings, Qt, QTimer\nfrom PyQt6.QtGui import QKeySequence, QShortcut\n\n# Attempt to import python-vlc; graceful fallback if not available\ntry:\n    import vlc as _vlc\n    _VLC_AVAILABLE = True\nexcept Exception:\n    _vlc = None\n    _VLC_AVAILABLE = False\n    print("[VLC] Warning: python-vlc not available. EmbeddedVLCPlayer will fall back to external VLC.")\n\n\nclass ExternalVLCPlayer:\n    def __init__(self):\n        self.vlc_path = self.find_vlc()\n        self.process = None\n        self.settings = QSettings('IPTVPlayer', 'VLCSettings')\n        \n        self.network_caching = self.settings.value('network_caching', 15000, type=int)\n        self.live_caching = self.settings.value('live_caching', 15000, type=int)\n        self.file_caching = self.settings.value('file_caching', 20000, type=int)\n        \n        print(f"[VLC] Found VLC at: {self.vlc_path}")\n        \n    def find_vlc(self):\n        """Find VLC executable on the system"""\n        if platform.system() == "Windows":\n            possible_paths = [\n                r"C:\Program Files\VideoLAN\VLC\vlc.exe",\n                r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",\n            ]\n            for path in possible_paths:\n                if os.path.exists(path):\n                    return path\n            return shutil.which("vlc")\n        elif platform.system() == "Darwin":\n            return "/Applications/VLC.app/Contents/MacOS/VLC"\n        else:\n            return shutil.which("vlc") or "/usr/bin/vlc"\n    \n    def prewarm_vlc(self):\n        """\n        Launch and quickly close a dummy VLC instance to pre-load it into memory,\n        making the first real playback faster. This runs in the background.\n        """\n        if not self.vlc_path or not os.path.exists(self.vlc_path):\n            print("[VLC Pre-warm] VLC not found, skipping.")\n            return\n\n        print("[VLC Pre-warm] Starting VLC pre-warming process in background...")\n        \n        cmd = [\n            self.vlc_path,\n            '--intf', 'dummy',\n            '--vout', 'dummy',\n            '--no-one-instance'\n        ]\n\n        try:\n            prewarm_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n            time.sleep(1.5)\n            prewarm_process.terminate()\n            prewarm_process.wait(timeout=1)\n            print("[VLC Pre-warm] VLC pre-warming complete.")\n        except Exception as e:\n            print(f"[VLC Pre-warm] Error during VLC pre-warming: {e}")\n\n    def update_buffer_settings(self, network_caching=None, live_caching=None, file_caching=None):\n        """Update buffer settings"""\n        if network_caching is not None:\n            self.network_caching = network_caching\n            self.settings.setValue('network_caching', network_caching)\n        \n        if live_caching is not None:\n            self.live_caching = live_caching\n            self.settings.setValue('live_caching', live_caching)\n        \n        if file_caching is not None:\n            self.file_caching = file_caching\n            self.settings.setValue('file_caching', file_caching)\n        \n        print(f"[VLC] Buffer settings updated - Network: {self.network_caching}ms, Live: {self.live_caching}ms, File: {self.file_caching}ms")\n    \n    def play_stream(self, url, title="Stream", fullscreen=False, content_type="live"):\n        """\n        Launch VLC to play a stream with robust settings and no notifications.\n        """\n        if not self.vlc_path or not os.path.exists(self.vlc_path):\n            print("[VLC] ERROR: VLC executable not found!")\n            QMessageBox.critical(None, "VLC Not Found", "VLC Media Player could not be found. Please ensure it is installed.")\n            return False\n        \n        try:\n            if self.process:\n                self.process.terminate()\n                self.process.wait(timeout=1)\n        except Exception:\n            if self.process:\n                self.process.kill()\n        finally:\n            self.process = None\n\n        print(f"[VLC] Launching VLC for '{title}'")\n        \n        cmd = [self.vlc_path, url]        \n        vlc_args = [\n            "--qt-start-minimized",\n            "--no-video-title-show",\n            "--no-osd",\n            "--no-interact",\n            "--quiet",\n            "--play-and-exit",\n            "--no-repeat",\n            "--no-loop",\n            "--no-one-instance",\n            "--qt-notification=0",\n            "--no-snapshot-preview",\n        ]\n\n        if fullscreen:\n            vlc_args.append("--fullscreen")\n\n        vlc_args.extend(["--meta-title", title, "--video-title", title])\n        \n        if content_type == "live":\n            buffer_size = self.live_caching\n        else:\n            buffer_size = self.file_caching\n        \n        vlc_args.append(f"--network-caching={buffer_size}")\n        print(f"[VLC] Applying buffer: {buffer_size}ms")\n\n        cmd.extend(vlc_args)\n        \n        print(f"[VLC] Command: {' '.join(cmd)}")\n        \n        try:\n            if platform.system() == "Windows":\n                CREATE_NO_WINDOW = 0x08000000\n                self.process = subprocess.Popen(cmd, creationflags=CREATE_NO_WINDOW,\n                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n            else:\n                self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n            \n            print(f"[VLC] Process started with PID: {self.process.pid}")\n            return True\n            \n        except Exception as e:\n            print(f"[VLC] ERROR launching: {e}")\n            traceback.print_exc()\n            return False\n\n    def stop(self):\n        """Stop VLC if running"""\n        if self.process:\n            print("[VLC] Stopping playback...")\n            try:\n                self.process.terminate()\n                self.process.wait(timeout=2)\n            except Exception:\n                self.process.kill()\n            finally:\n                self.process = None\n\n\nclass _FullscreenWindow(QDialog):\n    """\n    A frameless fullscreen window that hosts a VLC media player.\n    Escape key or the on-screen close button dismisses it.\n    """\n\n    def __init__(self, url: str, title: str, vlc_args: list, volume: int, is_muted: bool):\n        super().__init__(None)\n        self.setWindowTitle(f"▶ {title}")\n        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)\n        self.setStyleSheet("background-color: #000000;")\n\n        self._url = url\n        self._title = title\n        self._vlc_args = vlc_args\n        self._volume = volume\n        self._is_muted = is_muted\n        self._instance = None\n        self._media_player = None\n\n        # Main layout\n        root_layout = QVBoxLayout(self)\n        root_layout.setContentsMargins(0, 0, 0, 0)\n        root_layout.setSpacing(0)\n\n        # Video frame — must be native so VLC can claim its HWND\n        self._video_frame = QFrame(self)\n        self._video_frame.setStyleSheet("background-color: #000000;")\n        self._video_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)\n        self._video_frame.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, True)\n        root_layout.addWidget(self._video_frame, stretch=1)\n\n        # Thin close bar at the bottom (hidden unless mouse is near bottom)\n        bar = QHBoxLayout()\n        bar.setContentsMargins(8, 4, 8, 4)\n        close_btn = QPushButton("✕  Exit Fullscreen  (Esc)")\n        close_btn.setStyleSheet("""\n            QPushButton {\n                background-color: rgba(0,0,0,160);\n                color: #cccccc;\n                border: 1px solid #555555;\n                padding: 4px 16px;\n                font-size: 12px;\n                border-radius: 4px;\n            }\n            QPushButton:hover { background-color: rgba(80,80,80,200); color: white; }\n        """)\n        close_btn.clicked.connect(self.close)\n        bar.addStretch()\n        bar.addWidget(close_btn)\n        bar.addStretch()\n        root_layout.addLayout(bar)\n\n        # Keyboard shortcut\n        esc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)\n        esc.activated.connect(self.close)\n\n    def showEvent(self, event):\n        super().showEvent(event)\n        # Start playback after the window is visible and the HWND is ready\n        QTimer.singleShot(100, self._start_playback)\n\n    def _start_playback(self):\n        """Create a fresh VLC instance bound to _video_frame's HWND."""\n        try:\n            self._instance = _vlc.Instance(' '.join(self._vlc_args))\n            self._media_player = self._instance.media_player_new()\n\n            wid = int(self._video_frame.winId())\n            system = platform.system()\n            if system == "Windows":\n                self._media_player.set_hwnd(wid)\n            elif system == "Darwin":\n                self._media_player.set_nsobject(wid)\n            else:\n                self._media_player.set_xwindow(wid)\n\n            media = self._instance.media_new(self._url)\n            self._media_player.set_media(media)\n            self._media_player.audio_set_volume(self._volume)\n            if self._is_muted:\n                self._media_player.audio_set_mute(True)\n            self._media_player.play()\n            print(f"[FullscreenVLC] Playing: {self._title}")\n        except Exception as exc:\n            print(f"[FullscreenVLC] Error starting playback: {exc}")\n            traceback.print_exc()\n\n    def closeEvent(self, event):\n        """Stop VLC before closing so the HWND is freed cleanly."""\n        if self._media_player:\n            try:\n                self._media_player.stop()\n            except Exception:\n                pass\n            finally:\n                self._media_player = None\n                self._instance = None\n        super().closeEvent(event)\n\n\nclass EmbeddedVLCPlayer:\n    """Embedded VLC player that renders video inside a QFrame widget using python-vlc.\n    Falls back to ExternalVLCPlayer.play_stream() if python-vlc is not available.\n\n    Fullscreen strategy: open a separate _FullscreenWindow that creates its OWN\n    VLC instance bound to the fullscreen HWND.  This avoids the blank-screen\n    problem caused by trying to redirect an already-playing VLC instance to a\n    different HWND.\n    """\n\n    def __init__(self, video_frame: QFrame):\n        self._video_frame = video_frame\n        self._vlc_available = _VLC_AVAILABLE\n        self._instance = None\n        self._media_player = None\n        self._is_muted = False\n        self._volume = 80\n        self._current_url = None\n        self._current_title = None\n        self._current_content_type = 'live'\n        self._fullscreen_win = None\n\n        # Read caching settings\n        settings = QSettings('IPTVPlayer', 'VLCSettings')\n        self._network_caching = settings.value('network_caching', 15000, type=int)\n        self._live_caching = settings.value('live_caching', 15000, type=int)\n        self._file_caching = settings.value('file_caching', 20000, type=int)\n\n        if not self._vlc_available:\n            self._external_player = ExternalVLCPlayer()\n        else:\n            self._external_player = None\n\n    # ------------------------------------------------------------------\n    # Playback\n    # ------------------------------------------------------------------\n\n    def play(self, url: str, title: str = "Stream", content_type: str = 'live'):\n        """Play a stream URL inside the embedded QFrame."""\n        self._current_url = url\n        self._current_title = title\n        self._current_content_type = content_type\n\n        if not self._vlc_available:\n            print("[EmbeddedVLC] python-vlc not available, falling back to external VLC.")\n            self._external_player.play_stream(url, title, False, content_type)\n            return\n\n        try:\n            # Stop any previous playback first\n            if self._media_player:\n                try:\n                    self._media_player.stop()\n                except Exception:\n                    pass\n                self._media_player = None\n                self._instance = None\n\n            cache_ms = self._live_caching if content_type == 'live' else self._file_caching\n\n            vlc_args = [\n                f'--network-caching={cache_ms}',\n                f'--live-caching={self._live_caching}',\n                f'--file-caching={self._file_caching}',\n                '--no-video-title-show',\n                '--quiet',\n            ]\n\n            self._instance = _vlc.Instance(' '.join(vlc_args))\n            self._media_player = self._instance.media_player_new()\n\n            self._attach_to_frame(self._video_frame)\n\n            media = self._instance.media_new(url)\n            self._media_player.set_media(media)\n            self._media_player.audio_set_volume(self._volume)\n            if self._is_muted:\n                self._media_player.audio_set_mute(True)\n            self._media_player.play()\n            print(f"[EmbeddedVLC] Playing: {title} ({url})")\n        except Exception as exc:\n            print(f"[EmbeddedVLC] Error starting playback: {exc}")\n\n    def stop(self):\n        """Stop playback."""\n        if self._media_player:\n            try:\n                self._media_player.stop()\n            except Exception as exc:\n                print(f"[EmbeddedVLC] Error stopping: {exc}")\n            finally:\n                self._media_player = None\n                self._instance = None\n        print("[EmbeddedVLC] Stopped.")\n\n    def pause(self):\n        """Pause playback."""\n        if self._media_player and self._vlc_available:\n            self._media_player.pause()\n\n    def resume(self):\n        """Resume playback."""\n        if self._media_player and self._vlc_available:\n            self._media_player.play()\n\n    # ------------------------------------------------------------------\n    # Volume / Mute\n    # ------------------------------------------------------------------\n\n    def set_volume(self, vol: int):\n        """Set volume (0–100)."""\n        self._volume = max(0, min(100, vol))\n        if self._media_player and self._vlc_available:\n            self._media_player.audio_set_volume(self._volume)\n\n    def toggle_mute(self):\n        """Toggle mute state."""\n        self._is_muted = not self._is_muted\n        if self._media_player and self._vlc_available:\n            self._media_player.audio_set_mute(self._is_muted)\n        return self._is_muted\n\n    # ------------------------------------------------------------------\n    # Fullscreen\n    # ------------------------------------------------------------------\n\n    def go_fullscreen(self):\n        """Open a dedicated fullscreen window with its own VLC instance.\n\n        The embedded player keeps running (audio only if VLC renders elsewhere,\n        or we pause it).  The fullscreen window creates a brand-new VLC instance\n        so it has a clean, dedicated HWND to render video into — this is the\n        only reliable approach on Windows.\n        """\n        if not self._vlc_available:\n            return\n        if not self._current_url:\n            return\n\n        # Pause the embedded player while fullscreen is open to avoid\n        # duplicate audio streams.\n        if self._media_player:\n            try:\n                self._media_player.pause()\n            except Exception:\n                pass\n\n        cache_ms = self._live_caching if self._current_content_type == 'live' else self._file_caching\n        vlc_args = [\n            f'--network-caching={cache_ms}',\n            f'--live-caching={self._live_caching}',\n            f'--file-caching={self._file_caching}',\n            '--no-video-title-show',\n            '--quiet',\n        ]\n\n        self._fullscreen_win = _FullscreenWindow(\n            url=self._current_url,\n            title=self._current_title or "Stream",\n            vlc_args=vlc_args,\n            volume=self._volume,\n            is_muted=self._is_muted,\n        )\n        self._fullscreen_win.finished.connect(self._on_fullscreen_closed)\n        self._fullscreen_win.showFullScreen()\n\n    def _on_fullscreen_closed(self):\n        """Resume the embedded player when fullscreen window is closed."""\n        self._fullscreen_win = None\n        if self._media_player and self._vlc_available:\n            try:\n                self._media_player.play()\n            except Exception:\n                pass\n\n    # ------------------------------------------------------------------\n    # State\n    # ------------------------------------------------------------------\n\n    @property\n    def is_playing(self) -> bool:\n        """Return True if the player is currently playing."""\n        if self._media_player and self._vlc_available:\n            return bool(self._media_player.is_playing())\n        return False\n\n    # ------------------------------------------------------------------\n    # Internal helpers\n    # ------------------------------------------------------------------\n\n    def _attach_to_frame(self, frame: QFrame):\n        """Attach the media player's output to a QFrame."""\n        if not self._media_player:\n            return\n        wid = int(frame.winId())\n        system = platform.system()\n        if system == "Windows":\n            self._media_player.set_hwnd(wid)\n        elif system == "Darwin":\n            self._media_player.set_nsobject(wid)\n        else:\n            self._media_player.set_xwindow(wid)\n\n\ndef get_embedded_vlc_player(video_frame: QFrame) -> EmbeddedVLCPlayer:\n    """Create and return a new EmbeddedVLCPlayer attached to *video_frame*."""\n    return EmbeddedVLCPlayer(video_frame)\n\n\n# Singleton instance\n_player_instance = None\n\ndef get_vlc_player():\n    """Get or create ExternalVLCPlayer singleton instance (used by Movies/Series/etc.)."""\n    global _player_instance\n    if _player_instance is None:\n        _player_instance = ExternalVLCPlayer()\n    return _player_instance
+"""
+VLC Player Module - Launches external VLC player and provides an embedded player.
+Added pre-warming functionality to reduce initial startup delay.
+Updated to include EmbeddedVLCPlayer using python-vlc bindings.
+Fullscreen: stop + re-create the media player on the fullscreen frame's HWND.
+"""
+
+import subprocess
+import os
+import platform
+import shutil
+import time
+import traceback
+from PyQt6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QFrame
+from PyQt6.QtCore import QSettings, Qt, QTimer
+from PyQt6.QtGui import QKeySequence, QShortcut
+
+# Attempt to import python-vlc; graceful fallback if not available
+try:
+    import vlc as _vlc
+    _VLC_AVAILABLE = True
+except Exception:
+    _vlc = None
+    _VLC_AVAILABLE = False
+    print("[VLC] Warning: python-vlc not available. EmbeddedVLCPlayer will fall back to external VLC.")
+
+
+class ExternalVLCPlayer:
+    def __init__(self):
+        self.vlc_path = self.find_vlc()
+        self.process = None
+        self.settings = QSettings('IPTVPlayer', 'VLCSettings')
+        
+        self.network_caching = self.settings.value('network_caching', 15000, type=int)
+        self.live_caching = self.settings.value('live_caching', 15000, type=int)
+        self.file_caching = self.settings.value('file_caching', 20000, type=int)
+        
+        print(f"[VLC] Found VLC at: {self.vlc_path}")
+        
+    def find_vlc(self):
+        """Find VLC executable on the system"""
+        if platform.system() == "Windows":
+            possible_paths = [
+                r"C:\Program Files\VideoLAN\VLC\vlc.exe",
+                r"C:\Program Files (x86)\VideoLAN\VLC\vlc.exe",
+            ]
+            for path in possible_paths:
+                if os.path.exists(path):
+                    return path
+            return shutil.which("vlc")
+        elif platform.system() == "Darwin":
+            return "/Applications/VLC.app/Contents/MacOS/VLC"
+        else:
+            return shutil.which("vlc") or "/usr/bin/vlc"
+    
+    def prewarm_vlc(self):
+        """
+        Launch and quickly close a dummy VLC instance to pre-load it into memory,
+        making the first real playback faster. This runs in the background.
+        """
+        if not self.vlc_path or not os.path.exists(self.vlc_path):
+            print("[VLC Pre-warm] VLC not found, skipping.")
+            return
+
+        print("[VLC Pre-warm] Starting VLC pre-warming process in background...")
+        
+        cmd = [
+            self.vlc_path,
+            '--intf', 'dummy',
+            '--vout', 'dummy',
+            '--no-one-instance'
+        ]
+
+        try:
+            prewarm_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(1.5)
+            prewarm_process.terminate()
+            prewarm_process.wait(timeout=1)
+            print("[VLC Pre-warm] VLC pre-warming complete.")
+        except Exception as e:
+            print(f"[VLC Pre-warm] Error during VLC pre-warming: {e}")
+
+    def update_buffer_settings(self, network_caching=None, live_caching=None, file_caching=None):
+        """Update buffer settings"""
+        if network_caching is not None:
+            self.network_caching = network_caching
+            self.settings.setValue('network_caching', network_caching)
+        
+        if live_caching is not None:
+            self.live_caching = live_caching
+            self.settings.setValue('live_caching', live_caching)
+        
+        if file_caching is not None:
+            self.file_caching = file_caching
+            self.settings.setValue('file_caching', file_caching)
+        
+        print(f"[VLC] Buffer settings updated - Network: {self.network_caching}ms, Live: {self.live_caching}ms, File: {self.file_caching}ms")
+    
+    def play_stream(self, url, title="Stream", fullscreen=False, content_type="live"):
+        """
+        Launch VLC to play a stream with robust settings and no notifications.
+        """
+        if not self.vlc_path or not os.path.exists(self.vlc_path):
+            print("[VLC] ERROR: VLC executable not found!")
+            QMessageBox.critical(None, "VLC Not Found", "VLC Media Player could not be found. Please ensure it is installed.")
+            return False
+        
+        try:
+            if self.process:
+                self.process.terminate()
+                self.process.wait(timeout=1)
+        except Exception:
+            if self.process:
+                self.process.kill()
+        finally:
+            self.process = None
+
+        print(f"[VLC] Launching VLC for '{title}'")
+        
+        cmd = [self.vlc_path, url]        
+        vlc_args = [
+            "--qt-start-minimized",
+            "--no-video-title-show",
+            "--no-osd",
+            "--no-interact",
+            "--quiet",
+            "--play-and-exit",
+            "--no-repeat",
+            "--no-loop",
+            "--no-one-instance",
+            "--qt-notification=0",
+            "--no-snapshot-preview",
+        ]
+
+        if fullscreen:
+            vlc_args.append("--fullscreen")
+
+        vlc_args.extend(["--meta-title", title, "--video-title", title])
+        
+        if content_type == "live":
+            buffer_size = self.live_caching
+        else:
+            buffer_size = self.file_caching
+        
+        vlc_args.append(f"--network-caching={buffer_size}")
+        print(f"[VLC] Applying buffer: {buffer_size}ms")
+
+        cmd.extend(vlc_args)
+        
+        print(f"[VLC] Command: {' '.join(cmd)}")
+        
+        try:
+            if platform.system() == "Windows":
+                CREATE_NO_WINDOW = 0x08000000
+                self.process = subprocess.Popen(cmd, creationflags=CREATE_NO_WINDOW,
+                                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            
+            print(f"[VLC] Process started with PID: {self.process.pid}")
+            return True
+            
+        except Exception as e:
+            print(f"[VLC] ERROR launching: {e}")
+            traceback.print_exc()
+            return False
+
+    def stop(self):
+        """Stop VLC if running"""
+        if self.process:
+            print("[VLC] Stopping playback...")
+            try:
+                self.process.terminate()
+                self.process.wait(timeout=2)
+            except Exception:
+                self.process.kill()
+            finally:
+                self.process = None
+
+
+class EmbeddedVLCPlayer:
+    """Embedded VLC player that renders video inside a QFrame widget using python-vlc.
+    Falls back to ExternalVLCPlayer.play_stream() if python-vlc is not available.
+
+    Fullscreen strategy: stop the current player, create a brand-new VLC instance
+    bound to the fullscreen QDialog's frame HWND, then start playback fresh.
+    When fullscreen closes, create another new instance bound to the embedded frame.
+    This is the only reliable approach on Windows since VLC cannot redirect video
+    output from one HWND to another on a live MediaPlayer instance.
+    """
+
+    def __init__(self, video_frame: QFrame):
+        self._video_frame = video_frame
+        self._vlc_available = _VLC_AVAILABLE
+        self._instance = None
+        self._media_player = None
+        self._is_muted = False
+        self._volume = 80
+        self._current_url = None
+        self._current_title = None
+        self._current_content_type = 'live'
+        self._fullscreen_dialog = None
+
+        # Read caching settings
+        settings = QSettings('IPTVPlayer', 'VLCSettings')
+        self._network_caching = settings.value('network_caching', 15000, type=int)
+        self._live_caching = settings.value('live_caching', 15000, type=int)
+        self._file_caching = settings.value('file_caching', 20000, type=int)
+
+        if not self._vlc_available:
+            self._external_player = ExternalVLCPlayer()
+        else:
+            self._external_player = None
+
+    # ------------------------------------------------------------------
+    # Playback
+    # ------------------------------------------------------------------
+
+    def play(self, url: str, title: str = "Stream", content_type: str = 'live'):
+        """Play a stream URL inside the embedded QFrame."""
+        self._current_url = url
+        self._current_title = title
+        self._current_content_type = content_type
+
+        if not self._vlc_available:
+            print("[EmbeddedVLC] python-vlc not available, falling back to external VLC.")
+            self._external_player.play_stream(url, title, False, content_type)
+            return
+
+        try:
+            self._create_and_attach_player(self._video_frame, url, title, content_type)
+        except Exception as exc:
+            print(f"[EmbeddedVLC] Error starting playback: {exc}")
+
+    def stop(self):
+        """Stop playback."""
+        if self._media_player:
+            try:
+                self._media_player.stop()
+            except Exception as exc:
+                print(f"[EmbeddedVLC] Error stopping: {exc}")
+            finally:
+                self._media_player = None
+                self._instance = None
+        print("[EmbeddedVLC] Stopped.")
+
+    def pause(self):
+        """Pause playback."""
+        if self._media_player and self._vlc_available:
+            self._media_player.pause()
+
+    def resume(self):
+        """Resume playback."""
+        if self._media_player and self._vlc_available:
+            self._media_player.play()
+
+    # ------------------------------------------------------------------
+    # Volume / Mute
+    # ------------------------------------------------------------------
+
+    def set_volume(self, vol: int):
+        """Set volume (0–100)."""
+        self._volume = max(0, min(100, vol))
+        if self._media_player and self._vlc_available:
+            self._media_player.audio_set_volume(self._volume)
+
+    def toggle_mute(self):
+        """Toggle mute state."""
+        self._is_muted = not self._is_muted
+        if self._media_player and self._vlc_available:
+            self._media_player.audio_set_mute(self._is_muted)
+        return self._is_muted
+
+    # ------------------------------------------------------------------
+    # Fullscreen
+    # ------------------------------------------------------------------
+
+    def go_fullscreen(self):
+        """Open a fullscreen dialog and start a fresh player instance attached to it."""
+        if not self._vlc_available or not self._current_url:
+            return
+
+        # Stop the embedded player first
+        if self._media_player:
+            try:
+                self._media_player.stop()
+            except Exception:
+                pass
+            self._media_player = None
+            self._instance = None
+
+        # Build the fullscreen dialog
+        self._fullscreen_dialog = QDialog()
+        self._fullscreen_dialog.setWindowTitle("VLC – Fullscreen")
+        self._fullscreen_dialog.setWindowFlags(
+            Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+        )
+        self._fullscreen_dialog.setStyleSheet("background-color: #000000;")
+        self._fullscreen_dialog.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+
+        layout = QVBoxLayout(self._fullscreen_dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        fs_frame = QFrame(self._fullscreen_dialog)
+        fs_frame.setStyleSheet("background-color: #000000;")
+        fs_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        layout.addWidget(fs_frame)
+
+        # Escape key closes fullscreen
+        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self._fullscreen_dialog)
+        esc_shortcut.activated.connect(self._fullscreen_dialog.close)
+
+        self._fullscreen_dialog.finished.connect(self._on_fullscreen_closed)
+        self._fullscreen_dialog.showFullScreen()
+
+        # Defer player creation until dialog surface is ready
+        def _start_fs():
+            self._create_and_attach_player(fs_frame)
+
+        QTimer.singleShot(150, _start_fs)
+
+    def _on_fullscreen_closed(self):
+        """Stop fullscreen player and restart playback in the original embedded frame."""
+        # Stop the fullscreen player
+        if self._media_player:
+            try:
+                self._media_player.stop()
+            except Exception:
+                pass
+            self._media_player = None
+            self._instance = None
+
+        self._fullscreen_dialog = None
+
+        # Restart in the embedded frame after a short delay
+        if self._current_url:
+            QTimer.singleShot(100, lambda: self._create_and_attach_player(self._video_frame))
+
+    # ------------------------------------------------------------------
+    # State
+    # ------------------------------------------------------------------
+
+    @property
+    def is_playing(self) -> bool:
+        """Return True if the player is currently playing."""
+        if self._media_player and self._vlc_available:
+            return bool(self._media_player.is_playing())
+        return False
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _create_and_attach_player(self, frame: QFrame, url: str = None, title: str = None, content_type: str = None):
+        """
+        Create a fresh VLC instance + media player, attach it to *frame*, and start playback.
+        Uses stored current URL/title/content_type if not provided.
+        """
+        url = url or self._current_url
+        title = title or self._current_title or "Stream"
+        content_type = content_type or self._current_content_type or 'live'
+
+        if not url:
+            return
+
+        # Stop/release any previous player
+        if self._media_player:
+            try:
+                self._media_player.stop()
+            except Exception:
+                pass
+            self._media_player = None
+            self._instance = None
+
+        cache_ms = self._live_caching if content_type == 'live' else self._file_caching
+        vlc_args = [
+            f'--network-caching={cache_ms}',
+            f'--live-caching={self._live_caching}',
+            f'--file-caching={self._file_caching}',
+            '--no-video-title-show',
+            '--quiet',
+        ]
+
+        self._instance = _vlc.Instance(' '.join(vlc_args))
+        self._media_player = self._instance.media_player_new()
+
+        self._attach_to_frame(frame)
+
+        media = self._instance.media_new(url)
+        self._media_player.set_media(media)
+        self._media_player.audio_set_volume(self._volume)
+        if self._is_muted:
+            self._media_player.audio_set_mute(True)
+        self._media_player.play()
+        print(f"[EmbeddedVLC] Playing on frame {frame}: {title} ({url})")
+
+    def _attach_to_frame(self, frame: QFrame):
+        """Attach the media player's output to a QFrame."""
+        if not self._media_player:
+            return
+        frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        wid = int(frame.winId())
+        system = platform.system()
+        if system == "Windows":
+            self._media_player.set_hwnd(wid)
+        elif system == "Darwin":
+            self._media_player.set_nsobject(wid)
+        else:
+            self._media_player.set_xwindow(wid)
+
+
+def get_embedded_vlc_player(video_frame: QFrame) -> EmbeddedVLCPlayer:
+    """Create and return a new EmbeddedVLCPlayer attached to *video_frame*."""
+    return EmbeddedVLCPlayer(video_frame)
+
+
+# Singleton instance
+_player_instance = None
+
+def get_vlc_player():
+    """Get or create ExternalVLCPlayer singleton instance (used by Movies/Series/etc.)."""
+    global _player_instance
+    if _player_instance is None:
+        _player_instance = ExternalVLCPlayer()
+    return _player_instance
