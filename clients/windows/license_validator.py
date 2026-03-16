@@ -159,6 +159,7 @@ class LicenseValidator:
         self.settings = QSettings('IPTVPlayer', 'License')
         self.license_key = None
         self.user_settings = {}
+        self.cloud_profiles = []
         self.hardware_id = self.get_hardware_id()
         self.is_validated = False
         
@@ -210,6 +211,7 @@ class LicenseValidator:
             if validation_result.get('success'):
                 self.license_key = stored_license
                 self.user_settings = validation_result.get('user_settings', {})
+                self.cloud_profiles = validation_result.get('cloud_profiles', [])
                 self.is_validated = True
                 
                 try:
@@ -220,7 +222,9 @@ class LicenseValidator:
                 except Exception as e:
                     print(f"[License] Error loading cached settings: {e}")
                 
-                print("[License] ✅ Stored license validated successfully")
+                self.settings.setValue('cloud_profiles', json.dumps(self.cloud_profiles))
+                self.settings.sync()
+                print(f"[License] ✅ Stored license validated successfully, {len(self.cloud_profiles)} cloud profile(s)")
                 return True
             else:
                 print(f"[License] ❌ Stored license invalid: {validation_result.get('message')}")
@@ -236,8 +240,10 @@ class LicenseValidator:
     def _clear_stored_license(self):
         self.settings.remove('license_key')
         self.settings.remove('user_settings')
+        self.settings.remove('cloud_profiles')
         self.license_key = None
         self.user_settings = {}
+        self.cloud_profiles = []
         self.is_validated = False
         print("[License] Cleared stored license data")
     
@@ -255,10 +261,12 @@ class LicenseValidator:
             if validation_result.get('success'):
                 self.license_key = license_key
                 self.user_settings = validation_result.get('user_settings', {})
+                self.cloud_profiles = validation_result.get('cloud_profiles', [])
                 self.is_validated = True
                 
                 self.settings.setValue('license_key', license_key)
                 self.settings.setValue('user_settings', json.dumps(self.user_settings))
+                self.settings.setValue('cloud_profiles', json.dumps(self.cloud_profiles))
                 self.settings.sync()
                 
                 print("[License] ✅ License validation successful")
@@ -339,6 +347,20 @@ class LicenseValidator:
         except Exception as e:
             print(f"[License] Error loading stored settings: {e}")
         return {}
+    
+    def get_cloud_profiles(self):
+        """Return cloud profiles; falls back to QSettings cache if not yet loaded."""
+        if self.cloud_profiles:
+            return self.cloud_profiles
+        try:
+            stored = self.settings.value('cloud_profiles', '[]')
+            profiles = json.loads(stored)
+            if profiles:
+                self.cloud_profiles = profiles
+                return self.cloud_profiles
+        except Exception as e:
+            print(f"[License] Error loading cached cloud profiles: {e}")
+        return []
     
     def sync_user_settings(self) -> bool:
         if not self.is_validated:
@@ -433,7 +455,10 @@ class LicenseValidator:
         validation_result = self._validate_with_server(self.license_key)
         if validation_result.get('success'):
             self.user_settings = validation_result.get('user_settings', {})
+            self.cloud_profiles = validation_result.get('cloud_profiles', [])
             self.is_validated = True
+            self.settings.setValue('cloud_profiles', json.dumps(self.cloud_profiles))
+            self.settings.sync()
             print("[License] ✅ Force revalidation successful")
             return True
         else:
