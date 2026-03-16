@@ -19,6 +19,9 @@ from license_validator import validate_app_license, get_license_validator
 # Prevent Python from writing .pyc files and creating __pycache__ directories
 sys.dont_write_bytecode = True
 
+# Duration (ms) the branded splash screen is displayed after a successful license validation
+BRANDED_SPLASH_DURATION_MS = 7000
+
 def create_splash_screen(app_name=None, logo_url=None):
     """Create a professional splash screen"""
     if app_name is None:
@@ -174,21 +177,12 @@ def validate_license_with_splash(app):
     """Validate license with splash screen"""
     print("[Main] Starting license validation process...")
     
-    # Create and show splash screen
-    splash = create_splash_screen()
-    splash.show()
-    app.processEvents()
-    
-    # Record when the splash was first shown
-    splash_start = time.time()
-    
     try:
-        # Validate license
+        # Validate license silently — no splash shown yet
         print("[Main] Calling license validator...")
         license_valid = validate_app_license()
         
         if not license_valid:
-            splash.close()
             print("[Main] ❌ License validation failed")
             
             # Show error message
@@ -206,28 +200,40 @@ def validate_license_with_splash(app):
         license_validator = get_license_validator()
         customizations = license_validator.get_app_customizations()
         
-        # Update splash with custom app name and logo from portal
         custom_app_name = customizations.get('app_name', 'X87 Player')
         logo_url = customizations.get('logo_url', '')
-        update_splash_screen(splash, custom_app_name, logo_url)
         app.setApplicationName(custom_app_name)
         
-        # Keep splash visible for at least 5 seconds total
-        elapsed = time.time() - splash_start
-        remaining_ms = max(0, int((5.0 - elapsed) * 1000))
-        if remaining_ms > 0:
-            loop = QEventLoop()
-            QTimer.singleShot(remaining_ms, loop.quit)
-            loop.exec()
+        # Download logo if a URL was provided (only allow http/https)
+        logo_pixmap = None
+        if logo_url and logo_url.startswith(("http://", "https://")):
+            try:
+                response = requests.get(logo_url, timeout=5)
+                if response.status_code == 200:
+                    tmp_pixmap = QPixmap()
+                    tmp_pixmap.loadFromData(response.content)
+                    if not tmp_pixmap.isNull():
+                        logo_pixmap = tmp_pixmap
+            except Exception as e:
+                print(f"[Main] Could not download logo from {logo_url}: {e}")
         
-        # Close splash after the minimum display time
+        # Create and show the branded splash (only now, after validation)
+        pixmap = _render_splash_pixmap(custom_app_name, logo_pixmap=logo_pixmap)
+        splash = QSplashScreen(pixmap)
+        splash.show()
+        app.processEvents()
+        
+        # Keep the branded splash visible for exactly BRANDED_SPLASH_DURATION_MS
+        loop = QEventLoop()
+        QTimer.singleShot(BRANDED_SPLASH_DURATION_MS, loop.quit)
+        loop.exec()
+        
         splash.close()
         
         print(f"[Main] License validation complete - App Name: {custom_app_name}")
         return True, customizations
         
     except Exception as e:
-        splash.close()
         print(f"[Main] 💥 Error during license validation: {e}")
         
         QMessageBox.critical(
