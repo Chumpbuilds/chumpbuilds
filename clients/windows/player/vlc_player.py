@@ -12,7 +12,7 @@ import shutil
 import time
 import traceback
 from PyQt6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QFrame
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, Qt, QTimer
 
 # Attempt to import python-vlc; graceful fallback if not available
 try:
@@ -200,6 +200,7 @@ class EmbeddedVLCPlayer:
         self._current_title = None
         self._current_content_type = 'live'
         self._fullscreen_dialog = None
+        self._fs_frame = None
 
         # Read caching settings
         settings = QSettings('IPTVPlayer', 'VLCSettings')
@@ -319,24 +320,33 @@ class EmbeddedVLCPlayer:
 
         layout = QVBoxLayout(self._fullscreen_dialog)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        fs_frame = QFrame(self._fullscreen_dialog)
-        fs_frame.setStyleSheet("background-color: #000000;")
-        layout.addWidget(fs_frame)
+        self._fs_frame = QFrame(self._fullscreen_dialog)
+        self._fs_frame.setStyleSheet("background-color: #000000;")
+        # Give it a native HWND so VLC can render into it
+        self._fs_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        layout.addWidget(self._fs_frame)
 
         self._fullscreen_dialog.showFullScreen()
 
-        # Re-attach player to fullscreen frame once it is visible
-        self._attach_to_frame(fs_frame)
+        # Delay attachment until the native window handle is ready
+        QTimer.singleShot(150, self._attach_fs_frame)
 
         # When dialog closes, re-attach to the original embedded frame
         self._fullscreen_dialog.finished.connect(self._on_fullscreen_closed)
 
+    def _attach_fs_frame(self):
+        """Delayed attachment of player to the fullscreen frame."""
+        if self._media_player and self._vlc_available and self._fs_frame:
+            self._attach_to_frame(self._fs_frame)
+
     def _on_fullscreen_closed(self):
         """Re-attach the media player to the original embedded frame."""
-        if self._media_player and self._vlc_available:
-            self._attach_to_frame(self._video_frame)
+        self._fs_frame = None
         self._fullscreen_dialog = None
+        if self._media_player and self._vlc_available:
+            QTimer.singleShot(150, lambda: self._attach_to_frame(self._video_frame))
 
     # ------------------------------------------------------------------
     # State

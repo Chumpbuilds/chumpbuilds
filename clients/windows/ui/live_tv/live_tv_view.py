@@ -382,7 +382,9 @@ class LiveTVView(QWidget):
         # ── 1. Embedded video player frame ────────────────────────────────────
         self.video_frame = QFrame()
         self.video_frame.setStyleSheet("background-color: #000000; border-radius: 6px;")
-        self.video_frame.setMinimumHeight(280)
+        self.video_frame.setMinimumHeight(360)
+        # Give the video frame a native HWND so VLC can render directly into it
+        self.video_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
 
         # Placeholder label shown when nothing is playing
         self.video_placeholder = QLabel("📺  Select a channel and click Play to start streaming")
@@ -397,7 +399,7 @@ class LiveTVView(QWidget):
         _vf_layout.addWidget(self.video_placeholder)
         _vf_layout.addStretch()
 
-        layout.addWidget(self.video_frame)
+        layout.addWidget(self.video_frame, stretch=3)
 
         # Create the embedded player
         self.embedded_player = get_embedded_vlc_player(self.video_frame)
@@ -529,60 +531,25 @@ class LiveTVView(QWidget):
 
         layout.addLayout(controls_layout)
 
-        # ── 3. Channel Info Section ───────────────────────────────────────────
-        self.channel_info_frame = QFrame()
-        self.channel_info_frame.setStyleSheet("""
-            QFrame {
-                background-color: #2c3e50;
-                border-radius: 10px;
-                padding: 15px;
-            }
-        """)
-        self.channel_info_frame.setMinimumHeight(110)
-
-        info_layout = QHBoxLayout(self.channel_info_frame)
-        info_layout.setSpacing(15)
-        info_layout.setContentsMargins(10, 10, 10, 10)
-
-        # Channel logo
+        # ── 3. Channel Info (hidden orphan widgets — referenced by other methods) ──
+        # Not added to the layout so the video player fills more space,
+        # but kept as attributes so on_channel_selected / on_epg_loaded / etc. don't crash.
         self.channel_logo = QLabel()
         self.channel_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.channel_logo.setFixedSize(80, 80)
-        self.channel_logo.setStyleSheet("""
-            QLabel {
-                background-color: #34495e;
-                border-radius: 8px;
-            }
-        """)
         self.channel_logo.setText("📺")
         self.channel_logo.setScaledContents(True)
         logo_font = QFont()
         logo_font.setPointSize(32)
         self.channel_logo.setFont(logo_font)
-        info_layout.addWidget(self.channel_logo)
-
-        # Channel name and info
-        name_layout = QVBoxLayout()
-        name_layout.setSpacing(5)
 
         self.channel_name = QLabel("No Channel Selected")
         name_font = QFont()
         name_font.setPointSize(14)
         name_font.setBold(True)
         self.channel_name.setFont(name_font)
-        self.channel_name.setStyleSheet("color: white; background: transparent;")
-        self.channel_name.setWordWrap(True)
-        self.channel_name.setMaximumHeight(60)
-        name_layout.addWidget(self.channel_name)
 
         self.channel_info_label = QLabel("Select a channel to view program guide")
-        self.channel_info_label.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 11px; background: transparent;")
-        self.channel_info_label.setWordWrap(True)
-        name_layout.addWidget(self.channel_info_label)
-
-        info_layout.addLayout(name_layout, 1)
-
-        layout.addWidget(self.channel_info_frame)
 
         # ── 4. EPG Section ────────────────────────────────────────────────────
         epg_header = QHBoxLayout()
@@ -624,7 +591,7 @@ class LiveTVView(QWidget):
                 background-color: rgba(52, 152, 219, 0.3);
             }
         """)
-        layout.addWidget(self.epg_list)
+        layout.addWidget(self.epg_list, stretch=2)
 
         # ── 5. Status label ───────────────────────────────────────────────────
         self.status_label = QLabel("")
@@ -946,6 +913,13 @@ class LiveTVView(QWidget):
         channel_name = self.current_channel.get('name', 'Unknown')
         if stream_id:
             stream_url = self.api.get_stream_url(stream_id, 'live')
+            # Stop the embedded player first to avoid two streams running simultaneously
+            self.embedded_player.stop()
+            self.video_placeholder.show()
+            self.stop_btn.setEnabled(False)
+            self.fullscreen_btn.setEnabled(False)
+            self.status_label.setText(f"↗ Playing in external VLC: {channel_name}")
+            self.status_label.setStyleSheet("color: #f39c12; padding: 5px;")
             if not self.player.play_stream(stream_url, channel_name, False, 'live'):
                 QMessageBox.critical(self, "VLC Error",
                                      "Could not launch VLC. Please make sure VLC Media Player is installed.")
