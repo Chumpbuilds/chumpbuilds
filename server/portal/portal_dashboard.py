@@ -383,10 +383,27 @@ def update_branding():
             save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
             os.makedirs(save_dir, exist_ok=True)
 
+            # Delete old logo file if one exists
+            try:
+                conn_check = get_db_connection()
+                try:
+                    cur_check = conn_check.cursor()
+                    cur_check.execute('SELECT logo_url FROM customizations WHERE license_key = ?', (license_key,))
+                    existing = cur_check.fetchone()
+                finally:
+                    conn_check.close()
+                if existing and existing['logo_url']:
+                    old_filename = existing['logo_url'].rsplit('/', 1)[-1]
+                    old_path = os.path.join(save_dir, old_filename)
+                    if os.path.isfile(old_path):
+                        os.remove(old_path)
+            except Exception:
+                pass  # best-effort
+
             # Generate safe filename with license key prefix and timestamp for cache-busting
             filename = secure_filename(f"{license_key}_{int(time.time())}_{file.filename}")
             file_path = os.path.join(save_dir, filename)
-            
+
             try:
                 file.save(file_path)
                 # Generate full public URL for the file
@@ -401,19 +418,8 @@ def update_branding():
     cursor = conn.cursor()
     
     try:
-        cursor.execute('SELECT id, logo_url FROM customizations WHERE license_key = ?', (license_key,))
+        cursor.execute('SELECT id FROM customizations WHERE license_key = ?', (license_key,))
         exists = cursor.fetchone()
-
-        # If a new logo was uploaded and an old one exists, delete the old file from disk
-        if logo_url and exists and exists['logo_url']:
-            try:
-                old_save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
-                old_filename = exists['logo_url'].rsplit('/', 1)[-1]
-                old_file_path = os.path.join(old_save_dir, old_filename)
-                if os.path.isfile(old_file_path):
-                    os.remove(old_file_path)
-            except Exception:
-                current_app.logger.exception('Failed to delete old logo file')
 
         if exists:
             if logo_url:
