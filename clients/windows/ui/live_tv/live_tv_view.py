@@ -6,11 +6,12 @@ Added Favorites functionality
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
                             QListWidgetItem, QLabel, QPushButton, QLineEdit,
-                            QSplitter, QProgressBar, QMessageBox, QFrame, QMenu)
+                            QSplitter, QProgressBar, QMessageBox, QFrame, QMenu,
+                            QSlider)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QPoint
 from PyQt6.QtGui import QFont, QPixmap, QColor, QAction, QCursor
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from player.vlc_player import get_vlc_player
+from player.vlc_player import get_vlc_player, get_embedded_vlc_player
 from epg import EPGCache, EPGParser
 from epg.epg_loader import EPGLoaderThread
 from datetime import datetime
@@ -111,8 +112,8 @@ class LiveTVView(QWidget):
         splitter.addWidget(self.channels_widget)
         splitter.addWidget(self.epg_widget)
         
-        # Set column widths (25%, 25%, 50%)
-        splitter.setSizes([300, 300, 600])
+        # Set column widths (right column gets extra space for the embedded player)
+        splitter.setSizes([220, 220, 760])
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 2)
@@ -366,19 +367,169 @@ class LiveTVView(QWidget):
                 self.window().update_favorites_count()
     
     def create_epg_column(self):
-        """Create the EPG column with professional list design - FIXED TEXT CUTOFF"""
+        """Create the EPG column with embedded VLC player, controls, channel info, and EPG."""
         self.epg_widget = QWidget()
         self.epg_widget.setStyleSheet("""
             QWidget {
                 background-color: #1e1e1e;
             }
         """)
-        
+
         layout = QVBoxLayout(self.epg_widget)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
-        # Channel Info Section - FIXED HEIGHT
+        layout.setSpacing(10)
+
+        # ── 1. Embedded video player frame ────────────────────────────────────
+        self.video_frame = QFrame()
+        self.video_frame.setStyleSheet("background-color: #000000; border-radius: 6px;")
+        self.video_frame.setMinimumHeight(280)
+
+        # Placeholder label shown when nothing is playing
+        self.video_placeholder = QLabel("📺  Select a channel and click Play to start streaming")
+        self.video_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_placeholder.setWordWrap(True)
+        self.video_placeholder.setStyleSheet("color: #666666; font-size: 13px; background: transparent;")
+
+        # Use a layout so the placeholder is centered inside the frame
+        _vf_layout = QVBoxLayout(self.video_frame)
+        _vf_layout.setContentsMargins(10, 10, 10, 10)
+        _vf_layout.addStretch()
+        _vf_layout.addWidget(self.video_placeholder)
+        _vf_layout.addStretch()
+
+        layout.addWidget(self.video_frame)
+
+        # Create the embedded player
+        self.embedded_player = get_embedded_vlc_player(self.video_frame)
+
+        # ── 2. Player control bar ─────────────────────────────────────────────
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(8)
+
+        self.play_embedded_btn = QPushButton("▶ Play")
+        self.play_embedded_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #229954; }
+            QPushButton:pressed { background-color: #1e8449; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.play_embedded_btn.setEnabled(False)
+        self.play_embedded_btn.clicked.connect(self.play_channel_embedded)
+
+        self.stop_btn = QPushButton("⏹ Stop")
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #c0392b; }
+            QPushButton:pressed { background-color: #a93226; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_playback)
+
+        self.fullscreen_btn = QPushButton("⛶ Fullscreen")
+        self.fullscreen_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #2980b9; }
+            QPushButton:pressed { background-color: #21618c; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.fullscreen_btn.setEnabled(False)
+        self.fullscreen_btn.clicked.connect(self.embedded_player.go_fullscreen)
+
+        self.open_external_btn = QPushButton("↗ Open in VLC")
+        self.open_external_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7f8c8d;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #6c7a7d; }
+            QPushButton:pressed { background-color: #5d6d6e; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.open_external_btn.setEnabled(False)
+        self.open_external_btn.clicked.connect(self.play_channel_external)
+
+        # Volume slider
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setValue(80)
+        self.volume_slider.setFixedWidth(100)
+        self.volume_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #34495e;
+                height: 5px;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #3498db;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #3498db;
+                border-radius: 2px;
+            }
+        """)
+        self.volume_slider.valueChanged.connect(self.embedded_player.set_volume)
+
+        self.mute_btn = QPushButton("🔊")
+        self.mute_btn.setFixedWidth(36)
+        self.mute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2c3e50;
+                color: white;
+                border: none;
+                padding: 6px;
+                font-size: 14px;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #34495e; }
+        """)
+        self.mute_btn.clicked.connect(self._on_mute_toggled)
+
+        controls_layout.addWidget(self.play_embedded_btn)
+        controls_layout.addWidget(self.stop_btn)
+        controls_layout.addWidget(self.fullscreen_btn)
+        controls_layout.addWidget(self.open_external_btn)
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.mute_btn)
+        controls_layout.addWidget(self.volume_slider)
+
+        layout.addLayout(controls_layout)
+
+        # ── 3. Channel Info Section ───────────────────────────────────────────
         self.channel_info_frame = QFrame()
         self.channel_info_frame.setStyleSheet("""
             QFrame {
@@ -387,14 +538,13 @@ class LiveTVView(QWidget):
                 padding: 15px;
             }
         """)
-        # Remove setMaximumHeight to allow text to display properly
         self.channel_info_frame.setMinimumHeight(110)
-        
+
         info_layout = QHBoxLayout(self.channel_info_frame)
         info_layout.setSpacing(15)
         info_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Channel logo - SMALLER
+
+        # Channel logo
         self.channel_logo = QLabel()
         self.channel_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.channel_logo.setFixedSize(80, 80)
@@ -410,31 +560,31 @@ class LiveTVView(QWidget):
         logo_font.setPointSize(32)
         self.channel_logo.setFont(logo_font)
         info_layout.addWidget(self.channel_logo)
-        
-        # Channel name and info - PROPERLY SIZED
+
+        # Channel name and info
         name_layout = QVBoxLayout()
         name_layout.setSpacing(5)
-        
+
         self.channel_name = QLabel("No Channel Selected")
         name_font = QFont()
-        name_font.setPointSize(14)  # Slightly smaller to fit better
+        name_font.setPointSize(14)
         name_font.setBold(True)
         self.channel_name.setFont(name_font)
         self.channel_name.setStyleSheet("color: white; background: transparent;")
         self.channel_name.setWordWrap(True)
-        self.channel_name.setMaximumHeight(60)  # Allow 2-3 lines
+        self.channel_name.setMaximumHeight(60)
         name_layout.addWidget(self.channel_name)
-        
+
         self.channel_info_label = QLabel("Select a channel to view program guide")
         self.channel_info_label.setStyleSheet("color: rgba(255, 255, 255, 0.7); font-size: 11px; background: transparent;")
         self.channel_info_label.setWordWrap(True)
         name_layout.addWidget(self.channel_info_label)
-        
-        info_layout.addLayout(name_layout, 1)  # Stretch factor to take remaining space
-        
+
+        info_layout.addLayout(name_layout, 1)
+
         layout.addWidget(self.channel_info_frame)
-        
-        # EPG Section Header
+
+        # ── 4. EPG Section ────────────────────────────────────────────────────
         epg_header = QHBoxLayout()
         epg_label = QLabel("📅 Program Guide")
         epg_label_font = QFont()
@@ -443,16 +593,16 @@ class LiveTVView(QWidget):
         epg_label.setFont(epg_label_font)
         epg_label.setStyleSheet("color: #3498db; padding: 5px;")
         epg_header.addWidget(epg_label)
-        
+
         # EPG loading/cache indicator
         self.epg_loading = QLabel("")
         self.epg_loading.setStyleSheet("color: #95a5a6; font-size: 11px;")
         epg_header.addWidget(self.epg_loading)
         epg_header.addStretch()
-        
+
         layout.addLayout(epg_header)
-        
-        # EPG List - Professional Table Style
+
+        # EPG List
         self.epg_list = QListWidget()
         self.epg_list.setStyleSheet("""
             QListWidget {
@@ -475,65 +625,8 @@ class LiveTVView(QWidget):
             }
         """)
         layout.addWidget(self.epg_list)
-        
-        # Play controls
-        controls_layout = QHBoxLayout()
-        
-        self.play_button = QPushButton("▶ Play Channel (Fullscreen)")
-        self.play_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #229954;
-            }
-            QPushButton:pressed {
-                background-color: #1e8449;
-            }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-            }
-        """)
-        self.play_button.clicked.connect(lambda: self.play_selected_channel(True))
-        self.play_button.setEnabled(False)
-        
-        self.play_windowed_button = QPushButton("▶ Play (Windowed)")
-        self.play_windowed_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-            }
-        """)
-        self.play_windowed_button.clicked.connect(lambda: self.play_selected_channel(False))
-        self.play_windowed_button.setEnabled(False)
-        
-        controls_layout.addWidget(self.play_button)
-        controls_layout.addWidget(self.play_windowed_button)
-        controls_layout.addStretch()
-        
-        layout.addLayout(controls_layout)
-        
-        # Status label
+
+        # ── 5. Status label ───────────────────────────────────────────────────
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #2ecc71; padding: 5px;")
         layout.addWidget(self.status_label)
@@ -678,8 +771,8 @@ class LiveTVView(QWidget):
             self.channel_logo.setText("📺")
         
         # Enable play buttons
-        self.play_button.setEnabled(True)
-        self.play_windowed_button.setEnabled(True)
+        self.play_embedded_btn.setEnabled(True)
+        self.open_external_btn.setEnabled(True)
         
         # Load EPG data using new EPG loader with 24-hour cache
         stream_id = channel_data.get('stream_id')
@@ -808,25 +901,73 @@ class LiveTVView(QWidget):
         reply.deleteLater()
     
     def play_selected_channel(self, fullscreen=True):
-        """Play the selected channel"""
-        if self.current_channel:
-            self.play_channel(self.channels_list.currentItem(), fullscreen)
-    
+        """Play the selected channel – embedded or fullscreen depending on flag."""
+        if not self.current_channel:
+            return
+        stream_id = self.current_channel.get('stream_id')
+        channel_name = self.current_channel.get('name', 'Unknown')
+        if not stream_id:
+            return
+        stream_url = self.api.get_stream_url(stream_id, 'live')
+        if fullscreen:
+            # Start embedded then immediately go fullscreen
+            self._start_embedded_playback(stream_url, channel_name)
+            self.embedded_player.go_fullscreen()
+        else:
+            self._start_embedded_playback(stream_url, channel_name)
+
     def play_channel(self, item, fullscreen=True):
-        """Play selected channel in external VLC"""
+        """Play selected channel – called from double-click or context menu."""
         if not item:
             return
-        
         channel_data = item.data(Qt.ItemDataRole.UserRole)
         if channel_data:
             stream_id = channel_data.get('stream_id')
             channel_name = channel_data.get('name', 'Unknown')
-            
             if stream_id:
                 stream_url = self.api.get_stream_url(stream_id, 'live')
-                
-                if self.player.play_stream(stream_url, channel_name, fullscreen, 'live'):
-                    self.status_label.setText(f"✓ Now playing: {channel_name}")
-                else:
-                    QMessageBox.critical(self, "VLC Error", 
-                                       "Could not launch VLC. Please make sure VLC Media Player is installed.")
+                self._start_embedded_playback(stream_url, channel_name)
+
+    def play_channel_embedded(self):
+        """Slot: play current channel embedded (triggered by ▶ Play button)."""
+        if not self.current_channel:
+            return
+        stream_id = self.current_channel.get('stream_id')
+        channel_name = self.current_channel.get('name', 'Unknown')
+        if stream_id:
+            stream_url = self.api.get_stream_url(stream_id, 'live')
+            self._start_embedded_playback(stream_url, channel_name)
+
+    def play_channel_external(self):
+        """Slot: open current channel in external VLC (↗ Open in VLC button)."""
+        if not self.current_channel:
+            return
+        stream_id = self.current_channel.get('stream_id')
+        channel_name = self.current_channel.get('name', 'Unknown')
+        if stream_id:
+            stream_url = self.api.get_stream_url(stream_id, 'live')
+            if not self.player.play_stream(stream_url, channel_name, False, 'live'):
+                QMessageBox.critical(self, "VLC Error",
+                                     "Could not launch VLC. Please make sure VLC Media Player is installed.")
+
+    def _start_embedded_playback(self, stream_url: str, channel_name: str):
+        """Internal helper: begin embedded playback and update UI."""
+        self.embedded_player.play(stream_url, channel_name, 'live')
+        self.video_placeholder.hide()
+        self.stop_btn.setEnabled(True)
+        self.fullscreen_btn.setEnabled(True)
+        self.status_label.setText(f"▶ Now playing: {channel_name}")
+        self.status_label.setStyleSheet("color: #2ecc71; padding: 5px;")
+
+    def stop_playback(self):
+        """Stop embedded playback and reset the video frame."""
+        self.embedded_player.stop()
+        self.video_placeholder.show()
+        self.stop_btn.setEnabled(False)
+        self.fullscreen_btn.setEnabled(False)
+        self.status_label.setText("")
+
+    def _on_mute_toggled(self):
+        """Toggle mute and update the mute button icon."""
+        is_muted = self.embedded_player.toggle_mute()
+        self.mute_btn.setText("🔇" if is_muted else "🔊")
