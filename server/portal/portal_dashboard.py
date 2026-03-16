@@ -10,6 +10,7 @@ from portal_database import get_db_connection
 from datetime import datetime
 import json
 import os
+import time
 from werkzeug.utils import secure_filename
 
 dashboard_bp = Blueprint('dashboard', __name__)
@@ -377,13 +378,13 @@ def update_branding():
             if file_size > MAX_LOGO_SIZE:
                 flash('❌ Logo file is too large. Maximum allowed size is 5MB.', 'error')
                 return redirect(url_for('dashboard.customer_dashboard'))
-            
+
             # Make directory if not exists
             save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
             os.makedirs(save_dir, exist_ok=True)
-            
-            # Generate safe filename with license key prefix to avoid collisions
-            filename = secure_filename(f"{license_key}_{file.filename}")
+
+            # Generate safe filename with license key prefix and timestamp for cache-busting
+            filename = secure_filename(f"{license_key}_{int(time.time())}_{file.filename}")
             file_path = os.path.join(save_dir, filename)
             
             try:
@@ -400,9 +401,20 @@ def update_branding():
     cursor = conn.cursor()
     
     try:
-        cursor.execute('SELECT id FROM customizations WHERE license_key = ?', (license_key,))
+        cursor.execute('SELECT id, logo_url FROM customizations WHERE license_key = ?', (license_key,))
         exists = cursor.fetchone()
-        
+
+        # If a new logo was uploaded and an old one exists, delete the old file from disk
+        if logo_url and exists and exists['logo_url']:
+            try:
+                old_save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
+                old_filename = exists['logo_url'].rsplit('/', 1)[-1]
+                old_file_path = os.path.join(old_save_dir, old_filename)
+                if os.path.isfile(old_file_path):
+                    os.remove(old_file_path)
+            except Exception:
+                current_app.logger.exception('Failed to delete old logo file')
+
         if exists:
             if logo_url:
                 # Update both if logo provided
@@ -485,7 +497,39 @@ def remove_logo():
                 if os.path.isfile(file_path):
                     os.remove(file_path)
             except Exception:
-                pass  # File deletion is best-effort; continue regardless
+                current_app.logger.exception('Failed to delete logo file')
+        cursor.execute(
+            'UPDATE customizations SET logo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?',
+            (license_key,)
+        )
+        conn.commit()
+        flash('🗑️ Logo removed successfully.', 'success')
+    except Exception as e:
+        flash(f'❌ Error removing logo: {e}', 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('dashboard.customer_dashboard'))
+
+@dashboard_bp.route('/delete_logo', methods=['POST'])
+@login_required
+def delete_logo():
+    license_key = session.get('license_key')
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT logo_url FROM customizations WHERE license_key = ?', (license_key,))
+        row = cursor.fetchone()
+        if row and row['logo_url']:
+            # Attempt to delete the file from disk
+            try:
+                save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
+                logo_url = row['logo_url']
+                filename = logo_url.rsplit('/', 1)[-1]
+                file_path = os.path.join(save_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            except Exception:
+                current_app.logger.exception('Failed to delete logo file')
         cursor.execute(
             'UPDATE customizations SET logo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?',
             (license_key,)
