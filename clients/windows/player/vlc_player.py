@@ -3,12 +3,27 @@ VLC Player Module - Launches external VLC player and provides an embedded player
 Added pre-warming functionality to reduce initial startup delay.
 Updated to include EmbeddedVLCPlayer using python-vlc bindings.
 Fullscreen: stop + re-create the media player on the fullscreen frame's HWND.
+
+Prewarm feature
+---------------
+At app startup, ExternalVLCPlayer.prewarm_vlc() launches a short-lived dummy
+VLC process in a background thread.  This warms the OS file-system cache for
+the VLC executable and its plugins so that the *first* real Play action incurs
+far less cold-start overhead.
+
+Configuration (env vars, read at ExternalVLCPlayer.__init__ time):
+  VLC_PREWARM_ENABLED   – set to "0" to disable prewarm (default: enabled)
+  VLC_NETWORK_CACHING_MS – override network/live-caching in ms (e.g. "500")
+
+Both values can also be persisted through QSettings ('IPTVPlayer'/'VLCSettings')
+via the Settings dialog.
 """
 
 import subprocess
 import os
 import platform
 import shutil
+import threading
 import time
 import traceback
 from PyQt6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QFrame
@@ -34,6 +49,35 @@ class ExternalVLCPlayer:
         self.network_caching = self.settings.value('network_caching', 15000, type=int)
         self.live_caching = self.settings.value('live_caching', 15000, type=int)
         self.file_caching = self.settings.value('file_caching', 20000, type=int)
+
+        # ------------------------------------------------------------------
+        # Prewarm state
+        # ------------------------------------------------------------------
+        self._prewarm_thread: threading.Thread | None = None
+        self._prewarm_done: bool = False
+        # Timestamp (monotonic) set at the start of play_stream() for latency
+        # instrumentation – cleared after each successful launch.
+        self._play_start_time: float | None = None
+
+        # ------------------------------------------------------------------
+        # Configuration via env vars (override QSettings when set)
+        # ------------------------------------------------------------------
+        # VLC_PREWARM_ENABLED=0  → disable prewarm
+        self.prewarm_enabled: bool = (
+            self.settings.value('prewarm_enabled', True, type=bool)
+            and os.environ.get('VLC_PREWARM_ENABLED', '1') != '0'
+        )
+
+        # VLC_NETWORK_CACHING_MS=<ms> → override caching values
+        env_caching = os.environ.get('VLC_NETWORK_CACHING_MS', '').strip()
+        if env_caching:
+            try:
+                caching_ms = int(env_caching)
+                self.live_caching = caching_ms
+                self.network_caching = caching_ms
+                print(f"[VLC] network/live caching overridden by env: {caching_ms}ms")
+            except ValueError:
+                print(f"[VLC] WARNING: Invalid VLC_NETWORK_CACHING_MS value ignored: {env_caching!r}")
         
         print(f"[VLC] Found VLC at: {self.vlc_path}")
         
@@ -55,32 +99,69 @@ class ExternalVLCPlayer:
     
     def prewarm_vlc(self):
         """
-        Launch and quickly close a dummy VLC instance to pre-load it into memory,
-        making the first real playback faster. This runs in the background.
+        Launch a short-lived dummy VLC process in a background thread to warm
+        the OS file-system cache (executable + plugins).  This reduces the
+        cold-start delay the first time the user presses Play.
+
+        * Controlled by ``VLC_PREWARM_ENABLED`` env var (set to "0" to
+          disable) and by the 'prewarm_enabled' QSettings key.
+        * Safe to call multiple times – subsequent calls are no-ops while a
+          prewarm thread is already running or after it has completed.
+        * Runs fully in a daemon thread; the caller is never blocked.
         """
-        if not self.vlc_path or not os.path.exists(self.vlc_path):
-            print("[VLC Pre-warm] VLC not found, skipping.")
+        if not self.prewarm_enabled:
+            print("[VLC Pre-warm] Disabled (VLC_PREWARM_ENABLED=0 or settings), skipping.")
             return
 
-        print("[VLC Pre-warm] Starting VLC pre-warming process in background...")
-        
-        cmd = [
-            self.vlc_path,
-            '--intf', 'dummy',
-            '--vout', 'dummy',
-            '--no-one-instance'
-        ]
+        if self._prewarm_done:
+            print("[VLC Pre-warm] Already completed, skipping.")
+            return
 
-        try:
-            prewarm_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            time.sleep(1.5)
-            prewarm_process.terminate()
-            prewarm_process.wait(timeout=1)
-            print("[VLC Pre-warm] VLC pre-warming complete.")
-        except Exception as e:
-            print(f"[VLC Pre-warm] Error during VLC pre-warming: {e}")
+        if self._prewarm_thread and self._prewarm_thread.is_alive():
+            print("[VLC Pre-warm] Thread already running, skipping duplicate call.")
+            return
 
-    def update_buffer_settings(self, network_caching=None, live_caching=None, file_caching=None):
+        def _do_prewarm():
+            if not self.vlc_path or not os.path.exists(self.vlc_path):
+                print("[VLC Pre-warm] VLC not found, skipping.")
+                return
+
+            print("[VLC Pre-warm] Starting VLC pre-warming in background thread…")
+            t0 = time.monotonic()
+
+            cmd = [
+                self.vlc_path,
+                '--intf', 'dummy',
+                '--vout', 'dummy',
+                '--no-one-instance',
+            ]
+
+            try:
+                prewarm_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                time.sleep(1.5)
+                prewarm_process.terminate()
+                try:
+                    prewarm_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    prewarm_process.kill()
+                elapsed = time.monotonic() - t0
+                self._prewarm_done = True
+                print(f"[VLC Pre-warm] Complete in {elapsed:.2f}s – subsequent launches will be faster.")
+            except Exception as exc:
+                print(f"[VLC Pre-warm] Error (non-fatal, cold-launch fallback will be used): {exc}")
+
+        self._prewarm_thread = threading.Thread(
+            target=_do_prewarm,
+            name="vlc-prewarm",
+            daemon=True,
+        )
+        self._prewarm_thread.start()
+
+    def update_buffer_settings(self, network_caching=None, live_caching=None, file_caching=None, prewarm_enabled=None):
         """Update buffer settings"""
         if network_caching is not None:
             self.network_caching = network_caching
@@ -93,13 +174,27 @@ class ExternalVLCPlayer:
         if file_caching is not None:
             self.file_caching = file_caching
             self.settings.setValue('file_caching', file_caching)
+
+        if prewarm_enabled is not None:
+            self.prewarm_enabled = prewarm_enabled
+            self.settings.setValue('prewarm_enabled', prewarm_enabled)
         
-        print(f"[VLC] Buffer settings updated - Network: {self.network_caching}ms, Live: {self.live_caching}ms, File: {self.file_caching}ms")
+        print(f"[VLC] Buffer settings updated - Network: {self.network_caching}ms, Live: {self.live_caching}ms, File: {self.file_caching}ms, Prewarm: {self.prewarm_enabled}")
     
     def play_stream(self, url, title="Stream", fullscreen=False, content_type="live"):
         """
         Launch VLC to play a stream with robust settings and no notifications.
+
+        Uses a prewarmed OS cache when available (prewarm_done=True), falling
+        back transparently to a cold launch if prewarm has not yet completed or
+        was disabled.  Timing from this call to successful process creation is
+        printed for instrumentation/measurement purposes.
         """
+        # --- timing instrumentation ---
+        self._play_start_time = time.monotonic()
+        warmed = self._prewarm_done
+        print(f"[VLC] play_stream called (prewarm_done={warmed}) for '{title}'")
+
         if not self.vlc_path or not os.path.exists(self.vlc_path):
             print("[VLC] ERROR: VLC executable not found!")
             QMessageBox.critical(None, "VLC Not Found", "VLC Media Player could not be found. Please ensure it is installed.")
@@ -157,7 +252,11 @@ class ExternalVLCPlayer:
             else:
                 self.process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             
-            print(f"[VLC] Process started with PID: {self.process.pid}")
+            elapsed_ms = (time.monotonic() - self._play_start_time) * 1000
+            print(
+                f"[VLC] Process started: PID={self.process.pid}, "
+                f"launch_time={elapsed_ms:.0f}ms, prewarm_done={warmed}"
+            )
             return True
             
         except Exception as e:
