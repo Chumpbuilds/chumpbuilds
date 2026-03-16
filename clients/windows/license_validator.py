@@ -218,10 +218,13 @@ class LicenseValidator:
                     cached_settings = self.settings.value('user_settings', '{}')
                     if cached_settings and cached_settings != '{}':
                         cached_data = json.loads(cached_settings)
-                        self.user_settings.update(cached_data)
+                        # Cache fills in missing keys; fresh server data wins for overlapping keys
+                        self.user_settings = {**cached_data, **self.user_settings}
                 except Exception as e:
                     print(f"[License] Error loading cached settings: {e}")
-                
+
+                # Always persist the latest fresh settings so the cache stays current
+                self.settings.setValue('user_settings', json.dumps(self.user_settings))
                 self.settings.setValue('cloud_profiles', json.dumps(self.cloud_profiles))
                 self.settings.sync()
                 print(f"[License] ✅ Stored license validated successfully, {len(self.cloud_profiles)} cloud profile(s)")
