@@ -27,7 +27,7 @@ class SettingsDialog(QDialog):
     def init_ui(self):
         """Initialize the settings UI"""
         self.setWindowTitle("Settings")
-        self.setFixedSize(500, 450)
+        self.setFixedSize(500, 520)
         self.setModal(True)
         
         self.setStyleSheet("""
@@ -79,6 +79,24 @@ class SettingsDialog(QDialog):
         
         buffer_group.setLayout(buffer_layout)
         layout.addWidget(buffer_group)
+
+        # --- Performance Group ---
+        perf_group = QGroupBox("Performance")
+        perf_layout = QVBoxLayout()
+
+        self.prewarm_checkbox = QCheckBox("Pre-warm VLC on app startup (reduces first Play delay)")
+        self.prewarm_checkbox.setStyleSheet("color: #ffffff; font-size: 13px;")
+        prewarm_hint = QLabel(
+            "Starts a short background VLC process at launch to warm OS caches.\n"
+            "First Play will be noticeably faster. Uses minimal resources."
+        )
+        prewarm_hint.setStyleSheet("color: #95a5a6; font-size: 11px; padding-left: 22px;")
+        prewarm_hint.setWordWrap(True)
+
+        perf_layout.addWidget(self.prewarm_checkbox)
+        perf_layout.addWidget(prewarm_hint)
+        perf_group.setLayout(perf_layout)
+        layout.addWidget(perf_group)
 
         # --- License Group ---
         license_group = QGroupBox("License")
@@ -174,6 +192,9 @@ class SettingsDialog(QDialog):
         simple_buffer = self.vlc_settings.value('simple_buffer_level', 3, type=int)
         self.buffer_slider.setValue(simple_buffer)
         self.update_buffer_label(simple_buffer)
+
+        prewarm_enabled = self.vlc_settings.value('prewarm_enabled', True, type=bool)
+        self.prewarm_checkbox.setChecked(prewarm_enabled)
     
     def save_settings(self):
         """Save settings and close dialog"""
@@ -188,12 +209,14 @@ class SettingsDialog(QDialog):
             5: (40000, 50000)
         }
         live_buffer, vod_buffer = buffer_map.get(slider_value, (15000, 20000))
+        prewarm_enabled = self.prewarm_checkbox.isChecked()
         
         # Save to QSettings
         self.vlc_settings.setValue('simple_buffer_level', slider_value)
         self.vlc_settings.setValue('live_caching', live_buffer)
         self.vlc_settings.setValue('file_caching', vod_buffer)
         self.vlc_settings.setValue('network_caching', live_buffer) # Use live buffer for general network
+        self.vlc_settings.setValue('prewarm_enabled', prewarm_enabled)
         
         # Apply settings to the player instance
         from player.vlc_player import get_vlc_player
@@ -201,7 +224,8 @@ class SettingsDialog(QDialog):
         vlc.update_buffer_settings(
             live_caching=live_buffer,
             file_caching=vod_buffer,
-            network_caching=live_buffer
+            network_caching=live_buffer,
+            prewarm_enabled=prewarm_enabled,
         )
         
         self.settings_changed.emit()

@@ -244,6 +244,24 @@ def validate_license_with_splash(app):
         )
         return False, None
 
+def _start_vlc_prewarm():
+    """
+    Kick off VLC prewarm in a background thread right after the main window is
+    shown.  This is non-blocking and safe to call even if VLC is not installed –
+    ExternalVLCPlayer.prewarm_vlc() handles all error cases internally.
+
+    Prewarm can be suppressed by setting the environment variable
+    ``VLC_PREWARM_ENABLED=0`` before launching the app.
+    """
+    try:
+        from player.vlc_player import get_vlc_player
+        vlc_player = get_vlc_player()
+        vlc_player.prewarm_vlc()
+        print("[Main] VLC prewarm initiated in background")
+    except Exception as exc:
+        print(f"[Main] VLC prewarm initiation failed (non-fatal): {exc}")
+
+
 def setup_application_lifecycle(app):
     """Setup application lifecycle management"""
     def cleanup_on_exit():
@@ -333,6 +351,9 @@ def main():
             print("[Main] Exiting due to window creation failure")
             sys.exit(1)
         
+        # Kick off VLC prewarm so first Play is faster (non-blocking background thread)
+        _start_vlc_prewarm()
+
         # Check authentication status
         if not window.api or not window.api.is_authenticated():
             print("[Main] No authentication found - login dialog will be shown")
