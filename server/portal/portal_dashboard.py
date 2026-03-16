@@ -54,7 +54,11 @@ def logo_url_to_disk_path(logo_url, upload_dir):
             return None
         candidate = os.path.realpath(os.path.join(upload_dir, filename))
         real_upload_dir = os.path.realpath(upload_dir)
-        if not candidate.startswith(real_upload_dir + os.sep):
+        # Use commonpath for a robust cross-platform containment check that
+        # works correctly even when upload_dir is a filesystem root.
+        if os.path.commonpath([candidate, real_upload_dir]) != real_upload_dir:
+            return None
+        if candidate == real_upload_dir:
             return None
         return candidate
     except Exception:
@@ -450,7 +454,7 @@ def update_branding():
 
             try:
                 file.save(file_path)
-                logo_url = f"/{UPLOAD_FOLDER}/{filename}"
+                logo_url = f"{get_public_base_url()}/{UPLOAD_FOLDER}/{filename}"
             except Exception as e:
                 flash(f'❌ Error uploading file: {e}', 'error')
                 return redirect(url_for('dashboard.customer_dashboard'))
