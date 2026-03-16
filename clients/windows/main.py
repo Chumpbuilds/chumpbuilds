@@ -7,8 +7,10 @@ Current User: covchump
 
 import sys
 import os
+import time
+import requests
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QEventLoop
 from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor
 from ui.main_page import MainWindow
 from player.vlc_player import get_vlc_player  # ensure we can stop VLC on quit
@@ -17,9 +19,16 @@ from license_validator import validate_app_license, get_license_validator
 # Prevent Python from writing .pyc files and creating __pycache__ directories
 sys.dont_write_bytecode = True
 
-def create_splash_screen():
+def create_splash_screen(app_name=None, logo_url=None):
     """Create a professional splash screen"""
-    # Create a simple splash screen pixmap
+    if app_name is None:
+        app_name = "X87 Player"
+    pixmap = _render_splash_pixmap(app_name, logo_pixmap=None)
+    return QSplashScreen(pixmap)
+
+
+def _render_splash_pixmap(app_name, logo_pixmap=None):
+    """Render the splash screen pixmap with the given app name and optional logo pixmap."""
     pixmap = QPixmap(400, 300)
     pixmap.fill(QColor(30, 30, 30))  # Dark background
     
@@ -31,12 +40,19 @@ def create_splash_screen():
     painter.setBrush(QColor(100, 181, 246, 50))
     painter.drawRoundedRect(150, 50, 100, 100, 15, 15)
     
-    # Draw icon
-    icon_font = QFont()
-    icon_font.setPointSize(48)
-    painter.setFont(icon_font)
-    painter.setPen(QColor(255, 255, 255))
-    painter.drawText(150, 50, 100, 100, Qt.AlignmentFlag.AlignCenter, "🎬")
+    if logo_pixmap and not logo_pixmap.isNull():
+        # Scale and draw custom logo
+        scaled = logo_pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        x_offset = 150 + (100 - scaled.width()) // 2
+        y_offset = 50 + (100 - scaled.height()) // 2
+        painter.drawPixmap(x_offset, y_offset, scaled)
+    else:
+        # Draw default emoji icon
+        icon_font = QFont()
+        icon_font.setPointSize(48)
+        painter.setFont(icon_font)
+        painter.setPen(QColor(255, 255, 255))
+        painter.drawText(150, 50, 100, 100, Qt.AlignmentFlag.AlignCenter, "🎬")
     
     # Draw app name
     title_font = QFont()
@@ -44,7 +60,7 @@ def create_splash_screen():
     title_font.setBold(True)
     painter.setFont(title_font)
     painter.setPen(QColor(255, 255, 255))
-    painter.drawText(0, 180, 400, 40, Qt.AlignmentFlag.AlignCenter, "Stream Hub")
+    painter.drawText(0, 180, 400, 40, Qt.AlignmentFlag.AlignCenter, app_name)
     
     # Draw subtitle
     subtitle_font = QFont()
@@ -61,8 +77,27 @@ def create_splash_screen():
     painter.drawText(0, 250, 400, 30, Qt.AlignmentFlag.AlignCenter, "Validating License...")
     
     painter.end()
+    return pixmap
+
+
+def update_splash_screen(splash, app_name, logo_url):
+    """Redraw the splash screen with custom app name and logo."""
+    logo_pixmap = None
+    if logo_url:
+        try:
+            response = requests.get(logo_url, timeout=5)
+            if response.status_code == 200:
+                data = response.content
+                tmp_pixmap = QPixmap()
+                tmp_pixmap.loadFromData(data)
+                if not tmp_pixmap.isNull():
+                    logo_pixmap = tmp_pixmap
+        except Exception as e:
+            print(f"[Main] Could not download logo from {logo_url}: {e}")
     
-    return QSplashScreen(pixmap)
+    new_pixmap = _render_splash_pixmap(app_name or "X87 Player", logo_pixmap=logo_pixmap)
+    splash.setPixmap(new_pixmap)
+    splash.repaint()
 
 def apply_global_theme(app, customizations):
     """Apply global application theme based on license customizations"""
@@ -127,7 +162,7 @@ def initialize_application():
     app.setStyle('Fusion')
     
     # Set default application info
-    app.setApplicationName("Stream Hub")
+    app.setApplicationName("X87 Player")
     app.setApplicationVersion("1.0.0")
     app.setOrganizationName("StreamHub Technologies")
     app.setOrganizationDomain("streamhub.com")
@@ -144,9 +179,8 @@ def validate_license_with_splash(app):
     splash.show()
     app.processEvents()
     
-    # Small delay to show splash screen
-    QTimer.singleShot(1000, lambda: None)
-    app.processEvents()
+    # Record when the splash was first shown
+    splash_start = time.time()
     
     try:
         # Validate license
@@ -172,11 +206,21 @@ def validate_license_with_splash(app):
         license_validator = get_license_validator()
         customizations = license_validator.get_app_customizations()
         
-        # Update splash with custom app name if available
-        custom_app_name = customizations.get('app_name', 'Stream Hub')
+        # Update splash with custom app name and logo from portal
+        custom_app_name = customizations.get('app_name', 'X87 Player')
+        logo_url = customizations.get('logo_url', '')
+        update_splash_screen(splash, custom_app_name, logo_url)
         app.setApplicationName(custom_app_name)
         
-        # Close splash after validation
+        # Keep splash visible for at least 5 seconds total
+        elapsed = time.time() - splash_start
+        remaining_ms = max(0, int((5.0 - elapsed) * 1000))
+        if remaining_ms > 0:
+            loop = QEventLoop()
+            QTimer.singleShot(remaining_ms, loop.quit)
+            loop.exec()
+        
+        # Close splash after the minimum display time
         splash.close()
         
         print(f"[Main] License validation complete - App Name: {custom_app_name}")

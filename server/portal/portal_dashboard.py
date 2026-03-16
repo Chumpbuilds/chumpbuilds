@@ -148,18 +148,42 @@ DASHBOARD_TEMPLATE = '''
                 
                 <div>
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Upload Logo (PNG/JPG)</label>
-                    <div class="file-upload-wrapper">
-                        <input type="file" name="logo_file" accept=".png,.jpg,.jpeg,.ico" onchange="document.getElementById('file-name').textContent = this.files[0].name">
-                        <div class="file-upload-text">
-                            <span id="file-name">Click to upload image</span><br>
-                            <small>Max 2MB</small>
+                    <div style="display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap;">
+                        <div>
+                            <div class="file-upload-wrapper">
+                                <input type="file" name="logo_file" id="logo-file-input" accept=".png,.jpg,.jpeg,.ico" onchange="previewLogo(this)">
+                                <div class="file-upload-text">
+                                    <span id="file-name">Click to upload image</span><br>
+                                    <small>Max 5MB</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="logo-preview-container" style="display: {% if customization and customization.logo_url %}flex{% else %}none{% endif %}; align-items: center;">
+                            <img id="logo-preview" src="{{ customization.logo_url if customization and customization.logo_url else '' }}" style="max-width: 80px; max-height: 80px; border-radius: 8px; object-fit: contain; border: 1px solid #e5e7eb;">
                         </div>
                     </div>
-                    {% if customization.logo_url %}
-                        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #166534;">
-                            ✅ Current Logo: <a href="{{ customization.logo_url }}" target="_blank">View Image</a>
+                    {% if customization and customization.logo_url %}
+                        <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #166534; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                            <span>✅ Current Logo: <a href="{{ customization.logo_url }}" target="_blank">View Image</a></span>
+                            <form method="POST" action="{{ url_for('dashboard.remove_logo') }}" style="display: inline;" onsubmit="return confirm('Remove current logo?');">
+                                <button type="submit" style="background: #dc2626; color: white; border: none; border-radius: 6px; padding: 0.25rem 0.6rem; font-size: 0.8rem; cursor: pointer;">🗑️ Remove Logo</button>
+                            </form>
                         </div>
                     {% endif %}
+                    <script>
+                    function previewLogo(input) {
+                        var fileName = input.files[0] ? input.files[0].name : 'Click to upload image';
+                        document.getElementById('file-name').textContent = fileName;
+                        if (input.files && input.files[0]) {
+                            var reader = new FileReader();
+                            reader.onload = function(e) {
+                                document.getElementById('logo-preview').src = e.target.result;
+                                document.getElementById('logo-preview-container').style.display = 'flex';
+                            };
+                            reader.readAsDataURL(input.files[0]);
+                        }
+                    }
+                    </script>
                 </div>
                 
                 <div style="grid-column: 1 / -1;">
@@ -342,9 +366,18 @@ def update_branding():
     logo_url = None
     
     # HANDLE FILE UPLOAD
+    MAX_LOGO_SIZE = 5 * 1024 * 1024  # 5MB
     if 'logo_file' in request.files:
         file = request.files['logo_file']
         if file and file.filename and allowed_file(file.filename):
+            # Check file size using seek to avoid reading entire file into memory
+            file.seek(0, 2)
+            file_size = file.tell()
+            file.seek(0)
+            if file_size > MAX_LOGO_SIZE:
+                flash('❌ Logo file is too large. Maximum allowed size is 5MB.', 'error')
+                return redirect(url_for('dashboard.customer_dashboard'))
+            
             # Make directory if not exists
             save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
             os.makedirs(save_dir, exist_ok=True)
@@ -431,4 +464,36 @@ def delete_profile(profile_id):
         flash('🗑️ Profile removed', 'success')
     except Exception as e: flash(f'❌ Error: {e}', 'error')
     finally: conn.close()
+    return redirect(url_for('dashboard.customer_dashboard'))
+
+@dashboard_bp.route('/remove_logo', methods=['POST'])
+@login_required
+def remove_logo():
+    license_key = session.get('license_key')
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('SELECT logo_url FROM customizations WHERE license_key = ?', (license_key,))
+        row = cursor.fetchone()
+        if row and row['logo_url']:
+            # Attempt to delete the file from disk
+            try:
+                save_dir = os.path.join(current_app.root_path, UPLOAD_FOLDER)
+                logo_url = row['logo_url']
+                filename = logo_url.rsplit('/', 1)[-1]
+                file_path = os.path.join(save_dir, filename)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            except Exception:
+                pass  # File deletion is best-effort; continue regardless
+        cursor.execute(
+            'UPDATE customizations SET logo_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE license_key = ?',
+            (license_key,)
+        )
+        conn.commit()
+        flash('🗑️ Logo removed successfully.', 'success')
+    except Exception as e:
+        flash(f'❌ Error removing logo: {e}', 'error')
+    finally:
+        conn.close()
     return redirect(url_for('dashboard.customer_dashboard'))
