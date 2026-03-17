@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/license_service.dart';
-import 'home_screen.dart';
+import 'login_screen.dart';
 
 /// License activation screen — mirrors the Windows client's LicenseDialog.
 ///
@@ -74,7 +74,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
         ),
       );
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
       );
     } else {
       _showErrorDialog(
