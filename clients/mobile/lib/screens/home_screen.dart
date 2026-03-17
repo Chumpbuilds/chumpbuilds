@@ -2,75 +2,365 @@ import 'package:flutter/material.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
+import 'favorites_screen.dart';
 import 'license_screen.dart';
 import 'live_tv_screen.dart';
 import 'login_screen.dart';
 import 'movies_screen.dart';
+import 'search_screen.dart';
 import 'series_screen.dart';
 
-/// Post-login home screen with bottom navigation.
+/// Card-based home page mirroring the Windows desktop app layout.
 ///
-/// Four tabs: Live TV, Movies, Series, and Settings.
-/// Settings preserves the original account info / switch-profile /
-/// deactivate-license functionality.
-class HomeScreen extends StatefulWidget {
+/// Shows gradient cards for Live TV, Movies, Series, Search, and Favorites.
+/// Navigation is stack-based (Navigator.push) rather than tab-based.
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
-  @override
-  State<HomeScreen> createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
-
+  // ─── Theme ────────────────────────────────────────────────────────────────
   static const Color _bgColor = Color(0xFF1E1E1E);
+  static const Color _surfaceColor = Color(0xFF2D2D2D);
+  static const Color _borderColor = Color(0xFF3D3D3D);
+  static const Color _primaryColor = Color(0xFF0D7377);
+  static const Color _descColor = Color(0xFFB0B0B0);
 
-  // The four tab bodies — kept alive via IndexedStack.
-  static const List<Widget> _tabs = [
-    LiveTvScreen(),
-    MoviesScreen(),
-    SeriesScreen(),
-    _SettingsTab(),
+  // ─── Card definitions (matching Windows gradient colors) ─────────────────
+  static const _cards = [
+    _CardDef(
+      label: 'Live TV',
+      emoji: '📺',
+      color1: Color(0xFF667eea),
+      color2: Color(0xFF764ba2),
+      tag: 'live_tv',
+    ),
+    _CardDef(
+      label: 'Movies',
+      emoji: '🎬',
+      color1: Color(0xFFf093fb),
+      color2: Color(0xFFf5576c),
+      tag: 'movies',
+    ),
+    _CardDef(
+      label: 'Series',
+      emoji: '📼',
+      color1: Color(0xFF4facfe),
+      color2: Color(0xFF00f2fe),
+      tag: 'series',
+    ),
+    _CardDef(
+      label: 'Search',
+      emoji: '🔍',
+      color1: Color(0xFF43e97b),
+      color2: Color(0xFF38f9d7),
+      tag: 'search',
+    ),
+    _CardDef(
+      label: 'Favorites',
+      emoji: '⭐',
+      color1: Color(0xFFfa709a),
+      color2: Color(0xFFfee140),
+      tag: 'favorites',
+    ),
   ];
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  void _navigate(BuildContext context, String tag) {
+    Widget screen;
+    switch (tag) {
+      case 'live_tv':
+        screen = const LiveTvScreen();
+        break;
+      case 'movies':
+        screen = const MoviesScreen();
+        break;
+      case 'series':
+        screen = const SeriesScreen();
+        break;
+      case 'search':
+        screen = const SearchScreen();
+        break;
+      case 'favorites':
+        screen = const FavoritesScreen();
+        break;
+      default:
+        return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
+
+  void _openSettings(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const _SettingsScreen()),
+    );
+  }
+
+  // ─── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    final customizations = LicenseService().getAppCustomizations();
+    final appName = customizations['app_name'] as String? ?? 'X87 Player';
+    final enabledFeatures =
+        (customizations['enabled_features'] as List?)?.cast<String>() ??
+            ['live_tv', 'movies', 'series', 'search', 'favorites'];
+
+    final xtream = XtreamService();
+    final userInfo = xtream.userInfo ?? {};
+    final xtreamUsername =
+        userInfo['username'] as String? ?? xtream.username ?? '';
+    final profileName = xtream.profileName ?? '';
+
+    // Filter cards by enabled features.
+    final visibleCards = _cards
+        .where((c) => enabledFeatures.contains(c.tag))
+        .toList();
+
+    // First row: up to 3 cards, second row: remainder.
+    final row1 = visibleCards.take(3).toList();
+    final row2 = visibleCards.skip(3).toList();
+
     return Scaffold(
       backgroundColor: _bgColor,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _tabs,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        backgroundColor: const Color(0xFF141414),
-        selectedItemColor: const Color(0xFF0D7377),
-        unselectedItemColor: const Color(0xFF95A5A6),
-        type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(
-              icon: Text('📺', style: TextStyle(fontSize: 20)),
-              label: 'Live TV'),
-          BottomNavigationBarItem(
-              icon: Text('🎬', style: TextStyle(fontSize: 20)),
-              label: 'Movies'),
-          BottomNavigationBarItem(
-              icon: Text('📼', style: TextStyle(fontSize: 20)),
-              label: 'Series'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.settings), label: 'Settings'),
-        ],
+      body: SafeArea(
+        child: Column(
+          children: [
+            // ── Top bar ───────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 20, vertical: 14),
+              child: Row(
+                children: [
+                  // App name / logo
+                  Text(
+                    appName,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Account info chip
+                  if (xtreamUsername.isNotEmpty)
+                    GestureDetector(
+                      onTap: () => _openSettings(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _surfaceColor,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _borderColor),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.person,
+                                size: 16, color: _primaryColor),
+                            const SizedBox(width: 6),
+                            Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  xtreamUsername,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                if (profileName.isNotEmpty)
+                                  Text(
+                                    profileName,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: _descColor,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.settings,
+                                size: 14, color: _descColor),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+
+            // ── Welcome section ───────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 20, vertical: 8),
+              child: Column(
+                children: [
+                  Text(
+                    appName,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Your Premium Entertainment Hub',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _descColor,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 24),
+
+            // ── Card grid ─────────────────────────────────────────────────
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Column(
+                  children: [
+                    // Row 1 (up to 3 cards)
+                    if (row1.isNotEmpty)
+                      Row(
+                        children: row1
+                            .map(
+                              (c) => Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(6),
+                                  child: _GradientCard(
+                                    card: c,
+                                    onTap: () =>
+                                        _navigate(context, c.tag),
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                    const SizedBox(height: 4),
+                    // Row 2 — centered
+                    if (row2.isNotEmpty)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: row2
+                            .map(
+                              (c) => SizedBox(
+                                width: (MediaQuery.of(context)
+                                            .size
+                                            .width -
+                                        32) /
+                                    3,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(6),
+                                  child: _GradientCard(
+                                    card: c,
+                                    onTap: () =>
+                                        _navigate(context, c.tag),
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Settings tab — account info, switch profile, deactivate license.
-///
-/// Preserves all functionality from the original HomeScreen.
-class _SettingsTab extends StatelessWidget {
-  const _SettingsTab();
+// ─── Card definition data class ───────────────────────────────────────────────
+
+class _CardDef {
+  const _CardDef({
+    required this.label,
+    required this.emoji,
+    required this.color1,
+    required this.color2,
+    required this.tag,
+  });
+
+  final String label;
+  final String emoji;
+  final Color color1;
+  final Color color2;
+  final String tag;
+}
+
+// ─── Gradient card widget ─────────────────────────────────────────────────────
+
+class _GradientCard extends StatelessWidget {
+  const _GradientCard({
+    required this.card,
+    required this.onTap,
+  });
+
+  final _CardDef card;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 120,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [card.color1, card.color2],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: card.color1.withAlpha(102),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(card.emoji,
+                style: const TextStyle(fontSize: 36)),
+            const SizedBox(height: 8),
+            Text(
+              card.label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Settings screen ──────────────────────────────────────────────────────────
+
+class _SettingsScreen extends StatelessWidget {
+  const _SettingsScreen();
 
   static const Color _bgColor = Color(0xFF1E1E1E);
   static const Color _primaryColor = Color(0xFF0D7377);
@@ -111,6 +401,10 @@ class _SettingsTab extends StatelessWidget {
         centerTitle: true,
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -118,9 +412,7 @@ class _SettingsTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
-              const Icon(Icons.settings,
-                  size: 72, color: _primaryColor),
+              const Icon(Icons.settings, size: 72, color: _primaryColor),
               const SizedBox(height: 16),
               const Text(
                 'Settings',
