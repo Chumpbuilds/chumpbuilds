@@ -178,14 +178,51 @@ class XtreamService {
   Future<List<dynamic>> getSeriesCategories() async =>
       _makeApiRequest('get_series_categories');
 
-  Future<List<dynamic>> getSeriesStreams(String? categoryId) async =>
+  Future<List<dynamic>> getSeries(String? categoryId) async =>
       _makeApiRequest('get_series',
           extraParams: categoryId != null ? {'category_id': categoryId} : null);
 
+  /// Fetch detailed info for a VOD item (plot, cast, director, etc.).
+  ///
+  /// Returns a Map with `info` and `movie_data` keys, or an empty map on error.
+  Future<Map<String, dynamic>> getVodInfo(String vodId) async =>
+      _makeApiRequestMap('get_vod_info', extraParams: {'vod_id': vodId});
+
+  /// Fetch detailed info for a series (info, seasons, episodes).
+  ///
+  /// Returns a Map with `info`, `seasons`, and `episodes` keys, or empty map.
+  Future<Map<String, dynamic>> getSeriesInfo(String seriesId) async =>
+      _makeApiRequestMap('get_series_info',
+          extraParams: {'series_id': seriesId});
+
+  /// Fetch short EPG data for a live stream.
+  ///
+  /// Returns a Map (usually with `epg_listings` key), or empty map on error.
+  Future<Map<String, dynamic>> getShortEpg(String streamId) async =>
+      _makeApiRequestMap('get_short_epg', extraParams: {'stream_id': streamId});
+
   /// Build a playback URL for the given stream.
-  String getStreamUrl(String streamId, String type, {String? extension}) {
+  ///
+  /// [type] is one of: `live`, `movie`, `series`.
+  /// [extension] overrides the default file extension.
+  /// [streamData] can provide `container_extension` as fallback.
+  String getStreamUrl(
+    String streamId,
+    String type, {
+    String? extension,
+    Map<String, dynamic>? streamData,
+  }) {
     if (!isAuthenticated || baseUrl == null) return '';
-    final ext = extension ?? (type == 'live' ? 'm3u8' : 'mp4');
+    final String ext;
+    if (extension != null && extension.isNotEmpty) {
+      ext = extension;
+    } else if (streamData != null &&
+        streamData['container_extension'] != null &&
+        (streamData['container_extension'] as String).isNotEmpty) {
+      ext = streamData['container_extension'] as String;
+    } else {
+      ext = type == 'live' ? 'm3u8' : 'mp4';
+    }
     return '$baseUrl/$type/$username/$password/$streamId.$ext';
   }
 
@@ -218,6 +255,37 @@ class XtreamService {
     } catch (e) {
       debugPrint('[XtreamAPI] Error in $action: $e');
       return [];
+    }
+  }
+
+  /// Like [_makeApiRequest] but returns a [Map] instead of a [List].
+  Future<Map<String, dynamic>> _makeApiRequestMap(
+    String action, {
+    Map<String, String>? extraParams,
+  }) async {
+    if (!isAuthenticated) return {};
+    try {
+      final params = <String, String>{
+        'username': username!,
+        'password': password!,
+        'action': action,
+        ...?extraParams,
+      };
+      final uri = Uri.parse('$baseUrl/player_api.php').replace(
+        queryParameters: params,
+      );
+      final response = await http
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 30));
+      response.statusCode == 200
+          ? debugPrint('[XtreamAPI] $action OK')
+          : debugPrint('[XtreamAPI] $action HTTP ${response.statusCode}');
+      if (response.statusCode != 200) return {};
+      final body = jsonDecode(response.body);
+      return body is Map ? Map<String, dynamic>.from(body as Map) : {};
+    } catch (e) {
+      debugPrint('[XtreamAPI] Error in $action: $e');
+      return {};
     }
   }
 }

@@ -1,0 +1,536 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../services/xtream_service.dart';
+
+/// Movies / VOD screen — categories → movie list → movie detail + play.
+///
+/// Ported from `clients/windows/ui/movies/movies_view.py`.
+class MoviesScreen extends StatefulWidget {
+  const MoviesScreen({super.key});
+
+  @override
+  State<MoviesScreen> createState() => _MoviesScreenState();
+}
+
+class _MoviesScreenState extends State<MoviesScreen> {
+  // ─── Theme constants ──────────────────────────────────────────────────────
+  static const Color _bgColor = Color(0xFF1E1E1E);
+  static const Color _surfaceColor = Color(0xFF2D2D2D);
+  static const Color _primaryColor = Color(0xFF0D7377);
+  static const Color _accentColor = Color(0xFF3498DB);
+  static const Color _secondaryTextColor = Color(0xFF95A5A6);
+  static const Color _successColor = Color(0xFF27AE60);
+
+  // ─── State ────────────────────────────────────────────────────────────────
+  final _xtream = XtreamService();
+
+  List<Map<String, dynamic>> _categories = [];
+  List<Map<String, dynamic>> _allMovies = [];
+  List<Map<String, dynamic>> _filteredCategories = [];
+  List<Map<String, dynamic>> _filteredMovies = [];
+
+  String? _selectedCategoryId;
+  String? _selectedCategoryName;
+  Map<String, dynamic>? _selectedMovie;
+  Map<String, dynamic>? _vodInfo;
+
+  bool _loadingCategories = true;
+  bool _loadingMovies = false;
+  bool _loadingDetail = false;
+
+  final _categorySearchCtrl = TextEditingController();
+  final _movieSearchCtrl = TextEditingController();
+
+  final Map<String, int> _movieCounts = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+    _categorySearchCtrl.addListener(_filterCategories);
+    _movieSearchCtrl.addListener(_filterMovies);
+  }
+
+  @override
+  void dispose() {
+    _categorySearchCtrl.dispose();
+    _movieSearchCtrl.dispose();
+    super.dispose();
+  }
+
+  // ─── Data loading ─────────────────────────────────────────────────────────
+
+  Future<void> _loadCategories() async {
+    setState(() => _loadingCategories = true);
+    final rawCats = await _xtream.getVodCategories();
+    final cats = rawCats
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+    // Load all movies for search & counts
+    final rawAll = await _xtream.getVodStreams(null);
+    final all = rawAll
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    final counts = <String, int>{};
+    for (final m in all) {
+      final cid = m['category_id']?.toString() ?? '';
+      counts[cid] = (counts[cid] ?? 0) + 1;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _categories = cats;
+      _filteredCategories = cats;
+      _allMovies = all;
+      _filteredMovies = all;
+      _movieCounts.addAll(counts);
+      _loadingCategories = false;
+    });
+
+    if (cats.isNotEmpty) {
+      _selectCategory(cats.first);
+    }
+  }
+
+  Future<void> _selectCategory(Map<String, dynamic> cat) async {
+    final catId = cat['category_id']?.toString();
+    setState(() {
+      _selectedCategoryId = catId;
+      _selectedCategoryName = cat['category_name']?.toString();
+      _selectedMovie = null;
+      _vodInfo = null;
+      _movieSearchCtrl.clear();
+      _loadingMovies = true;
+    });
+
+    final raw = await _xtream.getVodStreams(catId);
+    final movies = raw
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+
+    if (!mounted) return;
+    setState(() {
+      _filteredMovies = movies;
+      _loadingMovies = false;
+    });
+  }
+
+  Future<void> _selectMovie(Map<String, dynamic> movie) async {
+    setState(() {
+      _selectedMovie = movie;
+      _vodInfo = null;
+      _loadingDetail = true;
+    });
+
+    final vodId = movie['stream_id']?.toString() ?? '';
+    if (vodId.isNotEmpty) {
+      final info = await _xtream.getVodInfo(vodId);
+      if (!mounted) return;
+      setState(() {
+        _vodInfo = info;
+        _loadingDetail = false;
+      });
+    } else {
+      if (!mounted) return;
+      setState(() => _loadingDetail = false);
+    }
+  }
+
+  // ─── Filtering ────────────────────────────────────────────────────────────
+
+  void _filterCategories() {
+    final q = _categorySearchCtrl.text.toLowerCase();
+    setState(() {
+      _filteredCategories = q.isEmpty
+          ? _categories
+          : _categories
+              .where((c) =>
+                  (c['category_name'] as String? ?? '')
+                      .toLowerCase()
+                      .contains(q))
+              .toList();
+    });
+  }
+
+  void _filterMovies() {
+    final q = _movieSearchCtrl.text.toLowerCase();
+    if (q.isEmpty) {
+      if (_selectedCategoryId != null) {
+        setState(() {
+          _filteredMovies = _allMovies
+              .where((m) =>
+                  m['category_id']?.toString() == _selectedCategoryId)
+              .toList();
+        });
+      }
+    } else {
+      setState(() {
+        _filteredMovies = _allMovies
+            .where((m) =>
+                (m['name'] as String? ?? '').toLowerCase().contains(q))
+            .toList();
+      });
+    }
+  }
+
+  // ─── Playback ─────────────────────────────────────────────────────────────
+
+  Future<void> _playMovie(Map<String, dynamic> movie) async {
+    final streamId = movie['stream_id']?.toString() ?? '';
+    if (streamId.isEmpty) return;
+    final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
+    if (url.isEmpty) return;
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (!mounted) return;
+      _showUrlDialog(url);
+    }
+  }
+
+  void _showUrlDialog(String url) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surfaceColor,
+        title: const Text('Stream URL', style: TextStyle(color: Colors.white)),
+        content: SelectableText(url,
+            style: const TextStyle(color: _secondaryTextColor, fontSize: 12)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text('Close', style: TextStyle(color: _primaryColor)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Build ────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    if (_selectedMovie != null) {
+      return _buildMovieDetail();
+    }
+    if (_selectedCategoryId != null) {
+      return _buildMovieList();
+    }
+    return _buildCategoryList();
+  }
+
+  // ─── Category list ────────────────────────────────────────────────────────
+
+  Widget _buildCategoryList() {
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        title: const Text('Movies'),
+        backgroundColor: _bgColor,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          _buildSearchBar(_categorySearchCtrl, 'Search categories…'),
+          if (_loadingCategories)
+            const Expanded(
+                child: Center(
+                    child: CircularProgressIndicator(color: _primaryColor)))
+          else if (_filteredCategories.isEmpty)
+            const Expanded(
+                child: Center(
+                    child: Text('No categories found',
+                        style: TextStyle(color: _secondaryTextColor))))
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: _filteredCategories.length,
+                itemBuilder: (_, i) {
+                  final cat = _filteredCategories[i];
+                  final catId = cat['category_id']?.toString() ?? '';
+                  final count = _movieCounts[catId] ?? 0;
+                  return ListTile(
+                    leading: const Text('📁',
+                        style: TextStyle(fontSize: 20)),
+                    title: Text(
+                      cat['category_name']?.toString() ?? '',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: count > 0
+                        ? Text('$count',
+                            style: const TextStyle(
+                                color: _secondaryTextColor, fontSize: 12))
+                        : null,
+                    onTap: () => _selectCategory(cat),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Movie list ───────────────────────────────────────────────────────────
+
+  Widget _buildMovieList() {
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        title: Text(_selectedCategoryName ?? 'Movies'),
+        backgroundColor: _bgColor,
+        foregroundColor: Colors.white,
+        leading: BackButton(
+          onPressed: () => setState(() {
+            _selectedCategoryId = null;
+            _selectedCategoryName = null;
+            _filteredMovies = _allMovies;
+            _movieSearchCtrl.clear();
+          }),
+        ),
+      ),
+      body: Column(
+        children: [
+          _buildSearchBar(_movieSearchCtrl, 'Search all movies…'),
+          if (_loadingMovies)
+            const Expanded(
+                child: Center(
+                    child: CircularProgressIndicator(color: _primaryColor)))
+          else if (_filteredMovies.isEmpty)
+            const Expanded(
+                child: Center(
+                    child: Text('No movies found',
+                        style: TextStyle(color: _secondaryTextColor))))
+          else
+            Expanded(
+              child: ListView.builder(
+                itemCount: _filteredMovies.length,
+                itemBuilder: (_, i) {
+                  final movie = _filteredMovies[i];
+                  final posterUrl = movie['stream_icon']?.toString() ?? '';
+                  final rating =
+                      movie['rating']?.toString() ?? movie['rating_5based']?.toString() ?? '';
+                  final year = movie['year']?.toString() ?? '';
+                  return ListTile(
+                    leading: posterUrl.isNotEmpty
+                        ? SizedBox(
+                            width: 40,
+                            height: 56,
+                            child: CachedNetworkImage(
+                              imageUrl: posterUrl,
+                              placeholder: (_, __) => const Text('🎬',
+                                  style: TextStyle(fontSize: 24)),
+                              errorWidget: (_, __, ___) => const Text('🎬',
+                                  style: TextStyle(fontSize: 24)),
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : const Text('🎬', style: TextStyle(fontSize: 24)),
+                    title: Text(
+                      movie['name']?.toString() ?? '',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      [if (year.isNotEmpty) year, if (rating.isNotEmpty) '⭐ $rating']
+                          .join('  '),
+                      style: const TextStyle(
+                          color: _secondaryTextColor, fontSize: 12),
+                    ),
+                    onTap: () => _selectMovie(movie),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Movie detail ─────────────────────────────────────────────────────────
+
+  Widget _buildMovieDetail() {
+    final movie = _selectedMovie!;
+    final name = movie['name']?.toString() ?? '';
+    final posterUrl = movie['stream_icon']?.toString() ?? '';
+    final info =
+        _vodInfo != null && _vodInfo!['info'] is Map
+            ? Map<String, dynamic>.from(_vodInfo!['info'] as Map)
+            : <String, dynamic>{};
+    final movieData =
+        _vodInfo != null && _vodInfo!['movie_data'] is Map
+            ? Map<String, dynamic>.from(_vodInfo!['movie_data'] as Map)
+            : <String, dynamic>{};
+
+    final plot = _notNa(info['plot']?.toString() ??
+        info['description']?.toString() ?? '');
+    final director = _notNa(info['director']?.toString() ?? '');
+    final cast = _notNa(info['cast']?.toString() ?? info['actors']?.toString() ?? '');
+    final genre = _notNa(info['genre']?.toString() ?? '');
+    final year = _notNa(
+        info['releasedate']?.toString() ??
+            info['release_date']?.toString() ??
+            movie['year']?.toString() ?? '');
+    final rating = _notNa(info['rating']?.toString() ??
+        movie['rating']?.toString() ?? '');
+    final duration = _notNa(info['duration']?.toString() ?? '');
+
+    return Scaffold(
+      backgroundColor: _bgColor,
+      appBar: AppBar(
+        title: Text(name),
+        backgroundColor: _bgColor,
+        foregroundColor: Colors.white,
+        leading: BackButton(
+          onPressed: () => setState(() {
+            _selectedMovie = null;
+            _vodInfo = null;
+          }),
+        ),
+      ),
+      body: _loadingDetail
+          ? const Center(child: CircularProgressIndicator(color: _primaryColor))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Poster
+                  if (posterUrl.isNotEmpty)
+                    Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: CachedNetworkImage(
+                          imageUrl: posterUrl,
+                          height: 200,
+                          placeholder: (_, __) => const SizedBox(height: 200),
+                          errorWidget: (_, __, ___) =>
+                              const SizedBox(height: 200),
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+
+                  // Title
+                  Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Meta row
+                  Center(
+                    child: Text(
+                      [
+                        if (year != null) year,
+                        if (rating != null) '⭐ $rating',
+                        if (duration != null) duration,
+                      ].join('   '),
+                      style: const TextStyle(
+                          color: _secondaryTextColor, fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Play button
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      final merged = {...movie, ...movieData};
+                      _playMovie(merged);
+                    },
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Play Movie'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _successColor,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Info fields
+                  if (genre != null) _infoField('Genre', genre),
+                  if (director != null) _infoField('Director', director),
+                  if (cast != null) _infoField('Cast', cast),
+                  if (plot != null) ...[
+                    Text('Plot',
+                        style: TextStyle(
+                            color: _accentColor, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 6),
+                    Text(plot,
+                        style: const TextStyle(
+                            color: Colors.white, height: 1.5)),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              ),
+            ),
+    );
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  Widget _buildSearchBar(TextEditingController ctrl, String hint) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: TextField(
+        controller: ctrl,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: const TextStyle(color: _secondaryTextColor),
+          prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+          filled: true,
+          fillColor: _surfaceColor,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: _primaryColor),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _infoField(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(label,
+                style: const TextStyle(
+                    color: _secondaryTextColor, fontSize: 13)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: const TextStyle(color: Colors.white, fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Returns null if value is null, empty, or 'N/A' (case-insensitive).
+  String? _notNa(String? value) {
+    if (value == null || value.isEmpty) return null;
+    if (value.trim().toUpperCase() == 'N/A') return null;
+    return value;
+  }
+}
