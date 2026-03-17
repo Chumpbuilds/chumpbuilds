@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 
-void main() {
-  runApp(const X87App());
+import 'screens/home_screen.dart';
+import 'screens/license_screen.dart';
+import 'services/license_service.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  // Silently validate any stored license before showing the first screen.
+  final isValid = await LicenseService().validateLicense();
+  runApp(X87App(startWithHome: isValid));
 }
 
 class X87App extends StatelessWidget {
-  const X87App({super.key});
+  const X87App({super.key, required this.startWithHome});
+
+  /// When `true` the app jumps straight to [HomeScreen]; otherwise it shows
+  /// [LicenseScreen] so the user can enter their key.
+  final bool startWithHome;
 
   @override
   Widget build(BuildContext context) {
@@ -14,57 +25,15 @@ class X87App extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF1E88E5),
+          seedColor: const Color(0xFF0D7377),
           brightness: Brightness.dark,
         ),
         useMaterial3: true,
         brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF1E1E1E),
       ),
-      home: const HomeScreen(),
+      home: startWithHome ? const HomeScreen() : const LicenseScreen(),
     );
   }
 }
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('X87 Player'),
-        centerTitle: true,
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.play_circle_outline,
-              size: 96,
-              color: Color(0xFF1E88E5),
-            ),
-            SizedBox(height: 24),
-            Text(
-              'X87 IPTV Player',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Coming Soon',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey,
-              ),
-            ),
-            // TODO: Replace this screen with the license activation screen
-            // and IPTV login screen once the backend integration is complete.
-          ],
-        ),
-      ),
-    );
-  }
-}
