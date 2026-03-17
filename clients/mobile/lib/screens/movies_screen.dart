@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 
 /// Movies / VOD screen — categories → movie list → movie detail + play.
@@ -25,6 +26,8 @@ class _MoviesScreenState extends State<MoviesScreen> {
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
+  final _favService = FavoritesService();
+  final Set<String> _favMovieIds = {};
 
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _allMovies = [];
@@ -49,6 +52,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    _loadFavoriteIds();
     _categorySearchCtrl.addListener(_filterCategories);
     _movieSearchCtrl.addListener(_filterMovies);
   }
@@ -137,6 +141,23 @@ class _MoviesScreenState extends State<MoviesScreen> {
       if (!mounted) return;
       setState(() => _loadingDetail = false);
     }
+  }
+
+  // ─── Favourites ───────────────────────────────────────────────────────────
+
+  Future<void> _loadFavoriteIds() async {
+    final favs = await _favService.getFavorites(FavoriteType.movie);
+    setState(() {
+      _favMovieIds
+        ..clear()
+        ..addAll(favs.map((f) => f['stream_id']?.toString() ?? ''));
+    });
+  }
+
+  Future<void> _toggleMovieFav(Map<String, dynamic> movie) async {
+    final id = movie['stream_id']?.toString() ?? '';
+    await _favService.toggleFavorite(FavoriteType.movie, id, movie);
+    await _loadFavoriteIds();
   }
 
   // ─── Filtering ────────────────────────────────────────────────────────────
@@ -340,6 +361,17 @@ class _MoviesScreenState extends State<MoviesScreen> {
                           .join('  '),
                       style: const TextStyle(
                           color: _secondaryTextColor, fontSize: 12),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        _favMovieIds.contains(
+                                movie['stream_id']?.toString() ?? '')
+                            ? Icons.star
+                            : Icons.star_border,
+                        color: const Color(0xFFFFD700),
+                        size: 20,
+                      ),
+                      onPressed: () => _toggleMovieFav(movie),
                     ),
                     onTap: () => _selectMovie(movie),
                   );

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 
 /// Live TV screen — categories → channels → EPG + play.
@@ -25,6 +26,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
+  final _favService = FavoritesService();
+  final Set<String> _favChannelIds = {};
 
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _allChannels = [];
@@ -50,6 +53,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    _loadFavoriteIds();
     _categorySearchCtrl.addListener(_filterCategories);
     _channelSearchCtrl.addListener(_filterChannels);
   }
@@ -142,6 +146,23 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       if (!mounted) return;
       setState(() => _loadingEpg = false);
     }
+  }
+
+  // ─── Favourites ───────────────────────────────────────────────────────────
+
+  Future<void> _loadFavoriteIds() async {
+    final favs = await _favService.getFavorites(FavoriteType.channel);
+    setState(() {
+      _favChannelIds
+        ..clear()
+        ..addAll(favs.map((f) => f['stream_id']?.toString() ?? ''));
+    });
+  }
+
+  Future<void> _toggleChannelFav(Map<String, dynamic> ch) async {
+    final id = ch['stream_id']?.toString() ?? '';
+    await _favService.toggleFavorite(FavoriteType.channel, id, ch);
+    await _loadFavoriteIds();
   }
 
   // ─── Filtering ────────────────────────────────────────────────────────────
@@ -338,6 +359,17 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                     title: Text(
                       ch['name']?.toString() ?? '',
                       style: const TextStyle(color: Colors.white),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        _favChannelIds.contains(
+                                ch['stream_id']?.toString() ?? '')
+                            ? Icons.star
+                            : Icons.star_border,
+                        color: const Color(0xFFFFD700),
+                        size: 20,
+                      ),
+                      onPressed: () => _toggleChannelFav(ch),
                     ),
                     onTap: () => _selectChannel(ch),
                   );

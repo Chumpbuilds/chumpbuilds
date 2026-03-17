@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 
 /// Series screen — categories → series list → seasons/episodes tree + play.
@@ -25,6 +26,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
+  final _favService = FavoritesService();
+  final Set<String> _favSeriesIds = {};
 
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _allSeries = [];
@@ -50,6 +53,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    _loadFavoriteIds();
     _categorySearchCtrl.addListener(_filterCategories);
     _seriesSearchCtrl.addListener(_filterSeries);
   }
@@ -139,6 +143,23 @@ class _SeriesScreenState extends State<SeriesScreen> {
       if (!mounted) return;
       setState(() => _loadingDetail = false);
     }
+  }
+
+  // ─── Favourites ───────────────────────────────────────────────────────────
+
+  Future<void> _loadFavoriteIds() async {
+    final favs = await _favService.getFavorites(FavoriteType.series);
+    setState(() {
+      _favSeriesIds
+        ..clear()
+        ..addAll(favs.map((f) => f['series_id']?.toString() ?? ''));
+    });
+  }
+
+  Future<void> _toggleSeriesFav(Map<String, dynamic> series) async {
+    final id = series['series_id']?.toString() ?? '';
+    await _favService.toggleFavorite(FavoriteType.series, id, series);
+    await _loadFavoriteIds();
   }
 
   // ─── Filtering ────────────────────────────────────────────────────────────
@@ -396,6 +417,17 @@ class _SeriesScreenState extends State<SeriesScreen> {
                           .join('  '),
                       style: const TextStyle(
                           color: _secondaryTextColor, fontSize: 12),
+                    ),
+                    trailing: IconButton(
+                      icon: Icon(
+                        _favSeriesIds.contains(
+                                s['series_id']?.toString() ?? '')
+                            ? Icons.star
+                            : Icons.star_border,
+                        color: const Color(0xFFFFD700),
+                        size: 20,
+                      ),
+                      onPressed: () => _toggleSeriesFav(s),
                     ),
                     onTap: () => _selectSeries(s),
                   );
