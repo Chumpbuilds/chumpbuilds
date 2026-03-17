@@ -103,9 +103,23 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final customizations = LicenseService().getAppCustomizations();
     final appName = customizations['app_name'] as String? ?? 'X87 Player';
-    final enabledFeatures =
-        (customizations['enabled_features'] as List?)?.cast<String>() ??
-            ['live_tv', 'movies', 'series', 'search', 'favorites'];
+    // enabled_features comes from the server as a Map<String, bool>
+    // e.g. {'live_tv': true, 'movies': true, 'series': false, ...}
+    final rawFeatures = customizations['enabled_features'];
+    final List<String> enabledFeatures;
+    if (rawFeatures is Map) {
+      // Server returns a map — collect keys where value is truthy.
+      enabledFeatures = rawFeatures.entries
+          .where((e) => e.value == true)
+          .map((e) => e.key.toString())
+          .toList();
+    } else if (rawFeatures is List) {
+      // Fallback: if it's somehow a list, use it directly.
+      enabledFeatures = rawFeatures.cast<String>();
+    } else {
+      // Default: enable everything.
+      enabledFeatures = ['live_tv', 'movies', 'series', 'search', 'favorites'];
+    }
 
     final xtream = XtreamService();
     final userInfo = xtream.userInfo ?? {};
