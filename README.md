@@ -17,8 +17,7 @@ X87/
 ├── server/          # Server-side code (Admin, Portal, Home page)
 ├── clients/
 │   ├── windows/     # Windows desktop app (Python + PyQt6)
-│   ├── android/     # Android app (Coming Soon)
-│   └── ios/         # iOS app (Coming Soon)
+│   └── mobile/      # Mobile app - Android & iOS (Flutter)
 ├── releases/        # Built binaries (.exe, .apk, .ipa)
 └── docs/            # Additional docs (may be incomplete vs this README)
 ```
