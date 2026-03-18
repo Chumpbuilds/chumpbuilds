@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
+import '../utils/orientation_page.dart';
 import 'favorites_screen.dart';
 import 'license_screen.dart';
 import 'live_tv_screen.dart';
@@ -86,8 +87,15 @@ class HomeScreen extends StatelessWidget {
       default:
         return;
     }
+    final isLandscapeSection =
+        tag == 'live_tv' || tag == 'movies' || tag == 'series';
+
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => screen),
+      MaterialPageRoute(
+        builder: (_) => isLandscapeSection
+            ? OrientationPage(child: screen)
+            : screen,
+      ),
     );
   }
 
