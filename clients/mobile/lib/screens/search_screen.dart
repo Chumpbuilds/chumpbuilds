@@ -100,11 +100,14 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Search'),
+        title: const Text('Search', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        toolbarHeight: 36,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, size: 18),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),

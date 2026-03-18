@@ -97,11 +97,14 @@ class _FavoritesScreenState extends State<FavoritesScreen>
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Favorites'),
+        title: const Text('Favorites', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        toolbarHeight: 36,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, size: 18),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: () => Navigator.of(context).pop(),
         ),
         bottom: TabBar(

@@ -241,9 +241,10 @@ class _MoviesScreenState extends State<MoviesScreen> {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Movies'),
+        title: const Text('Movies', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        toolbarHeight: 36,
       ),
       body: Row(
         children: [
