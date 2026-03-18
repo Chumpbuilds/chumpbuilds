@@ -42,6 +42,9 @@ class _MoviesScreenState extends State<MoviesScreen> {
   bool _loadingMovies = false;
   bool _loadingDetail = false;
 
+  bool _categorySearchVisible = false;
+  bool _movieSearchVisible = false;
+
   final _categorySearchCtrl = TextEditingController();
   final _movieSearchCtrl = TextEditingController();
 
@@ -244,9 +247,9 @@ class _MoviesScreenState extends State<MoviesScreen> {
       ),
       body: Row(
         children: [
-          Expanded(flex: 2, child: _buildCategoriesPanel()),
-          Expanded(flex: 2, child: _buildMoviesPanel()),
-          Expanded(flex: 5, child: _buildDetailPanel()),
+          Expanded(flex: 7, child: _buildCategoriesPanel()),
+          Expanded(flex: 5, child: _buildMoviesPanel()),
+          Expanded(flex: 8, child: _buildDetailPanel()),
         ],
       ),
     );
@@ -264,17 +267,57 @@ class _MoviesScreenState extends State<MoviesScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: Text(
-              'Categories',
-              style: TextStyle(
-                color: _accentColor,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Categories',
+                    style: TextStyle(
+                      color: _accentColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.search, size: 18, color: Colors.white70),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    setState(() {
+                      _categorySearchVisible = !_categorySearchVisible;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
-          _buildSearchBar(_categorySearchCtrl, 'Search categories…'),
+          if (_categorySearchVisible)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: TextField(
+                controller: _categorySearchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Search categories…',
+                  hintStyle:
+                      const TextStyle(color: Colors.white38, fontSize: 12),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  filled: true,
+                  fillColor: const Color(0xFF2D2D2D),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
           if (_loadingCategories)
             const Expanded(
                 child: Center(
@@ -329,17 +372,57 @@ class _MoviesScreenState extends State<MoviesScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: Text(
-              'Movies',
-              style: TextStyle(
-                color: _accentColor,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedCategoryName ?? 'Movies',
+                    style: TextStyle(
+                      color: _accentColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.search, size: 18, color: Colors.white70),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    setState(() {
+                      _movieSearchVisible = !_movieSearchVisible;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
-          _buildSearchBar(_movieSearchCtrl, 'Search movies…'),
+          if (_movieSearchVisible)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: TextField(
+                controller: _movieSearchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Search movies…',
+                  hintStyle:
+                      const TextStyle(color: Colors.white38, fontSize: 12),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  filled: true,
+                  fillColor: const Color(0xFF2D2D2D),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
           if (_loadingMovies)
             const Expanded(
                 child: Center(
