@@ -7,7 +7,7 @@ Current User: covchump
 """
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
-                            QListWidgetItem, QLabel, QPushButton, QLineEdit,
+                            QListWidgetItem, QLabel, QPushButton,
                             QSplitter, QProgressBar, QTextEdit, QTreeWidget,
                             QTreeWidgetItem, QMessageBox, QFrame, QScrollArea, QMenu)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QPoint
@@ -61,6 +61,9 @@ class SeriesView(QWidget):
         self.category_series = []
         self.stored_categories = []
         self.network_manager = QNetworkAccessManager()
+        
+        # Track current search text (set by header search bar)
+        self._current_search_text = ""
         
         # Initialize favorites manager
         self.favorites_manager = get_favorites_manager()
@@ -126,25 +129,6 @@ class SeriesView(QWidget):
         title.setStyleSheet("color: #3498db; padding: 5px;")
         layout.addWidget(title)
         
-        # Search box for categories
-        self.category_search = QLineEdit()
-        self.category_search.setPlaceholderText("🔍 Search categories...")
-        self.category_search.setStyleSheet("""
-            QLineEdit {
-                padding: 8px;
-                font-size: 12px;
-                border: 1px solid #3498db;
-                border-radius: 4px;
-                background-color: #2c3e50;
-                color: white;
-            }
-            QLineEdit:focus {
-                border: 2px solid #2ecc71;
-            }
-        """)
-        self.category_search.textChanged.connect(self.filter_categories)
-        layout.addWidget(self.category_search)
-        
         # Categories list
         self.categories_list = QListWidget()
         self.categories_list.setStyleSheet("""
@@ -195,25 +179,6 @@ class SeriesView(QWidget):
         self.series_title.setFont(title_font)
         self.series_title.setStyleSheet("color: #e74c3c; padding: 5px;")
         layout.addWidget(self.series_title)
-        
-        # Search box for series
-        self.series_search = QLineEdit()
-        self.series_search.setPlaceholderText("🔍 Search all series...")
-        self.series_search.setStyleSheet("""
-            QLineEdit {
-                padding: 8px;
-                font-size: 12px;
-                border: 1px solid #e74c3c;
-                border-radius: 4px;
-                background-color: #2c3e50;
-                color: white;
-            }
-            QLineEdit:focus {
-                border: 2px solid #2ecc71;
-            }
-        """)
-        self.series_search.textChanged.connect(self.filter_series)
-        layout.addWidget(self.series_search)
         
         # Series list - ADD CONTEXT MENU
         self.series_list = QListWidget()
@@ -339,8 +304,8 @@ class SeriesView(QWidget):
             
     def refresh_current_list(self):
         """Refresh the current series list to show favorite indicators."""
-        if self.series_search.text().strip():
-            self.filter_series(self.series_search.text())
+        if self._current_search_text.strip():
+            self.filter_series(self._current_search_text)
         else:
             self.on_series_loaded(self.category_series)
 
@@ -624,6 +589,7 @@ class SeriesView(QWidget):
     
     def filter_series(self, text):
         """Filter series - search across ALL series"""
+        self._current_search_text = text
         self.series_list.clear()
         search_text = text.lower().strip()
         

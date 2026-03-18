@@ -7,7 +7,7 @@ Current User: covchump
 """
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
-                            QListWidgetItem, QLabel, QPushButton, QLineEdit,
+                            QListWidgetItem, QLabel, QPushButton,
                             QSplitter, QProgressBar, QTextEdit, QMessageBox, QFrame,
                             QScrollArea, QMenu)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QPoint
@@ -61,6 +61,9 @@ class MoviesView(QWidget):
         self.category_movies = []
         self.stored_categories = []
         self.network_manager = QNetworkAccessManager()
+        
+        # Track current search text (set by header search bar)
+        self._current_search_text = ""
         
         # Initialize favorites manager
         self.favorites_manager = get_favorites_manager()
@@ -126,25 +129,6 @@ class MoviesView(QWidget):
         title.setStyleSheet("color: #3498db; padding: 5px;")
         layout.addWidget(title)
         
-        # Search box for categories
-        self.category_search = QLineEdit()
-        self.category_search.setPlaceholderText("🔍 Search categories...")
-        self.category_search.setStyleSheet("""
-            QLineEdit {
-                padding: 8px;
-                font-size: 12px;
-                border: 1px solid #3498db;
-                border-radius: 4px;
-                background-color: #2c3e50;
-                color: white;
-            }
-            QLineEdit:focus {
-                border: 2px solid #2ecc71;
-            }
-        """)
-        self.category_search.textChanged.connect(self.filter_categories)
-        layout.addWidget(self.category_search)
-        
         # Categories list
         self.categories_list = QListWidget()
         self.categories_list.setStyleSheet("""
@@ -195,25 +179,6 @@ class MoviesView(QWidget):
         self.movies_title.setFont(title_font)
         self.movies_title.setStyleSheet("color: #e74c3c; padding: 5px;")
         layout.addWidget(self.movies_title)
-        
-        # Search box for movies
-        self.movie_search = QLineEdit()
-        self.movie_search.setPlaceholderText("🔍 Search all movies...")
-        self.movie_search.setStyleSheet("""
-            QLineEdit {
-                padding: 8px;
-                font-size: 12px;
-                border: 1px solid #e74c3c;
-                border-radius: 4px;
-                background-color: #2c3e50;
-                color: white;
-            }
-            QLineEdit:focus {
-                border: 2px solid #2ecc71;
-            }
-        """)
-        self.movie_search.textChanged.connect(self.filter_movies)
-        layout.addWidget(self.movie_search)
         
         # Movies list - ADD CONTEXT MENU
         self.movies_list = QListWidget()
@@ -338,8 +303,8 @@ class MoviesView(QWidget):
             if self.window() and hasattr(self.window(), 'update_favorites_count'):
                 self.window().update_favorites_count()
             # Refresh the current list
-            if self.movie_search.text():
-                self.filter_movies(self.movie_search.text())
+            if self._current_search_text:
+                self.filter_movies(self._current_search_text)
             else:
                 self.on_movies_loaded(self.category_movies)
     
@@ -606,6 +571,7 @@ class MoviesView(QWidget):
     
     def filter_movies(self, text):
         """Filter movies - search across ALL movies"""
+        self._current_search_text = text
         self.movies_list.clear()
         search_text = text.lower().strip()
         
