@@ -25,7 +25,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   static const Color _accentColor = Color(0xFF3498DB);
   static const Color _secondaryTextColor = Color(0xFF95A5A6);
   static const Color _liveColor = Color(0xFFE74C3C);
-  static const double _kPlayerHeight = 160;
+  static const double _kPlayerHeight = 112;
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
