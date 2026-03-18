@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/vlc_player_widget.dart';
 
 /// Live TV screen — categories → channels → EPG + play.
 ///
@@ -43,6 +44,12 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   bool _loadingChannels = false;
   bool _loadingEpg = false;
   bool _searchVisible = false;
+
+  // ─── VLC embedded player state ────────────────────────────────────────────
+  String _vlcStreamUrl = '';
+  String _vlcTitle = '';
+  int _vlcPlayerKey = 0;
+  bool _vlcAutoPlay = false;
 
   final _headerSearchCtrl = TextEditingController();
 
@@ -208,7 +215,21 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   // ─── Playback ─────────────────────────────────────────────────────────────
 
-  Future<void> _playChannel(Map<String, dynamic> channel) async {
+  void _playChannel(Map<String, dynamic> channel) {
+    final streamId = channel['stream_id']?.toString() ?? '';
+    if (streamId.isEmpty) return;
+    final url = _xtream.getStreamUrl(streamId, 'live');
+    if (url.isEmpty) return;
+    final name = channel['name']?.toString() ?? '';
+    setState(() {
+      _vlcStreamUrl = url;
+      _vlcTitle = name;
+      _vlcAutoPlay = true;
+      _vlcPlayerKey++;
+    });
+  }
+
+  Future<void> _openChannelExternal(Map<String, dynamic> channel) async {
     final streamId = channel['stream_id']?.toString() ?? '';
     if (streamId.isEmpty) return;
     final url = _xtream.getStreamUrl(streamId, 'live');
@@ -510,15 +531,32 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   // ─── Panel 3 – EPG / Detail ───────────────────────────────────────────────
 
   Widget _buildEpgPanel() {
+    // Shared VLC player widget (reused in both the idle and active layouts)
+    final playerWidget = VlcPlayerWidget(
+      key: ValueKey(_vlcPlayerKey),
+      streamUrl: _vlcStreamUrl,
+      title: _vlcTitle,
+      contentType: 'live',
+      autoPlay: _vlcAutoPlay,
+    );
+
     if (_selectedChannel == null) {
-      return const ColoredBox(
-        color: Color(0xFF1E1E1E),
-        child: Center(
-          child: Text(
-            '📺  Select a channel and click Play to start streaming',
-            style: TextStyle(color: _secondaryTextColor, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
+      return ColoredBox(
+        color: const Color(0xFF1E1E1E),
+        child: Column(
+          children: [
+            // Embedded player (idle state)
+            playerWidget,
+            const Expanded(
+              child: Center(
+                child: Text(
+                  '📺  Select a channel and click Play to start streaming',
+                  style: TextStyle(color: _secondaryTextColor, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -530,131 +568,177 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
     return ColoredBox(
       color: const Color(0xFF1E1E1E),
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Channel logo
-            Center(
-              child: iconUrl.isNotEmpty
-                  ? CachedNetworkImage(
-                      imageUrl: iconUrl,
-                      height: 80,
-                      placeholder: (_, __) =>
-                          const Text('📺', style: TextStyle(fontSize: 40)),
-                      errorWidget: (_, __, ___) =>
-                          const Text('📺', style: TextStyle(fontSize: 40)),
-                      fit: BoxFit.contain,
-                    )
-                  : const Text('📺', style: TextStyle(fontSize: 40)),
-            ),
-            const SizedBox(height: 12),
+      child: Column(
+        children: [
+          // ── Embedded VLC player ──────────────────────────────────────────
+          playerWidget,
 
-            // Channel name
-            Text(
-              name,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-
-            // Play button
-            ElevatedButton(
-              onPressed: () => _playChannel(ch),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _accentColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              ),
-              child: const Text('▶ Play',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ),
-            const SizedBox(height: 20),
-
-            // EPG header
-            Row(
-              children: [
-                const Text(
-                  '📅 Program Guide',
-                  style: TextStyle(
-                      color: _accentColor,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 8),
-                if (_loadingEpg)
-                  const Text('Loading…',
-                      style: TextStyle(
-                          color: _secondaryTextColor, fontSize: 12)),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // EPG entries
-            if (!_loadingEpg && epgListings.isEmpty)
-              const Text('No EPG data available',
-                  style: TextStyle(color: _secondaryTextColor, fontSize: 12))
-            else
-              ...epgListings.map((prog) {
-                final p = Map<String, dynamic>.from(prog as Map);
-                final title =
-                    _decodeEpgTitle(p['title']?.toString() ?? '');
-                final start = p['start']?.toString() ?? '';
-                final end = p['end']?.toString() ?? '';
-                final isNow = p['now_playing'] == 1 ||
-                    p['now_playing'] == true ||
-                    p['now_playing']?.toString() == '1';
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _surfaceColor,
-                    borderRadius: BorderRadius.circular(6),
-                    border: isNow
-                        ? Border.all(color: _liveColor, width: 1.5)
-                        : null,
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          // ── Channel info + EPG ───────────────────────────────────────────
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Channel logo + name row
+                  Row(
                     children: [
-                      if (isNow) ...[
-                        const Text('🔴', style: TextStyle(fontSize: 12)),
-                        const SizedBox(width: 6),
-                      ],
+                      if (iconUrl.isNotEmpty)
+                        CachedNetworkImage(
+                          imageUrl: iconUrl,
+                          height: 40,
+                          width: 40,
+                          placeholder: (_, __) =>
+                              const Text('📺', style: TextStyle(fontSize: 20)),
+                          errorWidget: (_, __, ___) =>
+                              const Text('📺', style: TextStyle(fontSize: 20)),
+                          fit: BoxFit.contain,
+                        )
+                      else
+                        const Text('📺', style: TextStyle(fontSize: 20)),
+                      const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: TextStyle(
-                                  color: isNow ? _liveColor : Colors.white,
-                                  fontWeight: isNow
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  fontSize: 13),
-                            ),
-                            if (start.isNotEmpty)
-                              Text(
-                                '$start – $end',
-                                style: const TextStyle(
-                                    color: _secondaryTextColor, fontSize: 11),
-                              ),
-                          ],
+                        child: Text(
+                          name,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
-                );
-              }),
-          ],
-        ),
+                  const SizedBox(height: 10),
+
+                  // Play / Open-external buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _playChannel(ch),
+                          icon: const Icon(Icons.play_arrow, size: 18),
+                          label: const Text('Play'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF27AE60),
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openChannelExternal(ch),
+                          icon: const Icon(Icons.open_in_new,
+                              size: 16, color: Color(0xFF7F8C8D)),
+                          label: const Text('Open in VLC',
+                              style: TextStyle(
+                                  color: Color(0xFF7F8C8D), fontSize: 12)),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                                color: Color(0xFF7F8C8D)),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // EPG header
+                  Row(
+                    children: [
+                      const Text(
+                        '📅 Program Guide',
+                        style: TextStyle(
+                            color: _accentColor,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(width: 8),
+                      if (_loadingEpg)
+                        const Text('Loading…',
+                            style: TextStyle(
+                                color: _secondaryTextColor, fontSize: 12)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+
+                  // EPG entries
+                  if (!_loadingEpg && epgListings.isEmpty)
+                    const Text('No EPG data available',
+                        style: TextStyle(
+                            color: _secondaryTextColor, fontSize: 12))
+                  else
+                    ...epgListings.map((prog) {
+                      final p = Map<String, dynamic>.from(prog as Map);
+                      final title =
+                          _decodeEpgTitle(p['title']?.toString() ?? '');
+                      final start = p['start']?.toString() ?? '';
+                      final end = p['end']?.toString() ?? '';
+                      final isNow = p['now_playing'] == 1 ||
+                          p['now_playing'] == true ||
+                          p['now_playing']?.toString() == '1';
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _surfaceColor,
+                          borderRadius: BorderRadius.circular(6),
+                          border: isNow
+                              ? Border.all(color: _liveColor, width: 1.5)
+                              : null,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isNow) ...[
+                              const Text('🔴',
+                                  style: TextStyle(fontSize: 12)),
+                              const SizedBox(width: 6),
+                            ],
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    title,
+                                    style: TextStyle(
+                                        color: isNow
+                                            ? _liveColor
+                                            : Colors.white,
+                                        fontWeight: isNow
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        fontSize: 13),
+                                  ),
+                                  if (start.isNotEmpty)
+                                    Text(
+                                      '$start – $end',
+                                      style: const TextStyle(
+                                          color: _secondaryTextColor,
+                                          fontSize: 11),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
