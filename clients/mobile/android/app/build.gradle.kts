@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "com.x87player.x87_mobile"
-        minSdk = flutter.minSdkVersion
+        minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

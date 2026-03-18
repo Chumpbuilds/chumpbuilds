@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/vlc_player_widget.dart';
 
 /// Movies / VOD screen — categories → movie list → movie detail + play.
 ///
@@ -42,6 +43,12 @@ class _MoviesScreenState extends State<MoviesScreen> {
   bool _loadingMovies = false;
   bool _loadingDetail = false;
   bool _searchVisible = false;
+
+  // ─── VLC embedded player state ────────────────────────────────────────────
+  String _vlcStreamUrl = '';
+  String _vlcTitle = '';
+  int _vlcPlayerKey = 0;
+  bool _vlcAutoPlay = false;
 
   final _headerSearchCtrl = TextEditingController();
 
@@ -201,7 +208,21 @@ class _MoviesScreenState extends State<MoviesScreen> {
 
   // ─── Playback ─────────────────────────────────────────────────────────────
 
-  Future<void> _playMovie(Map<String, dynamic> movie) async {
+  void _playMovie(Map<String, dynamic> movie) {
+    final streamId = movie['stream_id']?.toString() ?? '';
+    if (streamId.isEmpty) return;
+    final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
+    if (url.isEmpty) return;
+    final name = movie['name']?.toString() ?? '';
+    setState(() {
+      _vlcStreamUrl = url;
+      _vlcTitle = name;
+      _vlcAutoPlay = true;
+      _vlcPlayerKey++;
+    });
+  }
+
+  Future<void> _openMovieExternal(Map<String, dynamic> movie) async {
     final streamId = movie['stream_id']?.toString() ?? '';
     if (streamId.isEmpty) return;
     final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
@@ -464,14 +485,30 @@ class _MoviesScreenState extends State<MoviesScreen> {
   // ─── Panel 3 – Movie Detail ───────────────────────────────────────────────
 
   Widget _buildDetailPanel() {
+    final playerWidget = VlcPlayerWidget(
+      key: ValueKey(_vlcPlayerKey),
+      streamUrl: _vlcStreamUrl,
+      title: _vlcTitle,
+      contentType: 'movie',
+      autoPlay: _vlcAutoPlay,
+    );
+
     if (_selectedMovie == null) {
       return Container(
         color: _bgColor,
-        child: const Center(
-          child: Text(
-            'Select a movie to see details',
-            style: TextStyle(color: _secondaryTextColor),
-          ),
+        child: Column(
+          children: [
+            // Embedded player (idle state)
+            playerWidget,
+            const Expanded(
+              child: Center(
+                child: Text(
+                  'Select a movie to see details',
+                  style: TextStyle(color: _secondaryTextColor),
+                ),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -507,110 +544,158 @@ class _MoviesScreenState extends State<MoviesScreen> {
       child: _loadingDetail
           ? const Center(
               child: CircularProgressIndicator(color: _primaryColor))
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Poster
-                  if (posterUrl.isNotEmpty)
-                    Center(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: CachedNetworkImage(
-                          imageUrl: posterUrl,
-                          width: 140,
-                          height: 210,
-                          placeholder: (_, __) =>
-                              const SizedBox(width: 140, height: 210),
-                          errorWidget: (_, __, ___) =>
-                              const SizedBox(width: 140, height: 210),
-                          fit: BoxFit.cover,
+          : Column(
+              children: [
+                // ── Embedded VLC player ────────────────────────────────────
+                playerWidget,
+
+                // ── Movie info ─────────────────────────────────────────────
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Poster
+                        if (posterUrl.isNotEmpty)
+                          Center(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CachedNetworkImage(
+                                imageUrl: posterUrl,
+                                width: 120,
+                                height: 180,
+                                placeholder: (_, __) =>
+                                    const SizedBox(width: 120, height: 180),
+                                errorWidget: (_, __, ___) =>
+                                    const SizedBox(width: 120, height: 180),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(height: 10),
+
+                        // Title
+                        Text(
+                          name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold),
                         ),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
+                        const SizedBox(height: 4),
 
-                  // Title
-                  Text(
-                    name,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold),
+                        // Quick-info line
+                        Center(
+                          child: Text(
+                            [
+                              if (year != null) year,
+                              if (rating != null) '⭐ $rating',
+                              if (genre != null) genre,
+                            ].join('   '),
+                            style: const TextStyle(
+                                color: _secondaryTextColor, fontSize: 11),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+
+                        // Play + Open-external row
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  final merged = {...movie, ...movieData};
+                                  _playMovie(merged);
+                                },
+                                icon: const Icon(Icons.play_arrow, size: 18),
+                                label: const Text('Play Movie'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF27AE60),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  final merged = {...movie, ...movieData};
+                                  _openMovieExternal(merged);
+                                },
+                                icon: const Icon(Icons.open_in_new,
+                                    size: 16,
+                                    color: Color(0xFF7F8C8D)),
+                                label: const Text('Open in VLC',
+                                    style: TextStyle(
+                                        color: Color(0xFF7F8C8D),
+                                        fontSize: 12)),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(
+                                      color: Color(0xFF7F8C8D)),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4)),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+
+                        const Divider(color: Color(0xFF3D3D3D)),
+                        const SizedBox(height: 6),
+
+                        // Plot
+                        if (plot != null) ...[
+                          Text(plot,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  height: 1.5)),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // Extra info
+                        if (director != null) _infoField('Director', director),
+                        if (cast != null) _infoField('Cast', cast),
+                        const SizedBox(height: 8),
+
+                        // Favourite toggle
+                        OutlinedButton.icon(
+                          onPressed: () => _toggleMovieFav(movie),
+                          icon: Icon(
+                            isFav ? Icons.star : Icons.star_border,
+                            color: const Color(0xFFFFD700),
+                          ),
+                          label: Text(
+                            isFav
+                                ? 'Remove from Favourites'
+                                : 'Add to Favourites',
+                            style:
+                                const TextStyle(color: Colors.white),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                                color: Color(0xFF3D3D3D)),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4)),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 6),
-
-                  // Quick-info line
-                  Center(
-                    child: Text(
-                      [
-                        if (year != null) year,
-                        if (rating != null) '⭐ $rating',
-                        if (genre != null) genre,
-                      ].join('   '),
-                      style: const TextStyle(
-                          color: _secondaryTextColor, fontSize: 12),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  const Divider(color: Color(0xFF3D3D3D)),
-                  const SizedBox(height: 6),
-
-                  // Plot
-                  if (plot != null) ...[
-                    Text(plot,
-                        style: const TextStyle(
-                            color: Colors.white, fontSize: 13, height: 1.5)),
-                    const SizedBox(height: 14),
-                  ],
-
-                  // Extra info
-                  if (director != null) _infoField('Director', director),
-                  if (cast != null) _infoField('Cast', cast),
-                  const SizedBox(height: 8),
-
-                  // Play button
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      final merged = {...movie, ...movieData};
-                      _playMovie(merged);
-                    },
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Play Movie'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF27AE60),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Favourite toggle
-                  OutlinedButton.icon(
-                    onPressed: () => _toggleMovieFav(movie),
-                    icon: Icon(
-                      isFav ? Icons.star : Icons.star_border,
-                      color: const Color(0xFFFFD700),
-                    ),
-                    label: Text(
-                      isFav ? 'Remove from Favourites' : 'Add to Favourites',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFF3D3D3D)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
     );
   }
