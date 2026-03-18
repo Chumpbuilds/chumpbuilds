@@ -116,6 +116,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
       _loadingMovies = false;
     });
     _filterMovies();
+  }
 
   Future<void> _selectMovie(Map<String, dynamic> movie) async {
     setState(() {
