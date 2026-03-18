@@ -7,7 +7,8 @@ Current User: covchump
 
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                             QPushButton, QLabel, QFrame, QMessageBox, QStackedWidget,
-                            QApplication, QGraphicsDropShadowEffect, QMenuBar, QMenu)
+                            QApplication, QGraphicsDropShadowEffect, QMenuBar, QMenu,
+                            QLineEdit)
 from PyQt6.QtCore import Qt, QSize, pyqtSignal, QThread, QTimer, QDateTime, QSettings
 from PyQt6.QtGui import QFont, QColor, QAction, QPixmap, QPainter
 from auth.modern_login import ModernLoginDialog
