@@ -546,8 +546,31 @@ class MainWindow(QMainWindow):
         info_layout.addWidget(sync_button)
         info_layout.addWidget(logout_button)
         
+        # Search bar for movies/series (hidden by default)
+        self.header_search = QLineEdit()
+        self.header_search.setPlaceholderText("🔍 Search...")
+        self.header_search.setMinimumWidth(300)
+        self.header_search.setMaximumWidth(500)
+        self.header_search.setStyleSheet("""
+            QLineEdit {
+                padding: 8px 14px;
+                font-size: 13px;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 20px;
+                background-color: #2c3e50;
+                color: white;
+            }
+            QLineEdit:focus {
+                border: 1px solid rgba(100, 181, 246, 0.6);
+            }
+        """)
+        self.header_search.textChanged.connect(self.on_header_search_changed)
+        self.header_search.hide()
+
         header_layout.addWidget(self.back_button)
         header_layout.addWidget(logo_section)
+        header_layout.addStretch()
+        header_layout.addWidget(self.header_search)
         header_layout.addStretch()
         header_layout.addWidget(info_section)
         
@@ -680,6 +703,18 @@ class MainWindow(QMainWindow):
         """Go back to home page"""
         self.stacked_widget.setCurrentIndex(0)
         self.back_button.hide()
+        self.header_search.hide()
+        self.header_search.clear()
+
+    def on_header_search_changed(self, text):
+        """Route header search text to the currently active view"""
+        current = self.stacked_widget.currentWidget()
+        if self.movies_view and current is self.movies_view:
+            self.movies_view.filter_categories(text)
+            self.movies_view.filter_movies(text)
+        elif self.series_view and current is self.series_view:
+            self.series_view.filter_categories(text)
+            self.series_view.filter_series(text)
     
     def create_home_page(self):
         """Create the modern home page with stylish cards"""
@@ -862,6 +897,8 @@ class MainWindow(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.live_tv_view)
         self.back_button.show()
+        self.header_search.hide()
+        self.header_search.clear()
     
     def show_movies(self):
         """Show Movies view"""
@@ -876,6 +913,11 @@ class MainWindow(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.movies_view)
         self.back_button.show()
+        self.header_search.blockSignals(True)
+        self.header_search.clear()
+        self.header_search.blockSignals(False)
+        self.header_search.setPlaceholderText("🔍 Search movies & categories...")
+        self.header_search.show()
     
     def show_series(self):
         """Show Series view"""
@@ -890,6 +932,11 @@ class MainWindow(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.series_view)
         self.back_button.show()
+        self.header_search.blockSignals(True)
+        self.header_search.clear()
+        self.header_search.blockSignals(False)
+        self.header_search.setPlaceholderText("🔍 Search series & categories...")
+        self.header_search.show()
     
     def show_search(self):
         """Show Global Search view"""
@@ -904,6 +951,8 @@ class MainWindow(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.global_search)
         self.back_button.show()
+        self.header_search.hide()
+        self.header_search.clear()
     
     def show_favorites(self):
         """Show Favorites view"""
@@ -919,3 +968,5 @@ class MainWindow(QMainWindow):
         
         self.stacked_widget.setCurrentWidget(self.favorites_view)
         self.back_button.show()
+        self.header_search.hide()
+        self.header_search.clear()
