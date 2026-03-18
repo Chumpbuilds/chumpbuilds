@@ -41,6 +41,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
   bool _loadingCategories = true;
   bool _loadingMovies = false;
   bool _loadingDetail = false;
+  bool _searchVisible = false;
 
   final _headerSearchCtrl = TextEditingController();
 
@@ -249,29 +250,38 @@ class _MoviesScreenState extends State<MoviesScreen> {
           constraints: const BoxConstraints(),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: TextField(
-          controller: _headerSearchCtrl,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-          decoration: InputDecoration(
-            hintText: '🔍 Search movies & categories...',
-            hintStyle: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
-            prefixIcon: const Icon(Icons.search, color: Color(0xFF95A5A6), size: 18),
-            suffixIcon: _headerSearchCtrl.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear, color: Color(0xFF95A5A6), size: 16),
-                    onPressed: () { _headerSearchCtrl.clear(); },
-                  )
-                : null,
-            filled: true,
-            fillColor: const Color(0xFF2D2D2D),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
+        title: _searchVisible
+            ? TextField(
+                controller: _headerSearchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: '🔍 Search movies & categories...',
+                  hintStyle: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFF2D2D2D),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              )
+            : const Text('Movies', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(
+            icon: Icon(_searchVisible ? Icons.close : Icons.search, size: 20),
+            onPressed: () {
+              setState(() {
+                _searchVisible = !_searchVisible;
+                if (!_searchVisible) {
+                  _headerSearchCtrl.clear();
+                }
+              });
+            },
           ),
-        ),
+        ],
       ),
       body: Row(
         children: [
@@ -606,31 +616,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  Widget _buildSearchBar(TextEditingController ctrl, String hint) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: TextField(
-        controller: ctrl,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(color: _secondaryTextColor),
-          prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
-          filled: true,
-          fillColor: _surfaceColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: _primaryColor),
-          ),
-        ),
-      ),
-    );
-  }
 
   Widget _infoField(String label, String value) {
     return Padding(
