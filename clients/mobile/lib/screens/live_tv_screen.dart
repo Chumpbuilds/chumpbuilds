@@ -577,115 +577,115 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       color: const Color(0xFF1E1E1E),
       child: Column(
         children: [
-          // ── Embedded VLC player ──────────────────────────────────────────
+          // ── Embedded VLC player (fixed height) ──────────────────────────
           playerWidget,
 
-          // ── Channel info + EPG ───────────────────────────────────────────
+          // ── Compact channel info + action buttons ────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                if (iconUrl.isNotEmpty)
+                  CachedNetworkImage(
+                    imageUrl: iconUrl,
+                    height: 28,
+                    width: 28,
+                    placeholder: (_, __) =>
+                        const Text('📺', style: TextStyle(fontSize: 16)),
+                    errorWidget: (_, __, ___) =>
+                        const Text('📺', style: TextStyle(fontSize: 16)),
+                    fit: BoxFit.contain,
+                  )
+                else
+                  const Text('📺', style: TextStyle(fontSize: 16)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                SizedBox(
+                  height: 28,
+                  child: ElevatedButton.icon(
+                    onPressed: () => _playChannel(ch),
+                    icon: const Icon(Icons.play_arrow, size: 14),
+                    label: const Text('Play', style: TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF27AE60),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                SizedBox(
+                  height: 28,
+                  child: OutlinedButton(
+                    onPressed: () => _openChannelExternal(ch),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      side: const BorderSide(color: Color(0xFF3D3D3D)),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                    child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const Divider(color: Color(0xFF3D3D3D), height: 1),
+
+          // ── EPG header (fixed small row) ─────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                const Text(
+                  '📅 Program Guide',
+                  style: TextStyle(
+                      color: _accentColor,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 6),
+                if (_loadingEpg)
+                  const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: _accentColor,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // ── EPG list (scrollable, fills remaining space) ─────────────────
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Channel logo + name row
-                  Row(
-                    children: [
-                      if (iconUrl.isNotEmpty)
-                        CachedNetworkImage(
-                          imageUrl: iconUrl,
-                          height: 40,
-                          width: 40,
-                          placeholder: (_, __) =>
-                              const Text('📺', style: TextStyle(fontSize: 20)),
-                          errorWidget: (_, __, ___) =>
-                              const Text('📺', style: TextStyle(fontSize: 20)),
-                          fit: BoxFit.contain,
-                        )
-                      else
-                        const Text('📺', style: TextStyle(fontSize: 20)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          name,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Play / Open-external buttons
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () => _playChannel(ch),
-                          icon: const Icon(Icons.play_arrow, size: 18),
-                          label: const Text('Play'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF27AE60),
-                            foregroundColor: Colors.white,
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openChannelExternal(ch),
-                          icon: const Icon(Icons.open_in_new,
-                              size: 16, color: Color(0xFF7F8C8D)),
-                          label: const Text('Open in VLC',
-                              style: TextStyle(
-                                  color: Color(0xFF7F8C8D), fontSize: 12)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                                color: Color(0xFF7F8C8D)),
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // EPG header
-                  Row(
-                    children: [
-                      const Text(
-                        '📅 Program Guide',
+            child: (!_loadingEpg && epgListings.isEmpty)
+                ? const Center(
+                    child: Text('No EPG data available',
                         style: TextStyle(
-                            color: _accentColor,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(width: 8),
-                      if (_loadingEpg)
-                        const Text('Loading…',
-                            style: TextStyle(
-                                color: _secondaryTextColor, fontSize: 12)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // EPG entries
-                  if (!_loadingEpg && epgListings.isEmpty)
-                    const Text('No EPG data available',
-                        style: TextStyle(
-                            color: _secondaryTextColor, fontSize: 12))
-                  else
-                    ...epgListings.map((prog) {
-                      final p = Map<String, dynamic>.from(prog as Map);
+                            color: _secondaryTextColor, fontSize: 12)),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    itemCount: epgListings.length,
+                    itemBuilder: (context, index) {
+                      final p = Map<String, dynamic>.from(
+                          epgListings[index] as Map);
                       final title =
                           _decodeEpgTitle(p['title']?.toString() ?? '');
                       final start = p['start']?.toString() ?? '';
@@ -694,13 +694,14 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                           p['now_playing'] == true ||
                           p['now_playing']?.toString() == '1';
                       return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
                         decoration: BoxDecoration(
                           color: _surfaceColor,
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(4),
                           border: isNow
-                              ? Border.all(color: _liveColor, width: 1.5)
+                              ? Border.all(color: _liveColor, width: 1)
                               : null,
                         ),
                         child: Row(
@@ -708,8 +709,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                           children: [
                             if (isNow) ...[
                               const Text('🔴',
-                                  style: TextStyle(fontSize: 12)),
-                              const SizedBox(width: 6),
+                                  style: TextStyle(fontSize: 10)),
+                              const SizedBox(width: 4),
                             ],
                             Expanded(
                               child: Column(
@@ -719,20 +720,21 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                                   Text(
                                     title,
                                     style: TextStyle(
-                                        color: isNow
-                                            ? _liveColor
-                                            : Colors.white,
-                                        fontWeight: isNow
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        fontSize: 13),
+                                      color: isNow
+                                          ? _liveColor
+                                          : Colors.white,
+                                      fontWeight: isNow
+                                          ? FontWeight.bold
+                                          : FontWeight.normal,
+                                      fontSize: 12,
+                                    ),
                                   ),
                                   if (start.isNotEmpty)
                                     Text(
                                       '$start – $end',
                                       style: const TextStyle(
                                           color: _secondaryTextColor,
-                                          fontSize: 11),
+                                          fontSize: 10),
                                     ),
                                 ],
                               ),
@@ -740,10 +742,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                           ],
                         ),
                       );
-                    }),
-                ],
-              ),
-            ),
+                    },
+                  ),
           ),
         ],
       ),
