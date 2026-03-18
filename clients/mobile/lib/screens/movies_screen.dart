@@ -22,7 +22,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
   static const Color _primaryColor = Color(0xFF0D7377);
   static const Color _accentColor = Color(0xFF3498DB);
   static const Color _secondaryTextColor = Color(0xFF95A5A6);
-  static const Color _successColor = Color(0xFF27AE60);
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
@@ -236,18 +235,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedMovie != null) {
-      return _buildMovieDetail();
-    }
-    if (_selectedCategoryId != null) {
-      return _buildMovieList();
-    }
-    return _buildCategoryList();
-  }
-
-  // ─── Category list ────────────────────────────────────────────────────────
-
-  Widget _buildCategoryList() {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
@@ -255,8 +242,38 @@ class _MoviesScreenState extends State<MoviesScreen> {
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
       ),
-      body: Column(
+      body: Row(
         children: [
+          Expanded(flex: 2, child: _buildCategoriesPanel()),
+          Expanded(flex: 2, child: _buildMoviesPanel()),
+          Expanded(flex: 5, child: _buildDetailPanel()),
+        ],
+      ),
+    );
+  }
+
+  // ─── Panel 1 – Categories ─────────────────────────────────────────────────
+
+  Widget _buildCategoriesPanel() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        border: Border(right: BorderSide(color: Color(0xFF3D3D3D))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: Text(
+              'Categories',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
           _buildSearchBar(_categorySearchCtrl, 'Search categories…'),
           if (_loadingCategories)
             const Expanded(
@@ -265,7 +282,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
           else if (_filteredCategories.isEmpty)
             const Expanded(
                 child: Center(
-                    child: Text('No categories found',
+                    child: Text('No categories',
                         style: TextStyle(color: _secondaryTextColor))))
           else
             Expanded(
@@ -275,17 +292,23 @@ class _MoviesScreenState extends State<MoviesScreen> {
                   final cat = _filteredCategories[i];
                   final catId = cat['category_id']?.toString() ?? '';
                   final count = _movieCounts[catId] ?? 0;
+                  final isSelected = catId == _selectedCategoryId;
                   return ListTile(
-                    leading: const Text('📁',
-                        style: TextStyle(fontSize: 20)),
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor: _surfaceColor,
+                    leading: const Text('📁', style: TextStyle(fontSize: 16)),
                     title: Text(
                       cat['category_name']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(
+                        color: isSelected ? _accentColor : Colors.white,
+                        fontSize: 13,
+                      ),
                     ),
                     trailing: count > 0
                         ? Text('$count',
                             style: const TextStyle(
-                                color: _secondaryTextColor, fontSize: 12))
+                                color: _secondaryTextColor, fontSize: 11))
                         : null,
                     onTap: () => _selectCategory(cat),
                   );
@@ -297,27 +320,26 @@ class _MoviesScreenState extends State<MoviesScreen> {
     );
   }
 
-  // ─── Movie list ───────────────────────────────────────────────────────────
+  // ─── Panel 2 – Movies ─────────────────────────────────────────────────────
 
-  Widget _buildMovieList() {
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: Text(_selectedCategoryName ?? 'Movies'),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        leading: BackButton(
-          onPressed: () => setState(() {
-            _selectedCategoryId = null;
-            _selectedCategoryName = null;
-            _filteredMovies = _allMovies;
-            _movieSearchCtrl.clear();
-          }),
-        ),
-      ),
-      body: Column(
+  Widget _buildMoviesPanel() {
+    return Container(
+      color: _bgColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildSearchBar(_movieSearchCtrl, 'Search all movies…'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: Text(
+              'Movies',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          _buildSearchBar(_movieSearchCtrl, 'Search movies…'),
           if (_loadingMovies)
             const Expanded(
                 child: Center(
@@ -333,45 +355,46 @@ class _MoviesScreenState extends State<MoviesScreen> {
                 itemCount: _filteredMovies.length,
                 itemBuilder: (_, i) {
                   final movie = _filteredMovies[i];
+                  final streamId = movie['stream_id']?.toString() ?? '';
                   final posterUrl = movie['stream_icon']?.toString() ?? '';
-                  final rating =
-                      movie['rating']?.toString() ?? movie['rating_5based']?.toString() ?? '';
-                  final year = movie['year']?.toString() ?? '';
+                  final isSelected =
+                      _selectedMovie != null &&
+                      _selectedMovie!['stream_id']?.toString() == streamId;
+                  final isFav = _favMovieIds.contains(streamId);
                   return ListTile(
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor: _surfaceColor,
                     leading: posterUrl.isNotEmpty
                         ? SizedBox(
-                            width: 40,
-                            height: 56,
+                            width: 32,
+                            height: 48,
                             child: CachedNetworkImage(
                               imageUrl: posterUrl,
                               placeholder: (_, __) => const Text('🎬',
-                                  style: TextStyle(fontSize: 24)),
+                                  style: TextStyle(fontSize: 18)),
                               errorWidget: (_, __, ___) => const Text('🎬',
-                                  style: TextStyle(fontSize: 24)),
+                                  style: TextStyle(fontSize: 18)),
                               fit: BoxFit.cover,
                             ),
                           )
-                        : const Text('🎬', style: TextStyle(fontSize: 24)),
+                        : const Text('🎬', style: TextStyle(fontSize: 18)),
                     title: Text(
                       movie['name']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      [if (year.isNotEmpty) year, if (rating.isNotEmpty) '⭐ $rating']
-                          .join('  '),
-                      style: const TextStyle(
-                          color: _secondaryTextColor, fontSize: 12),
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(
-                        _favMovieIds.contains(
-                                movie['stream_id']?.toString() ?? '')
-                            ? Icons.star
-                            : Icons.star_border,
-                        color: const Color(0xFFFFD700),
-                        size: 20,
+                      style: TextStyle(
+                        color: isSelected ? _accentColor : Colors.white,
+                        fontSize: 13,
                       ),
-                      onPressed: () => _toggleMovieFav(movie),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: GestureDetector(
+                      onTap: () => _toggleMovieFav(movie),
+                      child: Icon(
+                        isFav ? Icons.star : Icons.star_border,
+                        color: const Color(0xFFFFD700),
+                        size: 18,
+                      ),
                     ),
                     onTap: () => _selectMovie(movie),
                   );
@@ -383,9 +406,21 @@ class _MoviesScreenState extends State<MoviesScreen> {
     );
   }
 
-  // ─── Movie detail ─────────────────────────────────────────────────────────
+  // ─── Panel 3 – Movie Detail ───────────────────────────────────────────────
 
-  Widget _buildMovieDetail() {
+  Widget _buildDetailPanel() {
+    if (_selectedMovie == null) {
+      return Container(
+        color: _bgColor,
+        child: const Center(
+          child: Text(
+            'Select a movie to see details',
+            style: TextStyle(color: _secondaryTextColor),
+          ),
+        ),
+      );
+    }
+
     final movie = _selectedMovie!;
     final name = movie['name']?.toString() ?? '';
     final posterUrl = movie['stream_icon']?.toString() ?? '';
@@ -409,23 +444,14 @@ class _MoviesScreenState extends State<MoviesScreen> {
             movie['year']?.toString() ?? '');
     final rating = _notNa(info['rating']?.toString() ??
         movie['rating']?.toString() ?? '');
-    final duration = _notNa(info['duration']?.toString() ?? '');
+    final movieId = movie['stream_id']?.toString() ?? '';
+    final isFav = _favMovieIds.contains(movieId);
 
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: Text(name),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        leading: BackButton(
-          onPressed: () => setState(() {
-            _selectedMovie = null;
-            _vodInfo = null;
-          }),
-        ),
-      ),
-      body: _loadingDetail
-          ? const Center(child: CircularProgressIndicator(color: _primaryColor))
+    return Container(
+      color: _bgColor,
+      child: _loadingDetail
+          ? const Center(
+              child: CircularProgressIndicator(color: _primaryColor))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -438,15 +464,17 @@ class _MoviesScreenState extends State<MoviesScreen> {
                         borderRadius: BorderRadius.circular(8),
                         child: CachedNetworkImage(
                           imageUrl: posterUrl,
-                          height: 200,
-                          placeholder: (_, __) => const SizedBox(height: 200),
+                          width: 140,
+                          height: 210,
+                          placeholder: (_, __) =>
+                              const SizedBox(width: 140, height: 210),
                           errorWidget: (_, __, ___) =>
-                              const SizedBox(height: 200),
-                          fit: BoxFit.contain,
+                              const SizedBox(width: 140, height: 210),
+                          fit: BoxFit.cover,
                         ),
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
                   // Title
                   Text(
@@ -454,24 +482,41 @@ class _MoviesScreenState extends State<MoviesScreen> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
-                  // Meta row
+                  // Quick-info line
                   Center(
                     child: Text(
                       [
                         if (year != null) year,
                         if (rating != null) '⭐ $rating',
-                        if (duration != null) duration,
+                        if (genre != null) genre,
                       ].join('   '),
                       style: const TextStyle(
-                          color: _secondaryTextColor, fontSize: 13),
+                          color: _secondaryTextColor, fontSize: 12),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
+
+                  const Divider(color: Color(0xFF3D3D3D)),
+                  const SizedBox(height: 6),
+
+                  // Plot
+                  if (plot != null) ...[
+                    Text(plot,
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 13, height: 1.5)),
+                    const SizedBox(height: 14),
+                  ],
+
+                  // Extra info
+                  if (director != null) _infoField('Director', director),
+                  if (cast != null) _infoField('Cast', cast),
+                  const SizedBox(height: 8),
 
                   // Play button
                   ElevatedButton.icon(
@@ -482,29 +527,33 @@ class _MoviesScreenState extends State<MoviesScreen> {
                     icon: const Icon(Icons.play_arrow),
                     label: const Text('Play Movie'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _successColor,
+                      backgroundColor: const Color(0xFF27AE60),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(4)),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 10),
 
-                  // Info fields
-                  if (genre != null) _infoField('Genre', genre),
-                  if (director != null) _infoField('Director', director),
-                  if (cast != null) _infoField('Cast', cast),
-                  if (plot != null) ...[
-                    Text('Plot',
-                        style: TextStyle(
-                            color: _accentColor, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 6),
-                    Text(plot,
-                        style: const TextStyle(
-                            color: Colors.white, height: 1.5)),
-                    const SizedBox(height: 12),
-                  ],
+                  // Favourite toggle
+                  OutlinedButton.icon(
+                    onPressed: () => _toggleMovieFav(movie),
+                    icon: Icon(
+                      isFav ? Icons.star : Icons.star_border,
+                      color: const Color(0xFFFFD700),
+                    ),
+                    label: Text(
+                      isFav ? 'Remove from Favourites' : 'Add to Favourites',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF3D3D3D)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                  ),
                 ],
               ),
             ),

@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
-import '../utils/orientation_page.dart';
 import 'favorites_screen.dart';
 import 'license_screen.dart';
 import 'live_tv_screen.dart';
@@ -70,26 +68,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ),
   ];
 
-  // ─── Lifecycle ────────────────────────────────────────────────────────────
-
-  @override
-  void initState() {
-    super.initState();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-  }
-
-  @override
-  void dispose() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
-    super.dispose();
-  }
-
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   void _navigate(BuildContext context, String tag) {
@@ -113,15 +91,9 @@ class _HomeScreenState extends State<HomeScreen> {
       default:
         return;
     }
-    final isLandscapeSection =
-        tag == 'live_tv' || tag == 'movies' || tag == 'series';
 
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => isLandscapeSection
-            ? OrientationPage(child: screen)
-            : screen,
-      ),
+      MaterialPageRoute(builder: (_) => screen),
     );
   }
 
