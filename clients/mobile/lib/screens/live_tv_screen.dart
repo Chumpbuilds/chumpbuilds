@@ -42,9 +42,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   bool _loadingCategories = true;
   bool _loadingChannels = false;
   bool _loadingEpg = false;
+  bool _searchVisible = false;
 
-  final _categorySearchCtrl = TextEditingController();
-  final _channelSearchCtrl = TextEditingController();
+  final _headerSearchCtrl = TextEditingController();
 
   /// track channel count per category
   final Map<String, int> _channelCounts = {};
@@ -54,14 +54,12 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     super.initState();
     _loadCategories();
     _loadFavoriteIds();
-    _categorySearchCtrl.addListener(_filterCategories);
-    _channelSearchCtrl.addListener(_filterChannels);
+    _headerSearchCtrl.addListener(_onHeaderSearchChanged);
   }
 
   @override
   void dispose() {
-    _categorySearchCtrl.dispose();
-    _channelSearchCtrl.dispose();
+    _headerSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -109,7 +107,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       _selectedCategoryName = cat['category_name']?.toString();
       _selectedChannel = null;
       _epgData = null;
-      _channelSearchCtrl.clear();
       _loadingChannels = true;
     });
 
@@ -167,8 +164,13 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   // ─── Filtering ────────────────────────────────────────────────────────────
 
+  void _onHeaderSearchChanged() {
+    _filterCategories();
+    _filterChannels();
+  }
+
   void _filterCategories() {
-    final q = _categorySearchCtrl.text.toLowerCase();
+    final q = _headerSearchCtrl.text.toLowerCase();
     setState(() {
       _filteredCategories = q.isEmpty
           ? _categories
@@ -182,7 +184,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   }
 
   void _filterChannels() {
-    final q = _channelSearchCtrl.text.toLowerCase();
+    final q = _headerSearchCtrl.text.toLowerCase();
     if (q.isEmpty) {
       // Show channels for the current category
       if (_selectedCategoryId != null) {
@@ -246,16 +248,47 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Live TV', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        title: _searchVisible
+            ? TextField(
+                controller: _headerSearchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: '🔍 Search channels & categories...',
+                  hintStyle: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
+                  filled: true,
+                  fillColor: const Color(0xFF2D2D2D),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              )
+            : const Text('Live TV', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
-        toolbarHeight: 36,
+        toolbarHeight: 48,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, size: 18),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: Icon(_searchVisible ? Icons.close : Icons.search, size: 20),
+            onPressed: () {
+              setState(() {
+                _searchVisible = !_searchVisible;
+                if (!_searchVisible) {
+                  _headerSearchCtrl.clear();
+                }
+              });
+            },
+          ),
+        ],
       ),
       body: Row(
         children: [
@@ -293,8 +326,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
               ),
             ),
           ),
-          // Search
-          _buildSearchBar(_categorySearchCtrl, '🔍 Search categories…'),
           // List
           if (_loadingCategories)
             const Expanded(
@@ -385,8 +416,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
               ),
             ),
           ),
-          // Search
-          _buildSearchBar(_channelSearchCtrl, '🔍 Search channels…'),
           // Loading bar
           if (_loadingChannels)
             const LinearProgressIndicator(
@@ -631,34 +660,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  Widget _buildSearchBar(TextEditingController ctrl, String hint) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: TextField(
-        controller: ctrl,
-        style: const TextStyle(color: Colors.white, fontSize: 12),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle:
-              const TextStyle(color: _secondaryTextColor, fontSize: 12),
-          isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          filled: true,
-          fillColor: _surfaceColor,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: const BorderSide(color: _accentColor),
-          ),
-        ),
-      ),
-    );
-  }
 
   /// EPG titles are sometimes base64-encoded.
   String _decodeEpgTitle(String raw) {
