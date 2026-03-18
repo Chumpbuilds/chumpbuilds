@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/favorites_service.dart';
@@ -24,6 +25,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   static const Color _accentColor = Color(0xFF3498DB);
   static const Color _secondaryTextColor = Color(0xFF95A5A6);
   static const Color _liveColor = Color(0xFFE74C3C);
+  static const double _kPlayerHeight = 160;
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
@@ -59,6 +61,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _loadCategories();
     _loadFavoriteIds();
     _headerSearchCtrl.addListener(_onHeaderSearchChanged);
@@ -67,6 +70,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   @override
   void dispose() {
     _headerSearchCtrl.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
@@ -532,12 +536,15 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   Widget _buildEpgPanel() {
     // Shared VLC player widget (reused in both the idle and active layouts)
-    final playerWidget = VlcPlayerWidget(
-      key: ValueKey(_vlcPlayerKey),
-      streamUrl: _vlcStreamUrl,
-      title: _vlcTitle,
-      contentType: 'live',
-      autoPlay: _vlcAutoPlay,
+    final playerWidget = SizedBox(
+      height: _kPlayerHeight,
+      child: VlcPlayerWidget(
+        key: ValueKey(_vlcPlayerKey),
+        streamUrl: _vlcStreamUrl,
+        title: _vlcTitle,
+        contentType: 'live',
+        autoPlay: _vlcAutoPlay,
+      ),
     );
 
     if (_selectedChannel == null) {
