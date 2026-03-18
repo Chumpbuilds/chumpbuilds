@@ -163,22 +163,20 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Top bar: settings + switch-user icons (top-right only) ──────
+            // ── Top bar: icon buttons (top-right only) ────────────────────
             Padding(
-              padding: const EdgeInsets.only(top: 6, right: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.switch_account, color: _descColor),
-                    tooltip: 'Switch Profile',
-                    onPressed: () => Navigator.of(context).pushReplacement(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                    ),
+                    icon: const Icon(Icons.account_circle, color: Colors.white),
+                    iconSize: 28,
+                    onPressed: () => _openSettings(context),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.settings, color: _descColor),
-                    tooltip: 'Settings',
+                    icon: const Icon(Icons.settings, color: Colors.white),
+                    iconSize: 28,
                     onPressed: () => _openSettings(context),
                   ),
                 ],
