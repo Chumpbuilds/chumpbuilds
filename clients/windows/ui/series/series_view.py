@@ -9,11 +9,11 @@ Current User: covchump
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
                             QListWidgetItem, QLabel, QPushButton,
                             QSplitter, QProgressBar, QTextEdit, QTreeWidget,
-                            QTreeWidgetItem, QMessageBox, QFrame, QScrollArea, QMenu)
+                            QTreeWidgetItem, QMessageBox, QFrame, QScrollArea, QMenu, QSlider)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QPoint
 from PyQt6.QtGui import QFont, QPixmap, QAction, QCursor
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from player.vlc_player import get_vlc_player
+from player.vlc_player import get_vlc_player, get_embedded_vlc_player
 
 # Add favorites import
 try:
@@ -310,7 +310,7 @@ class SeriesView(QWidget):
             self.on_series_loaded(self.category_series)
 
     def create_episodes_column(self):
-        """Create episodes column - NO HEADING, NO SEPARATOR"""
+        """Create episodes column with embedded VLC player"""
         self.episodes_widget = QWidget()
         self.episodes_widget.setStyleSheet("""
             QWidget {
@@ -320,9 +320,156 @@ class SeriesView(QWidget):
         
         layout = QVBoxLayout(self.episodes_widget)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
-        # Single scrollable container for everything
+        layout.setSpacing(10)
+
+        # ── 1. Embedded video player frame ────────────────────────────────────
+        self.video_frame = QFrame()
+        self.video_frame.setStyleSheet("background-color: #000000; border-radius: 6px;")
+        self.video_frame.setMinimumHeight(300)
+        self.video_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+
+        self.video_placeholder = QLabel("📼  Select an episode and click Play to start watching")
+        self.video_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_placeholder.setWordWrap(True)
+        self.video_placeholder.setStyleSheet("color: #666666; font-size: 13px; background: transparent;")
+
+        _vf_layout = QVBoxLayout(self.video_frame)
+        _vf_layout.setContentsMargins(10, 10, 10, 10)
+        _vf_layout.addStretch()
+        _vf_layout.addWidget(self.video_placeholder)
+        _vf_layout.addStretch()
+
+        layout.addWidget(self.video_frame, stretch=3)
+
+        self.embedded_player = get_embedded_vlc_player(self.video_frame)
+
+        # ── 2. Player control bar ─────────────────────────────────────────────
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(8)
+
+        self.play_embedded_btn = QPushButton("▶ Play")
+        self.play_embedded_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #229954; }
+            QPushButton:pressed { background-color: #1e8449; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.play_embedded_btn.setEnabled(False)
+        self.play_embedded_btn.clicked.connect(self.play_episode_embedded)
+
+        self.stop_btn = QPushButton("⏹ Stop")
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #c0392b; }
+            QPushButton:pressed { background-color: #a93226; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_playback)
+
+        self.fullscreen_btn = QPushButton("⛶ Fullscreen")
+        self.fullscreen_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #2980b9; }
+            QPushButton:pressed { background-color: #21618c; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.fullscreen_btn.setEnabled(False)
+        self.fullscreen_btn.clicked.connect(self.embedded_player.go_fullscreen)
+
+        self.open_external_btn = QPushButton("↗ Open in VLC")
+        self.open_external_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7f8c8d;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #6c7a7d; }
+            QPushButton:pressed { background-color: #5d6d6e; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.open_external_btn.setEnabled(False)
+        self.open_external_btn.clicked.connect(self.play_episode_external)
+
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setValue(80)
+        self.volume_slider.setFixedWidth(100)
+        self.volume_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #34495e;
+                height: 5px;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #3498db;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #3498db;
+                border-radius: 2px;
+            }
+        """)
+        self.volume_slider.valueChanged.connect(self.embedded_player.set_volume)
+
+        self.mute_btn = QPushButton("🔊")
+        self.mute_btn.setFixedWidth(36)
+        self.mute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2c3e50;
+                color: white;
+                border: none;
+                padding: 6px;
+                font-size: 14px;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #34495e; }
+        """)
+        self.mute_btn.clicked.connect(self._on_mute_toggled)
+
+        controls_layout.addWidget(self.play_embedded_btn)
+        controls_layout.addWidget(self.stop_btn)
+        controls_layout.addWidget(self.fullscreen_btn)
+        controls_layout.addWidget(self.open_external_btn)
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.mute_btn)
+        controls_layout.addWidget(self.volume_slider)
+
+        layout.addLayout(controls_layout)
+
+        # ── 3. Series info and episodes scroll area ───────────────────────────
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setStyleSheet("""
@@ -347,7 +494,7 @@ class SeriesView(QWidget):
         scroll_content.setStyleSheet("background-color: transparent;")
         content_layout = QVBoxLayout(scroll_content)
         content_layout.setContentsMargins(20, 20, 20, 20)
-        content_layout.setSpacing(15)  # Reduced spacing
+        content_layout.setSpacing(15)
         
         # Header with artwork and info (horizontal layout)
         header_layout = QHBoxLayout()
@@ -412,9 +559,9 @@ class SeriesView(QWidget):
         header_layout.addLayout(info_section, 1)
         content_layout.addLayout(header_layout)
         
-        # Episodes tree - NO HEADING, NO SEPARATOR
+        # Episodes tree
         self.episodes_tree = QTreeWidget()
-        self.episodes_tree.setHeaderHidden(True)  # Hide the header
+        self.episodes_tree.setHeaderHidden(True)
         self.episodes_tree.setStyleSheet("""
             QTreeWidget {
                 background-color: rgba(52, 73, 94, 0.3);
@@ -439,64 +586,7 @@ class SeriesView(QWidget):
         content_layout.addWidget(self.episodes_tree)
         
         scroll_area.setWidget(scroll_content)
-        layout.addWidget(scroll_area)
-        
-        # Play controls (outside scroll area)
-        controls_layout = QHBoxLayout()
-        
-        self.play_button = QPushButton("▶ Play Episode (Fullscreen)")
-        self.play_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #229954;
-            }
-            QPushButton:pressed {
-                background-color: #1e8449;
-            }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-            }
-        """)
-        self.play_button.clicked.connect(lambda: self.play_selected_episode(True))
-        self.play_button.setEnabled(False)
-        
-        self.play_windowed_button = QPushButton("▶ Play (Windowed)")
-        self.play_windowed_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-            }
-        """)
-        self.play_windowed_button.clicked.connect(lambda: self.play_selected_episode(False))
-        self.play_windowed_button.setEnabled(False)
-        
-        controls_layout.addWidget(self.play_button)
-        controls_layout.addWidget(self.play_windowed_button)
-        controls_layout.addStretch()
-        
-        layout.addLayout(controls_layout)
+        layout.addWidget(scroll_area, stretch=2)
         
         # Status label
         self.status_label = QLabel("")
@@ -753,10 +843,10 @@ class SeriesView(QWidget):
         elif isinstance(episodes_data, list):
             self.process_episodes_list(episodes_data)
         
-        # Enable play buttons if episodes loaded
+        # Enable play button if episodes loaded
         if self.episodes_tree.topLevelItemCount() > 0:
-            self.play_button.setEnabled(True)
-            self.play_windowed_button.setEnabled(True)
+            self.play_embedded_btn.setEnabled(True)
+            self.open_external_btn.setEnabled(True)
     
     def process_episodes_dict(self, episodes):
         """Process episodes when they're in dictionary format"""
@@ -828,44 +918,78 @@ class SeriesView(QWidget):
                     episode_item.setText(0, f"▶ Episode {episode_num}: {episode_title}")
                     episode_item.setData(0, Qt.ItemDataRole.UserRole, episode)
     
-    def play_selected_episode(self, fullscreen=True):
-        """Play the selected episode"""
-        current_item = self.episodes_tree.currentItem()
-        if current_item and current_item.parent():
-            self.play_episode(current_item, 0, fullscreen)
-    
-    def play_episode(self, item, column, fullscreen=True):
-        """Play selected episode in external VLC"""
+    def _get_episode_stream_info(self, item):
+        """Helper: extract stream URL and full title for an episode tree item."""
         if not item or not item.parent():
-            return
-        
+            return None, None
         episode_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if episode_data and self.current_series:
-            series_id = self.current_series.get('series_id')
-            series_name = self.current_series.get('name', 'Unknown Series')
-            
-            season_num = episode_data.get('season', episode_data.get('season_num', 1))
-            episode_num = episode_data.get('episode_num', episode_data.get('episode', '?'))
-            episode_title = episode_data.get('title', episode_data.get('name', 'Unknown Episode'))
-            
-            container_extension = (episode_data.get('container_extension') or 
-                                 episode_data.get('extension') or 
-                                 episode_data.get('ext') or 
-                                 'mp4')
-            
-            episode_id = episode_data.get('id', episode_data.get('episode_id'))
-            
-            full_title = f"{series_name} - S{season_num:02d}E{episode_num:02d} - {episode_title}"
-            
-            if series_id:
-                if episode_id:
-                    stream_url = f"{self.api.base_url}/series/{self.api.username}/{self.api.password}/{episode_id}.{container_extension}"
-                else:
-                    # Fallback if episode ID is missing (less common)
-                    stream_url = f"{self.api.base_url}/series/{self.api.username}/{self.api.password}/{series_id}.{container_extension}"
-                
-                if self.player.play_stream(stream_url, full_title, fullscreen, 'series'):
-                    self.status_label.setText(f"✓ Now playing: {full_title}")
-                else:
-                    QMessageBox.critical(self, "VLC Error", 
-                                       "Could not launch VLC. Please make sure VLC Media Player is installed.")
+        if not episode_data or not self.current_series:
+            return None, None
+        series_name = self.current_series.get('name', 'Unknown Series')
+        series_id = self.current_series.get('series_id')
+        season_num = episode_data.get('season', episode_data.get('season_num', 1))
+        episode_num = episode_data.get('episode_num', episode_data.get('episode', '?'))
+        episode_title = episode_data.get('title', episode_data.get('name', 'Unknown Episode'))
+        container_extension = (episode_data.get('container_extension') or
+                               episode_data.get('extension') or
+                               episode_data.get('ext') or
+                               'mp4')
+        episode_id = episode_data.get('id', episode_data.get('episode_id'))
+        full_title = f"{series_name} - S{season_num:02d}E{episode_num:02d} - {episode_title}"
+        if series_id:
+            if episode_id:
+                stream_url = f"{self.api.base_url}/series/{self.api.username}/{self.api.password}/{episode_id}.{container_extension}"
+            else:
+                stream_url = f"{self.api.base_url}/series/{self.api.username}/{self.api.password}/{series_id}.{container_extension}"
+            return stream_url, full_title
+        return None, None
+
+    def play_episode(self, item, column):
+        """Play selected episode in embedded player (called from double-click)."""
+        stream_url, full_title = self._get_episode_stream_info(item)
+        if stream_url:
+            self._start_embedded_playback(stream_url, full_title)
+
+    def play_episode_embedded(self):
+        """Slot: play current episode embedded (triggered by ▶ Play button)."""
+        current_item = self.episodes_tree.currentItem()
+        stream_url, full_title = self._get_episode_stream_info(current_item)
+        if stream_url:
+            self._start_embedded_playback(stream_url, full_title)
+
+    def play_episode_external(self):
+        """Slot: open current episode in external VLC (↗ Open in VLC button)."""
+        current_item = self.episodes_tree.currentItem()
+        stream_url, full_title = self._get_episode_stream_info(current_item)
+        if stream_url:
+            self.embedded_player.stop()
+            self.video_placeholder.show()
+            self.stop_btn.setEnabled(False)
+            self.fullscreen_btn.setEnabled(False)
+            self.status_label.setText(f"↗ Playing in external VLC: {full_title}")
+            self.status_label.setStyleSheet("color: #f39c12; padding: 5px;")
+            if not self.player.play_stream(stream_url, full_title, False, 'series'):
+                QMessageBox.critical(self, "VLC Error",
+                                     "Could not launch VLC. Please make sure VLC Media Player is installed.")
+
+    def _start_embedded_playback(self, stream_url: str, full_title: str):
+        """Internal helper: begin embedded playback and update UI."""
+        self.embedded_player.play(stream_url, full_title, 'series')
+        self.video_placeholder.hide()
+        self.stop_btn.setEnabled(True)
+        self.fullscreen_btn.setEnabled(True)
+        self.status_label.setText(f"▶ Now playing: {full_title}")
+        self.status_label.setStyleSheet("color: #2ecc71; padding: 5px;")
+
+    def stop_playback(self):
+        """Stop embedded playback and reset the video frame."""
+        self.embedded_player.stop()
+        self.video_placeholder.show()
+        self.stop_btn.setEnabled(False)
+        self.fullscreen_btn.setEnabled(False)
+        self.status_label.setText("")
+
+    def _on_mute_toggled(self):
+        """Toggle mute and update the mute button icon."""
+        is_muted = self.embedded_player.toggle_mute()
+        self.mute_btn.setText("🔇" if is_muted else "🔊")

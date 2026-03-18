@@ -9,11 +9,11 @@ Current User: covchump
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget, 
                             QListWidgetItem, QLabel, QPushButton,
                             QSplitter, QProgressBar, QTextEdit, QMessageBox, QFrame,
-                            QScrollArea, QMenu)
+                            QScrollArea, QMenu, QSlider)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QPoint
 from PyQt6.QtGui import QFont, QPixmap, QAction, QCursor
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from player.vlc_player import get_vlc_player
+from player.vlc_player import get_vlc_player, get_embedded_vlc_player
 
 # Add favorites import
 try:
@@ -309,7 +309,7 @@ class MoviesView(QWidget):
                 self.on_movies_loaded(self.category_movies)
     
     def create_details_column(self):
-        """Create the movie details column (50% width) - MERGED LAYOUT"""
+        """Create the movie details column (50% width) - with embedded VLC player"""
         self.details_widget = QWidget()
         self.details_widget.setStyleSheet("""
             QWidget {
@@ -319,9 +319,156 @@ class MoviesView(QWidget):
         
         layout = QVBoxLayout(self.details_widget)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
-        # Single unified scrollable area for all movie content
+        layout.setSpacing(10)
+
+        # ── 1. Embedded video player frame ────────────────────────────────────
+        self.video_frame = QFrame()
+        self.video_frame.setStyleSheet("background-color: #000000; border-radius: 6px;")
+        self.video_frame.setMinimumHeight(300)
+        self.video_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+
+        self.video_placeholder = QLabel("🎬  Select a movie and click Play to start watching")
+        self.video_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.video_placeholder.setWordWrap(True)
+        self.video_placeholder.setStyleSheet("color: #666666; font-size: 13px; background: transparent;")
+
+        _vf_layout = QVBoxLayout(self.video_frame)
+        _vf_layout.setContentsMargins(10, 10, 10, 10)
+        _vf_layout.addStretch()
+        _vf_layout.addWidget(self.video_placeholder)
+        _vf_layout.addStretch()
+
+        layout.addWidget(self.video_frame, stretch=3)
+
+        self.embedded_player = get_embedded_vlc_player(self.video_frame)
+
+        # ── 2. Player control bar ─────────────────────────────────────────────
+        controls_layout = QHBoxLayout()
+        controls_layout.setSpacing(8)
+
+        self.play_embedded_btn = QPushButton("▶ Play")
+        self.play_embedded_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27ae60;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #229954; }
+            QPushButton:pressed { background-color: #1e8449; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.play_embedded_btn.setEnabled(False)
+        self.play_embedded_btn.clicked.connect(self.play_movie_embedded)
+
+        self.stop_btn = QPushButton("⏹ Stop")
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #e74c3c;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #c0392b; }
+            QPushButton:pressed { background-color: #a93226; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.stop_btn.setEnabled(False)
+        self.stop_btn.clicked.connect(self.stop_playback)
+
+        self.fullscreen_btn = QPushButton("⛶ Fullscreen")
+        self.fullscreen_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #2980b9; }
+            QPushButton:pressed { background-color: #21618c; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.fullscreen_btn.setEnabled(False)
+        self.fullscreen_btn.clicked.connect(self.embedded_player.go_fullscreen)
+
+        self.open_external_btn = QPushButton("↗ Open in VLC")
+        self.open_external_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #7f8c8d;
+                color: white;
+                border: none;
+                padding: 8px 14px;
+                font-size: 13px;
+                font-weight: bold;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #6c7a7d; }
+            QPushButton:pressed { background-color: #5d6d6e; }
+            QPushButton:disabled { background-color: #95a5a6; }
+        """)
+        self.open_external_btn.setEnabled(False)
+        self.open_external_btn.clicked.connect(self.play_movie_external)
+
+        self.volume_slider = QSlider(Qt.Orientation.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setValue(80)
+        self.volume_slider.setFixedWidth(100)
+        self.volume_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                background: #34495e;
+                height: 5px;
+                border-radius: 2px;
+            }
+            QSlider::handle:horizontal {
+                background: #3498db;
+                width: 14px;
+                height: 14px;
+                margin: -5px 0;
+                border-radius: 7px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #3498db;
+                border-radius: 2px;
+            }
+        """)
+        self.volume_slider.valueChanged.connect(self.embedded_player.set_volume)
+
+        self.mute_btn = QPushButton("🔊")
+        self.mute_btn.setFixedWidth(36)
+        self.mute_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2c3e50;
+                color: white;
+                border: none;
+                padding: 6px;
+                font-size: 14px;
+                border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #34495e; }
+        """)
+        self.mute_btn.clicked.connect(self._on_mute_toggled)
+
+        controls_layout.addWidget(self.play_embedded_btn)
+        controls_layout.addWidget(self.stop_btn)
+        controls_layout.addWidget(self.fullscreen_btn)
+        controls_layout.addWidget(self.open_external_btn)
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.mute_btn)
+        controls_layout.addWidget(self.volume_slider)
+
+        layout.addLayout(controls_layout)
+
+        # ── 3. Movie info scroll area ─────────────────────────────────────────
         movie_scroll = QScrollArea()
         movie_scroll.setWidgetResizable(True)
         movie_scroll.setStyleSheet("""
@@ -420,65 +567,8 @@ class MoviesView(QWidget):
         content_layout.addWidget(self.movie_info)
         
         movie_scroll.setWidget(scroll_content)
-        layout.addWidget(movie_scroll)
-        
-        # Play controls at the bottom (outside scroll area)
-        controls_layout = QHBoxLayout()
-        
-        self.play_button = QPushButton("▶ Play Movie (Fullscreen)")
-        self.play_button.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #229954;
-            }
-            QPushButton:pressed {
-                background-color: #1e8449;
-            }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-            }
-        """)
-        self.play_button.clicked.connect(lambda: self.play_selected_movie(True))
-        self.play_button.setEnabled(False)
-        
-        self.play_windowed_button = QPushButton("▶ Play (Windowed)")
-        self.play_windowed_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3498db;
-                color: white;
-                border: none;
-                padding: 12px 20px;
-                font-size: 14px;
-                font-weight: bold;
-                border-radius: 6px;
-            }
-            QPushButton:hover {
-                background-color: #2980b9;
-            }
-            QPushButton:pressed {
-                background-color: #21618c;
-            }
-            QPushButton:disabled {
-                background-color: #95a5a6;
-            }
-        """)
-        self.play_windowed_button.clicked.connect(lambda: self.play_selected_movie(False))
-        self.play_windowed_button.setEnabled(False)
-        
-        controls_layout.addWidget(self.play_button)
-        controls_layout.addWidget(self.play_windowed_button)
-        controls_layout.addStretch()
-        
-        layout.addLayout(controls_layout)
-        
+        layout.addWidget(movie_scroll, stretch=2)
+
         # Status label
         self.status_label = QLabel("")
         self.status_label.setStyleSheet("color: #2ecc71; padding: 5px;")
@@ -651,8 +741,8 @@ class MoviesView(QWidget):
             self.movie_poster.setText("🎬")
         
         # Enable play buttons
-        self.play_button.setEnabled(True)
-        self.play_windowed_button.setEnabled(True)
+        self.play_embedded_btn.setEnabled(True)
+        self.open_external_btn.setEnabled(True)
         
         # Fetch detailed movie info with plot
         vod_id = movie_data.get('stream_id')
@@ -807,26 +897,64 @@ class MoviesView(QWidget):
                 self.movie_poster.setPixmap(scaled_pixmap)
         reply.deleteLater()
     
-    def play_selected_movie(self, fullscreen=True):
-        """Play the selected movie"""
-        if self.current_movie:
-            self.play_movie(self.movies_list.currentItem(), fullscreen)
-    
-    def play_movie(self, item, fullscreen=True):
-        """Play selected movie in external VLC"""
+    def play_movie(self, item, column=None):
+        """Play selected movie in embedded player (called from double-click)."""
         if not item:
             return
-        
         movie_data = item.data(Qt.ItemDataRole.UserRole)
         if movie_data:
             stream_id = movie_data.get('stream_id')
             movie_name = movie_data.get('name', 'Unknown')
-            
             if stream_id:
                 stream_url = self.api.get_stream_url(stream_id, 'movie', stream_data=movie_data)
-                
-                if self.player.play_stream(stream_url, movie_name, fullscreen, 'movie'):
-                    self.status_label.setText(f"✓ Now playing: {movie_name}")
-                else:
-                    QMessageBox.critical(self, "VLC Error", 
-                                       "Could not launch VLC. Please make sure VLC Media Player is installed.")
+                self._start_embedded_playback(stream_url, movie_name)
+
+    def play_movie_embedded(self):
+        """Slot: play current movie embedded (triggered by ▶ Play button)."""
+        if not self.current_movie:
+            return
+        stream_id = self.current_movie.get('stream_id')
+        movie_name = self.current_movie.get('name', 'Unknown')
+        if stream_id:
+            stream_url = self.api.get_stream_url(stream_id, 'movie', stream_data=self.current_movie)
+            self._start_embedded_playback(stream_url, movie_name)
+
+    def play_movie_external(self):
+        """Slot: open current movie in external VLC (↗ Open in VLC button)."""
+        if not self.current_movie:
+            return
+        stream_id = self.current_movie.get('stream_id')
+        movie_name = self.current_movie.get('name', 'Unknown')
+        if stream_id:
+            stream_url = self.api.get_stream_url(stream_id, 'movie', stream_data=self.current_movie)
+            self.embedded_player.stop()
+            self.video_placeholder.show()
+            self.stop_btn.setEnabled(False)
+            self.fullscreen_btn.setEnabled(False)
+            self.status_label.setText(f"↗ Playing in external VLC: {movie_name}")
+            self.status_label.setStyleSheet("color: #f39c12; padding: 5px;")
+            if not self.player.play_stream(stream_url, movie_name, False, 'movie'):
+                QMessageBox.critical(self, "VLC Error",
+                                     "Could not launch VLC. Please make sure VLC Media Player is installed.")
+
+    def _start_embedded_playback(self, stream_url: str, movie_name: str):
+        """Internal helper: begin embedded playback and update UI."""
+        self.embedded_player.play(stream_url, movie_name, 'movie')
+        self.video_placeholder.hide()
+        self.stop_btn.setEnabled(True)
+        self.fullscreen_btn.setEnabled(True)
+        self.status_label.setText(f"▶ Now playing: {movie_name}")
+        self.status_label.setStyleSheet("color: #2ecc71; padding: 5px;")
+
+    def stop_playback(self):
+        """Stop embedded playback and reset the video frame."""
+        self.embedded_player.stop()
+        self.video_placeholder.show()
+        self.stop_btn.setEnabled(False)
+        self.fullscreen_btn.setEnabled(False)
+        self.status_label.setText("")
+
+    def _on_mute_toggled(self):
+        """Toggle mute and update the mute button icon."""
+        is_muted = self.embedded_player.toggle_mute()
+        self.mute_btn.setText("🔇" if is_muted else "🔊")
