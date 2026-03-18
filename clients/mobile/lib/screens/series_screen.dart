@@ -43,6 +43,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
   bool _loadingSeriesList = false;
   bool _loadingDetail = false;
 
+  bool _categorySearchVisible = false;
+  bool _seriesSearchVisible = false;
+
   final _categorySearchCtrl = TextEditingController();
   final _seriesSearchCtrl = TextEditingController();
 
@@ -302,9 +305,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
       ),
       body: Row(
         children: [
-          Expanded(flex: 2, child: _buildCategoriesPanel()),
-          Expanded(flex: 2, child: _buildSeriesPanel()),
-          Expanded(flex: 5, child: _buildDetailPanel()),
+          Expanded(flex: 7, child: _buildCategoriesPanel()),
+          Expanded(flex: 5, child: _buildSeriesPanel()),
+          Expanded(flex: 8, child: _buildDetailPanel()),
         ],
       ),
     );
@@ -322,17 +325,57 @@ class _SeriesScreenState extends State<SeriesScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: Text(
-              'Categories',
-              style: TextStyle(
-                color: _accentColor,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Categories',
+                    style: TextStyle(
+                      color: _accentColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.search, size: 18, color: Colors.white70),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    setState(() {
+                      _categorySearchVisible = !_categorySearchVisible;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
-          _buildSearchBar(_categorySearchCtrl, 'Search categories…'),
+          if (_categorySearchVisible)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: TextField(
+                controller: _categorySearchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Search categories…',
+                  hintStyle:
+                      const TextStyle(color: Colors.white38, fontSize: 12),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  filled: true,
+                  fillColor: const Color(0xFF2D2D2D),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
           if (_loadingCategories)
             const Expanded(
                 child: Center(
@@ -387,17 +430,57 @@ class _SeriesScreenState extends State<SeriesScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-            child: Text(
-              'Series',
-              style: TextStyle(
-                color: _accentColor,
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-              ),
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _selectedCategoryName ?? 'Series',
+                    style: TextStyle(
+                      color: _accentColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.search, size: 18, color: Colors.white70),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () {
+                    setState(() {
+                      _seriesSearchVisible = !_seriesSearchVisible;
+                    });
+                  },
+                ),
+              ],
             ),
           ),
-          _buildSearchBar(_seriesSearchCtrl, 'Search series…'),
+          if (_seriesSearchVisible)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: TextField(
+                controller: _seriesSearchCtrl,
+                autofocus: true,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  hintText: 'Search series…',
+                  hintStyle:
+                      const TextStyle(color: Colors.white38, fontSize: 12),
+                  isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  filled: true,
+                  fillColor: const Color(0xFF2D2D2D),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
           if (_loadingSeriesList)
             const Expanded(
                 child: Center(
