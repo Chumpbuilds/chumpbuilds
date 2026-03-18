@@ -43,11 +43,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
   bool _loadingSeriesList = false;
   bool _loadingDetail = false;
 
-  bool _categorySearchVisible = false;
-  bool _seriesSearchVisible = false;
-
-  final _categorySearchCtrl = TextEditingController();
-  final _seriesSearchCtrl = TextEditingController();
+  final _headerSearchCtrl = TextEditingController();
 
   final Map<String, int> _seriesCounts = {};
   final Set<int> _expandedSeasons = {};
@@ -57,14 +53,12 @@ class _SeriesScreenState extends State<SeriesScreen> {
     super.initState();
     _loadCategories();
     _loadFavoriteIds();
-    _categorySearchCtrl.addListener(_filterCategories);
-    _seriesSearchCtrl.addListener(_filterSeries);
+    _headerSearchCtrl.addListener(_onHeaderSearchChanged);
   }
 
   @override
   void dispose() {
-    _categorySearchCtrl.dispose();
-    _seriesSearchCtrl.dispose();
+    _headerSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -110,7 +104,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
       _selectedSeries = null;
       _seriesInfo = null;
       _expandedSeasons.clear();
-      _seriesSearchCtrl.clear();
       _loadingSeriesList = true;
     });
 
@@ -124,6 +117,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
       _filteredSeries = series;
       _loadingSeriesList = false;
     });
+    _filterSeries();
   }
 
   Future<void> _selectSeries(Map<String, dynamic> series) async {
@@ -167,8 +161,13 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   // ─── Filtering ────────────────────────────────────────────────────────────
 
+  void _onHeaderSearchChanged() {
+    _filterCategories();
+    _filterSeries();
+  }
+
   void _filterCategories() {
-    final q = _categorySearchCtrl.text.toLowerCase();
+    final q = _headerSearchCtrl.text.toLowerCase();
     setState(() {
       _filteredCategories = q.isEmpty
           ? _categories
@@ -182,7 +181,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
   }
 
   void _filterSeries() {
-    final q = _seriesSearchCtrl.text.toLowerCase();
+    final q = _headerSearchCtrl.text.toLowerCase();
     if (q.isEmpty) {
       if (_selectedCategoryId != null) {
         setState(() {
@@ -299,10 +298,38 @@ class _SeriesScreenState extends State<SeriesScreen> {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Series', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
-        toolbarHeight: 36,
+        toolbarHeight: 48,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, size: 18),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: TextField(
+          controller: _headerSearchCtrl,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          decoration: InputDecoration(
+            hintText: '🔍 Search series & categories...',
+            hintStyle: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
+            prefixIcon: const Icon(Icons.search, color: Color(0xFF95A5A6), size: 18),
+            suffixIcon: _headerSearchCtrl.text.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear, color: Color(0xFF95A5A6), size: 16),
+                    onPressed: () { _headerSearchCtrl.clear(); },
+                  )
+                : null,
+            filled: true,
+            fillColor: const Color(0xFF2D2D2D),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide.none,
+            ),
+          ),
+        ),
       ),
       body: Row(
         children: [
@@ -341,42 +368,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     maxLines: 1,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.search, size: 18, color: Colors.white70),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () {
-                    setState(() {
-                      _categorySearchVisible = !_categorySearchVisible;
-                    });
-                  },
-                ),
               ],
             ),
           ),
-          if (_categorySearchVisible)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-              child: TextField(
-                controller: _categorySearchCtrl,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Search categories…',
-                  hintStyle:
-                      const TextStyle(color: Colors.white38, fontSize: 12),
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  filled: true,
-                  fillColor: const Color(0xFF2D2D2D),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
           if (_loadingCategories)
             const Expanded(
                 child: Center(
@@ -446,42 +440,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     maxLines: 1,
                   ),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.search, size: 18, color: Colors.white70),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onPressed: () {
-                    setState(() {
-                      _seriesSearchVisible = !_seriesSearchVisible;
-                    });
-                  },
-                ),
               ],
             ),
           ),
-          if (_seriesSearchVisible)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-              child: TextField(
-                controller: _seriesSearchCtrl,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-                decoration: InputDecoration(
-                  hintText: 'Search series…',
-                  hintStyle:
-                      const TextStyle(color: Colors.white38, fontSize: 12),
-                  isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                  filled: true,
-                  fillColor: const Color(0xFF2D2D2D),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(6),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
           if (_loadingSeriesList)
             const Expanded(
                 child: Center(
