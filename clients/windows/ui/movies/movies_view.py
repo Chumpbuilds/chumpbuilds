@@ -938,7 +938,12 @@ class MoviesView(QWidget):
                                      "Could not launch VLC. Please make sure VLC Media Player is installed.")
 
     def _start_embedded_playback(self, stream_url: str, movie_name: str):
-        """Internal helper: begin embedded playback and update UI."""
+        """Internal helper: begin embedded playback and update UI.
+
+        Starts playback of *stream_url* (with content type 'movie') in the
+        embedded player, hides the placeholder, enables Stop/Fullscreen buttons,
+        and updates the status label to show the playing movie name.
+        """
         self.embedded_player.play(stream_url, movie_name, 'movie')
         self.video_placeholder.hide()
         self.stop_btn.setEnabled(True)

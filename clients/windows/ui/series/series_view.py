@@ -919,7 +919,16 @@ class SeriesView(QWidget):
                     episode_item.setData(0, Qt.ItemDataRole.UserRole, episode)
     
     def _get_episode_stream_info(self, item):
-        """Helper: extract stream URL and full title for an episode tree item."""
+        """Helper: extract stream URL and full title for an episode tree item.
+
+        Args:
+            item: A QTreeWidgetItem that represents a leaf episode node
+                  (i.e. item.parent() must not be None).
+
+        Returns:
+            A tuple (stream_url, full_title) on success, or (None, None) if
+            *item* is None/a season node, or if no series is currently selected.
+        """
         if not item or not item.parent():
             return None, None
         episode_data = item.data(0, Qt.ItemDataRole.UserRole)
@@ -973,7 +982,12 @@ class SeriesView(QWidget):
                                      "Could not launch VLC. Please make sure VLC Media Player is installed.")
 
     def _start_embedded_playback(self, stream_url: str, full_title: str):
-        """Internal helper: begin embedded playback and update UI."""
+        """Internal helper: begin embedded playback and update UI.
+
+        Starts playback of *stream_url* (with content type 'series') in the
+        embedded player, hides the placeholder, enables Stop/Fullscreen buttons,
+        and updates the status label to show the playing episode title.
+        """
         self.embedded_player.play(stream_url, full_title, 'series')
         self.video_placeholder.hide()
         self.stop_btn.setEnabled(True)
