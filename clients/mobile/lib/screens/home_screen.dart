@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
@@ -15,9 +16,14 @@ import 'series_screen.dart';
 ///
 /// Shows gradient cards for Live TV, Movies, Series, Search, and Favorites.
 /// Navigation is stack-based (Navigator.push) rather than tab-based.
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
   // ─── Theme ────────────────────────────────────────────────────────────────
   static const Color _bgColor = Color(0xFF1E1E1E);
   static const Color _surfaceColor = Color(0xFF2D2D2D);
@@ -63,6 +69,26 @@ class HomeScreen extends StatelessWidget {
       tag: 'favorites',
     ),
   ];
+
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    super.dispose();
+  }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
