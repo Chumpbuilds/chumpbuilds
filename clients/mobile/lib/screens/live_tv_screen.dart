@@ -243,37 +243,63 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedChannel != null) {
-      return _buildChannelDetail();
-    }
-    if (_selectedCategoryId != null) {
-      return _buildChannelList();
-    }
-    return _buildCategoryList();
-  }
-
-  // ─── Category list view ───────────────────────────────────────────────────
-
-  Widget _buildCategoryList() {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
         title: const Text('Live TV'),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        leading: BackButton(onPressed: () => Navigator.pop(context)),
       ),
-      body: Column(
+      body: Row(
         children: [
-          _buildSearchBar(_categorySearchCtrl, 'Search categories…'),
+          // ── Panel 1: Categories ──────────────────────────────────────────
+          Expanded(flex: 2, child: _buildCategoriesPanel()),
+          // ── Panel 2: Channels ────────────────────────────────────────────
+          Expanded(flex: 2, child: _buildChannelsPanel()),
+          // ── Panel 3: EPG / Detail ────────────────────────────────────────
+          Expanded(flex: 5, child: _buildEpgPanel()),
+        ],
+      ),
+    );
+  }
+
+  // ─── Panel 1 – Categories ─────────────────────────────────────────────────
+
+  Widget _buildCategoriesPanel() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        border: Border(right: BorderSide(color: Color(0xFF3A3A3A))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text(
+              'Categories',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // Search
+          _buildSearchBar(_categorySearchCtrl, '🔍 Search categories…'),
+          // List
           if (_loadingCategories)
             const Expanded(
                 child: Center(
-                    child: CircularProgressIndicator(color: _primaryColor)))
+                    child: CircularProgressIndicator(color: _accentColor)))
           else if (_filteredCategories.isEmpty)
             const Expanded(
                 child: Center(
-                    child: Text('No categories found',
-                        style: TextStyle(color: _secondaryTextColor))))
+                    child: Text('No categories',
+                        style: TextStyle(
+                            color: _secondaryTextColor, fontSize: 12))))
           else
             Expanded(
               child: ListView.builder(
@@ -282,58 +308,92 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                   final cat = _filteredCategories[i];
                   final catId = cat['category_id']?.toString() ?? '';
                   final count = _channelCounts[catId] ?? 0;
-                  return ListTile(
-                    leading: const Text('📁',
-                        style: TextStyle(fontSize: 20)),
-                    title: Text(
-                      cat['category_name']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    trailing: count > 0
-                        ? Text('$count',
-                            style: const TextStyle(
-                                color: _secondaryTextColor, fontSize: 12))
-                        : null,
+                  final selected = catId == _selectedCategoryId;
+                  return GestureDetector(
                     onTap: () => _selectCategory(cat),
+                    child: Container(
+                      color:
+                          selected ? const Color(0xFF2C3E50) : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      child: Row(
+                        children: [
+                          const Text('📁', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              cat['category_name']?.toString() ?? '',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (count > 0)
+                            Text(
+                              '$count',
+                              style: const TextStyle(
+                                  color: _secondaryTextColor, fontSize: 11),
+                            ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               ),
             ),
+          // Footer count
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              '${_filteredCategories.length} categories',
+              style: const TextStyle(
+                  color: _secondaryTextColor, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ─── Channel list view ────────────────────────────────────────────────────
+  // ─── Panel 2 – Channels ───────────────────────────────────────────────────
 
-  Widget _buildChannelList() {
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: Text(_selectedCategoryName ?? 'Channels'),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        leading: BackButton(
-          onPressed: () => setState(() {
-            _selectedCategoryId = null;
-            _selectedCategoryName = null;
-            _filteredChannels = _allChannels;
-            _channelSearchCtrl.clear();
-          }),
-        ),
+  Widget _buildChannelsPanel() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        border: Border(right: BorderSide(color: Color(0xFF3A3A3A))),
       ),
-      body: Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildSearchBar(_channelSearchCtrl, 'Search all channels…'),
+          // Header
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text(
+              'Channels',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          // Search
+          _buildSearchBar(_channelSearchCtrl, '🔍 Search channels…'),
+          // Loading bar
           if (_loadingChannels)
+            const LinearProgressIndicator(
+              color: _accentColor,
+              backgroundColor: Color(0xFF2D2D2D),
+            ),
+          // List
+          if (!_loadingChannels && _filteredChannels.isEmpty)
             const Expanded(
                 child: Center(
-                    child: CircularProgressIndicator(color: _primaryColor)))
-          else if (_filteredChannels.isEmpty)
-            const Expanded(
-                child: Center(
-                    child: Text('No channels found',
-                        style: TextStyle(color: _secondaryTextColor))))
+                    child: Text('No channels',
+                        style: TextStyle(
+                            color: _secondaryTextColor, fontSize: 12))))
           else
             Expanded(
               child: ListView.builder(
@@ -341,84 +401,120 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                 itemBuilder: (_, i) {
                   final ch = _filteredChannels[i];
                   final iconUrl = ch['stream_icon']?.toString() ?? '';
-                  return ListTile(
-                    leading: iconUrl.isNotEmpty
-                        ? SizedBox(
+                  final streamId = ch['stream_id']?.toString() ?? '';
+                  final selected =
+                      streamId == _selectedChannel?['stream_id']?.toString();
+                  final isFav = _favChannelIds.contains(streamId);
+                  return GestureDetector(
+                    onTap: () => _selectChannel(ch),
+                    child: Container(
+                      color: selected
+                          ? const Color(0xFF2C3E50)
+                          : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 4),
+                      child: Row(
+                        children: [
+                          // Logo
+                          SizedBox(
                             width: 40,
                             height: 40,
-                            child: CachedNetworkImage(
-                              imageUrl: iconUrl,
-                              placeholder: (_, __) => const Text('📺',
-                                  style: TextStyle(fontSize: 24)),
-                              errorWidget: (_, __, ___) => const Text('📺',
-                                  style: TextStyle(fontSize: 24)),
-                              fit: BoxFit.contain,
+                            child: iconUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: iconUrl,
+                                    placeholder: (_, __) => const Text('📺',
+                                        style: TextStyle(fontSize: 20)),
+                                    errorWidget: (_, __, ___) => const Text(
+                                        '📺',
+                                        style: TextStyle(fontSize: 20)),
+                                    fit: BoxFit.contain,
+                                  )
+                                : const Text('📺',
+                                    style: TextStyle(fontSize: 20)),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              ch['name']?.toString() ?? '',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          )
-                        : const Text('📺', style: TextStyle(fontSize: 24)),
-                    title: Text(
-                      ch['name']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(
-                        _favChannelIds.contains(
-                                ch['stream_id']?.toString() ?? '')
-                            ? Icons.star
-                            : Icons.star_border,
-                        color: const Color(0xFFFFD700),
-                        size: 20,
+                          ),
+                          // Favourite star
+                          GestureDetector(
+                            onTap: () => _toggleChannelFav(ch),
+                            child: Icon(
+                              isFav ? Icons.star : Icons.star_border,
+                              color: const Color(0xFFFFD700),
+                              size: 18,
+                            ),
+                          ),
+                        ],
                       ),
-                      onPressed: () => _toggleChannelFav(ch),
                     ),
-                    onTap: () => _selectChannel(ch),
                   );
                 },
               ),
             ),
+          // Footer count
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              '${_filteredChannels.length} channels',
+              style: const TextStyle(
+                  color: _secondaryTextColor, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ─── Channel detail / EPG view ────────────────────────────────────────────
+  // ─── Panel 3 – EPG / Detail ───────────────────────────────────────────────
 
-  Widget _buildChannelDetail() {
+  Widget _buildEpgPanel() {
+    if (_selectedChannel == null) {
+      return const ColoredBox(
+        color: Color(0xFF1E1E1E),
+        child: Center(
+          child: Text(
+            '📺  Select a channel and click Play to start streaming',
+            style: TextStyle(color: _secondaryTextColor, fontSize: 14),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
     final ch = _selectedChannel!;
     final name = ch['name']?.toString() ?? '';
     final iconUrl = ch['stream_icon']?.toString() ?? '';
     final epgListings = (_epgData?['epg_listings'] as List?) ?? [];
 
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: Text(name),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        leading: BackButton(
-          onPressed: () => setState(() {
-            _selectedChannel = null;
-            _epgData = null;
-          }),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+    return ColoredBox(
+      color: const Color(0xFF1E1E1E),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // Channel logo
-            if (iconUrl.isNotEmpty)
-              Center(
-                child: CachedNetworkImage(
-                  imageUrl: iconUrl,
-                  height: 80,
-                  placeholder: (_, __) => const SizedBox(height: 80),
-                  errorWidget: (_, __, ___) => const SizedBox(height: 80),
-                  fit: BoxFit.contain,
-                ),
-              ),
-            const SizedBox(height: 16),
+            Center(
+              child: iconUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: iconUrl,
+                      height: 80,
+                      placeholder: (_, __) =>
+                          const Text('📺', style: TextStyle(fontSize: 40)),
+                      errorWidget: (_, __, ___) =>
+                          const Text('📺', style: TextStyle(fontSize: 40)),
+                      fit: BoxFit.contain,
+                    )
+                  : const Text('📺', style: TextStyle(fontSize: 40)),
+            ),
+            const SizedBox(height: 12),
 
             // Channel name
             Text(
@@ -426,46 +522,54 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
               textAlign: TextAlign.center,
               style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
 
             // Play button
-            ElevatedButton.icon(
+            ElevatedButton(
               onPressed: () => _playChannel(ch),
-              icon: const Icon(Icons.play_arrow),
-              label: const Text('Play Channel'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryColor,
+                backgroundColor: _accentColor,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
               ),
+              child: const Text('▶ Play',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            // EPG section
-            Text(
-              'EPG / Programme Guide',
-              style: TextStyle(
-                  color: _accentColor,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold),
+            // EPG header
+            Row(
+              children: [
+                const Text(
+                  '📅 Program Guide',
+                  style: TextStyle(
+                      color: _accentColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(width: 8),
+                if (_loadingEpg)
+                  const Text('Loading…',
+                      style: TextStyle(
+                          color: _secondaryTextColor, fontSize: 12)),
+              ],
             ),
             const SizedBox(height: 8),
 
-            if (_loadingEpg)
-              const Center(
-                  child: CircularProgressIndicator(color: _primaryColor))
-            else if (epgListings.isEmpty)
+            // EPG entries
+            if (!_loadingEpg && epgListings.isEmpty)
               const Text('No EPG data available',
-                  style: TextStyle(color: _secondaryTextColor))
+                  style: TextStyle(color: _secondaryTextColor, fontSize: 12))
             else
-              ...epgListings.take(5).map((prog) {
+              ...epgListings.map((prog) {
                 final p = Map<String, dynamic>.from(prog as Map);
-                final title = _decodeEpgTitle(p['title']?.toString() ?? '');
+                final title =
+                    _decodeEpgTitle(p['title']?.toString() ?? '');
                 final start = p['start']?.toString() ?? '';
                 final end = p['end']?.toString() ?? '';
                 final isNow = p['now_playing'] == 1 ||
@@ -482,27 +586,31 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                         : null,
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (isNow) ...[
-                        const Text('🔴',
-                            style: TextStyle(fontSize: 12)),
+                        const Text('🔴', style: TextStyle(fontSize: 12)),
                         const SizedBox(width: 6),
                       ],
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(title,
-                                style: TextStyle(
-                                    color: isNow ? _liveColor : Colors.white,
-                                    fontWeight: isNow
-                                        ? FontWeight.bold
-                                        : FontWeight.normal)),
+                            Text(
+                              title,
+                              style: TextStyle(
+                                  color: isNow ? _liveColor : Colors.white,
+                                  fontWeight: isNow
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  fontSize: 13),
+                            ),
                             if (start.isNotEmpty)
-                              Text('$start – $end',
-                                  style: const TextStyle(
-                                      color: _secondaryTextColor,
-                                      fontSize: 12)),
+                              Text(
+                                '$start – $end',
+                                style: const TextStyle(
+                                    color: _secondaryTextColor, fontSize: 11),
+                              ),
                           ],
                         ),
                       ),
@@ -520,23 +628,26 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   Widget _buildSearchBar(TextEditingController ctrl, String hint) {
     return Padding(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: TextField(
         controller: ctrl,
-        style: const TextStyle(color: Colors.white),
+        style: const TextStyle(color: Colors.white, fontSize: 12),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: _secondaryTextColor),
-          prefixIcon: const Icon(Icons.search, color: _secondaryTextColor),
+          hintStyle:
+              const TextStyle(color: _secondaryTextColor, fontSize: 12),
+          isDense: true,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           filled: true,
           fillColor: _surfaceColor,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(6),
             borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: _primaryColor),
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: _accentColor),
           ),
         ),
       ),
@@ -546,7 +657,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   /// EPG titles are sometimes base64-encoded.
   String _decodeEpgTitle(String raw) {
     try {
-      // Try base64 decode
       final bytes = Uri.decodeComponent(raw);
       return bytes;
     } catch (_) {
