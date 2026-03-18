@@ -135,31 +135,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final customizations = LicenseService().getAppCustomizations();
-    final appName = customizations['app_name'] as String? ?? 'X87 Player';
     // enabled_features comes from the server as a Map<String, bool>
-    // e.g. {'live_tv': true, 'movies': true, 'series': false, ...}
-    final rawFeatures = customizations['enabled_features'];
+    final rawFeatures = LicenseService().getAppCustomizations()['enabled_features'];
     final List<String> enabledFeatures;
     if (rawFeatures is Map) {
-      // Server returns a map — collect keys where value is truthy.
       enabledFeatures = rawFeatures.entries
           .where((e) => e.value == true)
           .map((e) => e.key.toString())
           .toList();
     } else if (rawFeatures is List) {
-      // Fallback: if it's somehow a list, use it directly.
       enabledFeatures = rawFeatures.cast<String>();
     } else {
-      // Default: enable everything.
       enabledFeatures = ['live_tv', 'movies', 'series', 'search', 'favorites'];
     }
-
-    final xtream = XtreamService();
-    final userInfo = xtream.userInfo ?? {};
-    final xtreamUsername =
-        userInfo['username'] as String? ?? xtream.username ?? '';
-    final profileName = xtream.profileName ?? '';
 
     // Filter cards by enabled features.
     final visibleCards = _cards
@@ -175,103 +163,27 @@ class _HomeScreenState extends State<HomeScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Top bar ───────────────────────────────────────────────────
+            // ── Top bar: settings + switch-user icons (top-right only) ──────
             Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.only(top: 6, right: 8),
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // App name / logo
-                  Text(
-                    appName,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                  IconButton(
+                    icon: const Icon(Icons.switch_account, color: _descColor),
+                    tooltip: 'Switch Profile',
+                    onPressed: () => Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
                     ),
                   ),
-                  const Spacer(),
-                  // Account info chip
-                  if (xtreamUsername.isNotEmpty)
-                    GestureDetector(
-                      onTap: () => _openSettings(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _surfaceColor,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: _borderColor),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.person,
-                                size: 16, color: _primaryColor),
-                            const SizedBox(width: 6),
-                            Column(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  xtreamUsername,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                if (profileName.isNotEmpty)
-                                  Text(
-                                    profileName,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: _descColor,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(width: 6),
-                            const Icon(Icons.settings,
-                                size: 14, color: _descColor),
-                          ],
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-
-            // ── Welcome section ───────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 8),
-              child: Column(
-                children: [
-                  Text(
-                    appName,
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Your Premium Entertainment Hub',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: _descColor,
-                    ),
-                    textAlign: TextAlign.center,
+                  IconButton(
+                    icon: const Icon(Icons.settings, color: _descColor),
+                    tooltip: 'Settings',
+                    onPressed: () => _openSettings(context),
                   ),
                 ],
               ),
             ),
-
-            const SizedBox(height: 24),
 
             // ── Card grid ─────────────────────────────────────────────────
             Expanded(
@@ -279,7 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   children: [
-                    // Row 1 (up to 3 cards)
                     if (row1.isNotEmpty)
                       Row(
                         children: row1
@@ -289,8 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   padding: const EdgeInsets.all(6),
                                   child: _GradientCard(
                                     card: c,
-                                    onTap: () =>
-                                        _navigate(context, c.tag),
+                                    onTap: () => _navigate(context, c.tag),
                                   ),
                                 ),
                               ),
@@ -298,24 +208,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             .toList(),
                       ),
                     const SizedBox(height: 4),
-                    // Row 2 — centered
                     if (row2.isNotEmpty)
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: row2
                             .map(
                               (c) => SizedBox(
-                                width: (MediaQuery.of(context)
-                                            .size
-                                            .width -
-                                        32) /
-                                    3,
+                                width: (MediaQuery.of(context).size.width - 32) / 3,
                                 child: Padding(
                                   padding: const EdgeInsets.all(6),
                                   child: _GradientCard(
                                     card: c,
-                                    onTap: () =>
-                                        _navigate(context, c.tag),
+                                    onTap: () => _navigate(context, c.tag),
                                   ),
                                 ),
                               ),
