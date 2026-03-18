@@ -136,22 +136,30 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             // ── Top bar: icon buttons (top-right only) ────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.account_circle, color: Colors.white),
-                    iconSize: 28,
-                    onPressed: () => _openSettings(context),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.settings, color: Colors.white),
-                    iconSize: 28,
-                    onPressed: () => _openSettings(context),
-                  ),
-                ],
+            SizedBox(
+              height: 32,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.account_circle, color: Colors.white),
+                      iconSize: 20,
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => _openSettings(context),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.settings, color: Colors.white),
+                      iconSize: 20,
+                      constraints: const BoxConstraints(),
+                      padding: EdgeInsets.zero,
+                      onPressed: () => _openSettings(context),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -319,12 +327,15 @@ class _SettingsScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: Text(appName),
+        title: Text(appName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         centerTitle: true,
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        toolbarHeight: 36,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, size: 18),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),

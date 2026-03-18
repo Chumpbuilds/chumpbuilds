@@ -246,10 +246,16 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Live TV'),
+        title: const Text('Live TV', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
-        leading: BackButton(onPressed: () => Navigator.pop(context)),
+        toolbarHeight: 36,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, size: 18),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: Row(
         children: [

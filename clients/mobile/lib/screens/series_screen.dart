@@ -299,9 +299,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Series'),
+        title: const Text('Series', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
+        toolbarHeight: 36,
       ),
       body: Row(
         children: [
