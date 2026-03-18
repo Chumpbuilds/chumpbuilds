@@ -293,18 +293,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_selectedSeries != null) {
-      return _buildSeriesDetail();
-    }
-    if (_selectedCategoryId != null) {
-      return _buildSeriesList();
-    }
-    return _buildCategoryList();
-  }
-
-  // ─── Category list ────────────────────────────────────────────────────────
-
-  Widget _buildCategoryList() {
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
@@ -312,8 +300,38 @@ class _SeriesScreenState extends State<SeriesScreen> {
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
       ),
-      body: Column(
+      body: Row(
         children: [
+          Expanded(flex: 2, child: _buildCategoriesPanel()),
+          Expanded(flex: 2, child: _buildSeriesPanel()),
+          Expanded(flex: 5, child: _buildDetailPanel()),
+        ],
+      ),
+    );
+  }
+
+  // ─── Panel 1 – Categories ─────────────────────────────────────────────────
+
+  Widget _buildCategoriesPanel() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1A1A1A),
+        border: Border(right: BorderSide(color: Color(0xFF3D3D3D))),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: Text(
+              'Categories',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
           _buildSearchBar(_categorySearchCtrl, 'Search categories…'),
           if (_loadingCategories)
             const Expanded(
@@ -322,7 +340,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
           else if (_filteredCategories.isEmpty)
             const Expanded(
                 child: Center(
-                    child: Text('No categories found',
+                    child: Text('No categories',
                         style: TextStyle(color: _secondaryTextColor))))
           else
             Expanded(
@@ -332,17 +350,23 @@ class _SeriesScreenState extends State<SeriesScreen> {
                   final cat = _filteredCategories[i];
                   final catId = cat['category_id']?.toString() ?? '';
                   final count = _seriesCounts[catId] ?? 0;
+                  final isSelected = catId == _selectedCategoryId;
                   return ListTile(
-                    leading: const Text('📁',
-                        style: TextStyle(fontSize: 20)),
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor: _surfaceColor,
+                    leading: const Text('📁', style: TextStyle(fontSize: 16)),
                     title: Text(
                       cat['category_name']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(
+                        color: isSelected ? _accentColor : Colors.white,
+                        fontSize: 13,
+                      ),
                     ),
                     trailing: count > 0
                         ? Text('$count',
                             style: const TextStyle(
-                                color: _secondaryTextColor, fontSize: 12))
+                                color: _secondaryTextColor, fontSize: 11))
                         : null,
                     onTap: () => _selectCategory(cat),
                   );
@@ -354,27 +378,26 @@ class _SeriesScreenState extends State<SeriesScreen> {
     );
   }
 
-  // ─── Series list ──────────────────────────────────────────────────────────
+  // ─── Panel 2 – Series list ────────────────────────────────────────────────
 
-  Widget _buildSeriesList() {
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: Text(_selectedCategoryName ?? 'Series'),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        leading: BackButton(
-          onPressed: () => setState(() {
-            _selectedCategoryId = null;
-            _selectedCategoryName = null;
-            _filteredSeries = _allSeries;
-            _seriesSearchCtrl.clear();
-          }),
-        ),
-      ),
-      body: Column(
+  Widget _buildSeriesPanel() {
+    return Container(
+      color: _bgColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildSearchBar(_seriesSearchCtrl, 'Search all series…'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+            child: Text(
+              'Series',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          _buildSearchBar(_seriesSearchCtrl, 'Search series…'),
           if (_loadingSeriesList)
             const Expanded(
                 child: Center(
@@ -390,44 +413,46 @@ class _SeriesScreenState extends State<SeriesScreen> {
                 itemCount: _filteredSeries.length,
                 itemBuilder: (_, i) {
                   final s = _filteredSeries[i];
+                  final seriesId = s['series_id']?.toString() ?? '';
                   final coverUrl = s['cover']?.toString() ?? '';
-                  final rating = s['rating']?.toString() ?? '';
-                  final year = s['year']?.toString() ?? '';
+                  final isSelected =
+                      _selectedSeries != null &&
+                      _selectedSeries!['series_id']?.toString() == seriesId;
+                  final isFav = _favSeriesIds.contains(seriesId);
                   return ListTile(
+                    dense: true,
+                    selected: isSelected,
+                    selectedTileColor: _surfaceColor,
                     leading: coverUrl.isNotEmpty
                         ? SizedBox(
-                            width: 40,
-                            height: 56,
+                            width: 32,
+                            height: 48,
                             child: CachedNetworkImage(
                               imageUrl: coverUrl,
                               placeholder: (_, __) => const Text('📼',
-                                  style: TextStyle(fontSize: 24)),
+                                  style: TextStyle(fontSize: 18)),
                               errorWidget: (_, __, ___) => const Text('📼',
-                                  style: TextStyle(fontSize: 24)),
+                                  style: TextStyle(fontSize: 18)),
                               fit: BoxFit.cover,
                             ),
                           )
-                        : const Text('📼', style: TextStyle(fontSize: 24)),
+                        : const Text('📼', style: TextStyle(fontSize: 18)),
                     title: Text(
                       s['name']?.toString() ?? '',
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    subtitle: Text(
-                      [if (year.isNotEmpty) year, if (rating.isNotEmpty) '⭐ $rating']
-                          .join('  '),
-                      style: const TextStyle(
-                          color: _secondaryTextColor, fontSize: 12),
-                    ),
-                    trailing: IconButton(
-                      icon: Icon(
-                        _favSeriesIds.contains(
-                                s['series_id']?.toString() ?? '')
-                            ? Icons.star
-                            : Icons.star_border,
-                        color: const Color(0xFFFFD700),
-                        size: 20,
+                      style: TextStyle(
+                        color: isSelected ? _accentColor : Colors.white,
+                        fontSize: 13,
                       ),
-                      onPressed: () => _toggleSeriesFav(s),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: GestureDetector(
+                      onTap: () => _toggleSeriesFav(s),
+                      child: Icon(
+                        isFav ? Icons.star : Icons.star_border,
+                        color: const Color(0xFFFFD700),
+                        size: 18,
+                      ),
                     ),
                     onTap: () => _selectSeries(s),
                   );
@@ -439,9 +464,21 @@ class _SeriesScreenState extends State<SeriesScreen> {
     );
   }
 
-  // ─── Series detail ────────────────────────────────────────────────────────
+  // ─── Panel 3 – Series Detail / Episodes ──────────────────────────────────
 
-  Widget _buildSeriesDetail() {
+  Widget _buildDetailPanel() {
+    if (_selectedSeries == null) {
+      return Container(
+        color: _bgColor,
+        child: const Center(
+          child: Text(
+            'Select a series to see details',
+            style: TextStyle(color: _secondaryTextColor),
+          ),
+        ),
+      );
+    }
+
     final series = _selectedSeries!;
     final name = series['name']?.toString() ?? '';
     final coverUrl = series['cover']?.toString() ?? '';
@@ -461,22 +498,14 @@ class _SeriesScreenState extends State<SeriesScreen> {
         _seriesInfo != null ? _parseEpisodes(_seriesInfo!['episodes']) : <int, List<Map<String, dynamic>>>{};
     final sortedSeasons = episodesBySeasonRaw.keys.toList()..sort();
 
-    return Scaffold(
-      backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: Text(name),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        leading: BackButton(
-          onPressed: () => setState(() {
-            _selectedSeries = null;
-            _seriesInfo = null;
-            _expandedSeasons.clear();
-          }),
-        ),
-      ),
-      body: _loadingDetail
-          ? const Center(child: CircularProgressIndicator(color: _primaryColor))
+    final seriesId = series['series_id']?.toString() ?? '';
+    final isFav = _favSeriesIds.contains(seriesId);
+
+    return Container(
+      color: _bgColor,
+      child: _loadingDetail
+          ? const Center(
+              child: CircularProgressIndicator(color: _primaryColor))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -489,15 +518,17 @@ class _SeriesScreenState extends State<SeriesScreen> {
                         borderRadius: BorderRadius.circular(8),
                         child: CachedNetworkImage(
                           imageUrl: coverUrl,
-                          height: 200,
-                          placeholder: (_, __) => const SizedBox(height: 200),
+                          width: 140,
+                          height: 210,
+                          placeholder: (_, __) =>
+                              const SizedBox(width: 140, height: 210),
                           errorWidget: (_, __, ___) =>
-                              const SizedBox(height: 200),
-                          fit: BoxFit.contain,
+                              const SizedBox(width: 140, height: 210),
+                          fit: BoxFit.cover,
                         ),
                       ),
                     ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
 
                   // Title
                   Text(
@@ -505,10 +536,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 20,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
                   // Meta
                   Center(
@@ -519,24 +550,42 @@ class _SeriesScreenState extends State<SeriesScreen> {
                         if (genre.isNotEmpty) genre,
                       ].join('   '),
                       style: const TextStyle(
-                          color: _secondaryTextColor, fontSize: 13),
+                          color: _secondaryTextColor, fontSize: 12),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 10),
+
+                  const Divider(color: Color(0xFF3D3D3D)),
+                  const SizedBox(height: 6),
 
                   // Plot
                   if (plot.isNotEmpty) ...[
-                    Text('Plot',
-                        style: TextStyle(
-                            color: _accentColor,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15)),
-                    const SizedBox(height: 6),
                     Text(plot,
                         style: const TextStyle(
-                            color: Colors.white, height: 1.5)),
-                    const SizedBox(height: 20),
+                            color: Colors.white, fontSize: 13, height: 1.5)),
+                    const SizedBox(height: 14),
                   ],
+
+                  // Favourite toggle
+                  OutlinedButton.icon(
+                    onPressed: () => _toggleSeriesFav(series),
+                    icon: Icon(
+                      isFav ? Icons.star : Icons.star_border,
+                      color: const Color(0xFFFFD700),
+                    ),
+                    label: Text(
+                      isFav ? 'Remove from Favourites' : 'Add to Favourites',
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Color(0xFF3D3D3D)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
 
                   // Seasons & Episodes
                   if (sortedSeasons.isEmpty && !_loadingDetail)
@@ -620,6 +669,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                                         color: _surfaceColor, width: 1),
                                   ),
                                   child: ListTile(
+                                    dense: true,
                                     leading: const Text('▶',
                                         style: TextStyle(
                                             color: _successColor,
@@ -627,7 +677,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                                     title: Text(
                                       label.isEmpty ? 'Episode' : label,
                                       style: const TextStyle(
-                                          color: Colors.white, fontSize: 14),
+                                          color: Colors.white, fontSize: 13),
                                     ),
                                     onTap: () => _playEpisode(ep),
                                   ),
