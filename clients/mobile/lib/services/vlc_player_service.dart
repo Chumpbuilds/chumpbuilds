@@ -113,7 +113,7 @@ class VlcPlayerService {
     _controller = VlcPlayerController.network(
       url,
       hwAcc: HwAcc.full,
-      autoPlay: false,
+      autoPlay: true, // flutter_vlc_player Android bug: isInitialized never fires with autoPlay: false
       options: options,
     );
 

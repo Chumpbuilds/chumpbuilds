@@ -93,11 +93,11 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
         _controller = ctrl;
       });
 
-      // Wait for the native surface to be ready before issuing play commands
+      // Wait for the native surface to be ready
       await _waitForInitialized(ctrl);
 
       if (!mounted) return;
-      await ctrl.play();
+      // autoPlay: true already started playback; just apply volume
       await ctrl.setVolume(_isMuted ? 0 : _volume.toInt());
 
       if (!mounted) return;
