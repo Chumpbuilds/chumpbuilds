@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/vlc_player_widget.dart';
@@ -240,29 +240,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     final url = _xtream.getStreamUrl(streamId, 'live');
     if (url.isEmpty) return;
 
-    // Convert http(s):// to vlc(s):// so Android routes to the VLC app
-    String vlcUrl = url;
-    if (url.startsWith('http://')) {
-      vlcUrl = 'vlc://${url.substring(7)}';
-    } else if (url.startsWith('https://')) {
-      vlcUrl = 'vlcs://${url.substring(8)}';
-    }
-
-    final vlcUri = Uri.parse(vlcUrl);
-    try {
-      final launched = await launchUrl(vlcUri, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        final rawUri = Uri.parse(url);
-        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {
-      try {
-        final rawUri = Uri.parse(url);
-        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
-      } catch (_) {
-        if (!mounted) return;
-        _showUrlDialog(url);
-      }
+    final launched = await ExternalPlayerService.instance.openInVlc(url);
+    if (!launched && mounted) {
+      _showUrlDialog(url);
     }
   }
 

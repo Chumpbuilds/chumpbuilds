@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../screens/fullscreen_player_screen.dart';
+import '../services/external_player_service.dart';
 import '../services/vlc_player_service.dart';
 
 /// Embedded VLC player widget (video area only, no control bar).
@@ -105,6 +105,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         _isLoading = false;
       });
     } catch (e) {
+      debugPrint('[VlcPlayer] Playback error: $e');
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -136,31 +137,11 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     final url = widget.streamUrl;
     if (url.isEmpty) return;
 
-    // Convert http(s):// to vlc(s):// so Android routes to the VLC app
-    String vlcUrl = url;
-    if (url.startsWith('http://')) {
-      vlcUrl = 'vlc://${url.substring(7)}';
-    } else if (url.startsWith('https://')) {
-      vlcUrl = 'vlcs://${url.substring(8)}';
-    }
-
-    final vlcUri = Uri.parse(vlcUrl);
-    try {
-      final launched = await launchUrl(vlcUri, mode: LaunchMode.externalApplication);
-      if (!launched) {
-        final rawUri = Uri.parse(url);
-        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
-      }
-    } catch (_) {
-      try {
-        final rawUri = Uri.parse(url);
-        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
-      } catch (_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No video player found. URL: $url')),
-        );
-      }
+    final launched = await ExternalPlayerService.instance.openInVlc(url);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No video player found. URL: $url')),
+      );
     }
   }
 
