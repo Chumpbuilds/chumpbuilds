@@ -136,25 +136,15 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     final url = widget.streamUrl;
     if (url.isEmpty) return;
 
-    // Try VLC-specific intent first
-    final vlcUri = Uri.parse('vlc://$url');
-    if (await canLaunchUrl(vlcUri)) {
-      await launchUrl(vlcUri, mode: LaunchMode.externalApplication);
-      return;
-    }
-
-    // Try generic video intent
     final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
+    try {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-      return;
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No video player found. URL: $url')),
+      );
     }
-
-    // Fallback: show snackbar with the URL
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('No video player found. URL: $url')),
-    );
   }
 
   Future<void> _goFullscreen() async {
