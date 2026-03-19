@@ -136,14 +136,31 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     final url = widget.streamUrl;
     if (url.isEmpty) return;
 
-    final uri = Uri.parse(url);
+    // Convert http(s):// to vlc(s):// so Android routes to the VLC app
+    String vlcUrl = url;
+    if (url.startsWith('http://')) {
+      vlcUrl = 'vlc://${url.substring(7)}';
+    } else if (url.startsWith('https://')) {
+      vlcUrl = 'vlcs://${url.substring(8)}';
+    }
+
+    final vlcUri = Uri.parse(vlcUrl);
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final launched = await launchUrl(vlcUri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        final rawUri = Uri.parse(url);
+        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
+      }
     } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('No video player found. URL: $url')),
-      );
+      try {
+        final rawUri = Uri.parse(url);
+        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
+      } catch (_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No video player found. URL: $url')),
+        );
+      }
     }
   }
 

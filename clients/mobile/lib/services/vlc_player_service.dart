@@ -112,12 +112,10 @@ class VlcPlayerService {
 
     _controller = VlcPlayerController.network(
       url,
+      hwAcc: HwAcc.full,
       autoPlay: true,
       options: options,
     );
-
-    // Wait for the native platform channel to be ready before returning
-    await _controller!.initialize();
 
     return _controller!;
   }

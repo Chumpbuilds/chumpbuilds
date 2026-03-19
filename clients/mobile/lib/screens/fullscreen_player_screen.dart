@@ -116,11 +116,36 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
   }
 
   Future<void> _openExternal() async {
-    await _stop();
-    final uri = Uri.parse(widget.streamUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    // Stop embedded playback without popping the screen
+    _controller?.removeListener(_onControllerChanged);
+    await _service.stop();
+
+    final url = widget.streamUrl;
+    if (url.isEmpty) return;
+
+    // Convert http(s):// to vlc(s):// so Android routes to the VLC app
+    String vlcUrl = url;
+    if (url.startsWith('http://')) {
+      vlcUrl = 'vlc://${url.substring(7)}';
+    } else if (url.startsWith('https://')) {
+      vlcUrl = 'vlcs://${url.substring(8)}';
     }
+
+    final vlcUri = Uri.parse(vlcUrl);
+    try {
+      final launched = await launchUrl(vlcUri, mode: LaunchMode.externalApplication);
+      if (!launched) {
+        final rawUri = Uri.parse(url);
+        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      try {
+        final rawUri = Uri.parse(url);
+        await launchUrl(rawUri, mode: LaunchMode.externalApplication);
+      } catch (_) {}
+    }
+
+    if (mounted) Navigator.of(context).pop();
   }
 
   void _onControllerChanged() {
