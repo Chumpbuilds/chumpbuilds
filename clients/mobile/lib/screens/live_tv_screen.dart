@@ -536,15 +536,21 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   // ─── Panel 3 – EPG / Detail ───────────────────────────────────────────────
 
   Widget _buildEpgPanel() {
-    // Shared VLC player widget (reused in both the idle and active layouts)
-    final playerWidget = AspectRatio(
-      aspectRatio: 16 / 9,
-      child: VlcPlayerWidget(
-        key: ValueKey(_vlcPlayerKey),
-        streamUrl: _vlcStreamUrl,
-        title: _vlcTitle,
-        contentType: 'live',
-        autoPlay: _vlcAutoPlay,
+    // Player constrained to ~40% of the panel width, 16:9 aspect ratio
+    final playerWidget = Align(
+      alignment: Alignment.centerLeft,
+      child: FractionallySizedBox(
+        widthFactor: 0.45,
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: VlcPlayerWidget(
+            key: ValueKey(_vlcPlayerKey),
+            streamUrl: _vlcStreamUrl,
+            title: _vlcTitle,
+            contentType: 'live',
+            autoPlay: _vlcAutoPlay,
+          ),
+        ),
       ),
     );
 
@@ -578,7 +584,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       color: const Color(0xFF1E1E1E),
       child: Column(
         children: [
-          // ── Embedded VLC player (fixed height) ──────────────────────────
+          // ── Embedded VLC player (~40% width, left-aligned) ───────────────
           playerWidget,
 
           // ── Compact channel info + action buttons ────────────────────────
@@ -683,69 +689,69 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                               color: _secondaryTextColor, fontSize: 12)),
                     )
                   : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    itemCount: epgListings.length,
-                    itemBuilder: (context, index) {
-                      final p = Map<String, dynamic>.from(
-                          epgListings[index] as Map);
-                      final title =
-                          _decodeEpgTitle(p['title']?.toString() ?? '');
-                      final start = p['start']?.toString() ?? '';
-                      final end = p['end']?.toString() ?? '';
-                      final isNow = p['now_playing'] == 1 ||
-                          p['now_playing'] == true ||
-                          p['now_playing']?.toString() == '1';
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 2),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _surfaceColor,
-                          borderRadius: BorderRadius.circular(4),
-                          border: isNow
-                              ? Border.all(color: _liveColor, width: 1)
-                              : null,
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (isNow) ...[
-                              const Text('🔴',
-                                  style: TextStyle(fontSize: 10)),
-                              const SizedBox(width: 4),
-                            ],
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    title,
-                                    style: TextStyle(
-                                      color: isNow
-                                          ? _liveColor
-                                          : Colors.white,
-                                      fontWeight: isNow
-                                          ? FontWeight.bold
-                                          : FontWeight.normal,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  if (start.isNotEmpty)
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      itemCount: epgListings.length,
+                      itemBuilder: (context, index) {
+                        final p = Map<String, dynamic>.from(
+                            epgListings[index] as Map);
+                        final title =
+                            _decodeEpgTitle(p['title']?.toString() ?? '');
+                        final start = p['start']?.toString() ?? '';
+                        final end = p['end']?.toString() ?? '';
+                        final isNow = p['now_playing'] == 1 ||
+                            p['now_playing'] == true ||
+                            p['now_playing']?.toString() == '1';
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _surfaceColor,
+                            borderRadius: BorderRadius.circular(4),
+                            border: isNow
+                                ? Border.all(color: _liveColor, width: 1)
+                                : null,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (isNow) ...[
+                                const Text('🔴',
+                                    style: TextStyle(fontSize: 10)),
+                                const SizedBox(width: 4),
+                              ],
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
                                     Text(
-                                      '$start – $end',
-                                      style: const TextStyle(
-                                          color: _secondaryTextColor,
-                                          fontSize: 10),
+                                      title,
+                                      style: TextStyle(
+                                        color: isNow
+                                            ? _liveColor
+                                            : Colors.white,
+                                        fontWeight: isNow
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                        fontSize: 12,
+                                      ),
                                     ),
-                                ],
+                                    if (start.isNotEmpty)
+                                      Text(
+                                        '$start – $end',
+                                        style: const TextStyle(
+                                            color: _secondaryTextColor,
+                                            fontSize: 10),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
             ),
           ),
         ],
