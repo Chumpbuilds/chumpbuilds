@@ -20,11 +20,11 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.x87player.x87_mobile"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // flutter_vlc_player requires Android API 24+ (Nougat) for native
+        // platform view registration. Using flutter.minSdkVersion (21) causes
+        // PlatformException(channel-error) in VlcPlayerApi.initialize.
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
