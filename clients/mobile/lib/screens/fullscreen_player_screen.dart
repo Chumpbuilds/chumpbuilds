@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
@@ -82,12 +84,24 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
         widget.contentType,
       );
 
-      await ctrl.setVolume(_isMuted ? 0 : _volume.toInt());
       ctrl.addListener(_onControllerChanged);
 
       if (!mounted) return;
+      // Set controller into state FIRST so VlcPlayer widget mounts and the
+      // native surface is created (mirrors Windows: attach to frame, then play)
       setState(() {
         _controller = ctrl;
+      });
+
+      // Wait for the native surface to be ready before issuing play commands
+      await _waitForInitialized(ctrl);
+
+      if (!mounted) return;
+      await ctrl.play();
+      await ctrl.setVolume(_isMuted ? 0 : _volume.toInt());
+
+      if (!mounted) return;
+      setState(() {
         _isPlaying = true;
         _isLoading = false;
       });
@@ -98,6 +112,26 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
         _isLoading = false;
         _hasError = true;
       });
+    }
+  }
+
+  /// Wait until the controller reports initialized, with a timeout.
+  Future<void> _waitForInitialized(
+    VlcPlayerController ctrl, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    if (ctrl.value.isInitialized) return;
+    final completer = Completer<void>();
+    void listener() {
+      if (ctrl.value.isInitialized && !completer.isCompleted) {
+        completer.complete();
+      }
+    }
+    ctrl.addListener(listener);
+    try {
+      await completer.future.timeout(timeout);
+    } finally {
+      ctrl.removeListener(listener);
     }
   }
 
