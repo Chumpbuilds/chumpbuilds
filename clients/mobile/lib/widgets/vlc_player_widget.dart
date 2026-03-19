@@ -104,11 +104,11 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         _controller = ctrl;
       });
 
-      // Wait for the native surface to be ready before issuing play commands
+      // Wait for the native surface + autoPlay to initialize
       await _waitForInitialized(ctrl);
 
+      // Apply volume/mute after init (autoPlay already started playback)
       if (!mounted) return;
-      await ctrl.play();
       await ctrl.setVolume(_isMuted ? 0 : _volume.toInt());
 
       if (!mounted) return;
