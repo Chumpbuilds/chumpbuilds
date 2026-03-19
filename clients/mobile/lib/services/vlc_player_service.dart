@@ -113,7 +113,7 @@ class VlcPlayerService {
     _controller = VlcPlayerController.network(
       url,
       hwAcc: HwAcc.full,
-      autoPlay: true,
+      autoPlay: false,
       options: options,
     );
 
