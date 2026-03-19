@@ -537,20 +537,14 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   Widget _buildEpgPanel() {
     // Player constrained to ~40% of the panel width, 16:9 aspect ratio
-    final playerWidget = Align(
-      alignment: Alignment.centerLeft,
-      child: FractionallySizedBox(
-        widthFactor: 0.45,
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: VlcPlayerWidget(
-            key: ValueKey(_vlcPlayerKey),
-            streamUrl: _vlcStreamUrl,
-            title: _vlcTitle,
-            contentType: 'live',
-            autoPlay: _vlcAutoPlay,
-          ),
-        ),
+    final playerWidget = AspectRatio(
+      aspectRatio: 16 / 9,
+      child: VlcPlayerWidget(
+        key: ValueKey(_vlcPlayerKey),
+        streamUrl: _vlcStreamUrl,
+        title: _vlcTitle,
+        contentType: 'live',
+        autoPlay: _vlcAutoPlay,
       ),
     );
 

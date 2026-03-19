@@ -382,7 +382,7 @@ class LiveTVView(QWidget):
         # ── 1. Embedded video player frame ────────────────────────────────────
         self.video_frame = QFrame()
         self.video_frame.setStyleSheet("background-color: #000000; border-radius: 6px;")
-        self.video_frame.setMinimumHeight(360)
+        self.video_frame.setMinimumHeight(0)
         # Give the video frame a native HWND so VLC can render directly into it
         self.video_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
 
@@ -529,7 +529,8 @@ class LiveTVView(QWidget):
         controls_layout.addWidget(self.mute_btn)
         controls_layout.addWidget(self.volume_slider)
 
-        layout.addLayout(controls_layout)
+        # controls_layout is intentionally NOT added to the layout — buttons are
+        # kept as orphan attributes so other methods can reference them without crashing.
 
         # ── 3. Channel Info (hidden orphan widgets — referenced by other methods) ──
         # Not added to the layout so the video player fills more space,
