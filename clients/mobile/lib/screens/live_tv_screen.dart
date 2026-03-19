@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,7 +27,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   static const Color _accentColor = Color(0xFF3498DB);
   static const Color _secondaryTextColor = Color(0xFF95A5A6);
   static const Color _liveColor = Color(0xFFE74C3C);
-  static const double _kPlayerHeight = 80;
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
@@ -536,8 +537,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   Widget _buildEpgPanel() {
     // Shared VLC player widget (reused in both the idle and active layouts)
-    final playerWidget = SizedBox(
-      height: _kPlayerHeight,
+    final playerWidget = AspectRatio(
+      aspectRatio: 16 / 9,
       child: VlcPlayerWidget(
         key: ValueKey(_vlcPlayerKey),
         streamUrl: _vlcStreamUrl,
@@ -674,13 +675,14 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
           // ── EPG list (scrollable, fills remaining space) ─────────────────
           Expanded(
-            child: (!_loadingEpg && epgListings.isEmpty)
-                ? const Center(
-                    child: Text('No EPG data available',
-                        style: TextStyle(
-                            color: _secondaryTextColor, fontSize: 12)),
-                  )
-                : ListView.builder(
+            child: ClipRect(
+              child: (!_loadingEpg && epgListings.isEmpty)
+                  ? const Center(
+                      child: Text('No EPG data available',
+                          style: TextStyle(
+                              color: _secondaryTextColor, fontSize: 12)),
+                    )
+                  : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     itemCount: epgListings.length,
                     itemBuilder: (context, index) {
@@ -744,6 +746,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                       );
                     },
                   ),
+            ),
           ),
         ],
       ),
@@ -754,11 +757,12 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   /// EPG titles are sometimes base64-encoded.
   String _decodeEpgTitle(String raw) {
+    if (raw.isEmpty) return raw;
     try {
-      final bytes = Uri.decodeComponent(raw);
-      return bytes;
+      final decoded = utf8.decode(base64.decode(raw));
+      return decoded;
     } catch (_) {
-      return raw;
+      return raw; // fallback to raw if not valid base64
     }
   }
 }
