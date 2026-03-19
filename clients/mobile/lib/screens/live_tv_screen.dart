@@ -239,13 +239,24 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     if (streamId.isEmpty) return;
     final url = _xtream.getStreamUrl(streamId, 'live');
     if (url.isEmpty) return;
+
+    // Try VLC-specific intent first
+    final vlcUri = Uri.parse('vlc://$url');
+    if (await canLaunchUrl(vlcUri)) {
+      await launchUrl(vlcUri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    // Try generic video intent
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      _showUrlDialog(url);
+      return;
     }
+
+    // Fallback: show URL dialog
+    if (!mounted) return;
+    _showUrlDialog(url);
   }
 
   void _showUrlDialog(String url) {
