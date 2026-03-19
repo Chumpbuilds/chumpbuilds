@@ -5,7 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../screens/fullscreen_player_screen.dart';
 import '../services/vlc_player_service.dart';
 
-/// Embedded VLC player widget with control bar.
+/// Embedded VLC player widget (video area only, no control bar).
 ///
 /// Matches the Windows desktop player layout from
 /// `clients/windows/player/vlc_player.py` → `EmbeddedVLCPlayer`.
@@ -37,14 +37,7 @@ class VlcPlayerWidget extends StatefulWidget {
 
 class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   // ─── Theme ────────────────────────────────────────────────────────────────
-  static const Color _surfaceColor = Color(0xFF2D2D2D);
-  static const Color _playColor = Color(0xFF27AE60);
   static const Color _stopColor = Color(0xFFE74C3C);
-  static const Color _fsColor = Color(0xFF3498DB);
-  static const Color _extColor = Color(0xFF7F8C8D);
-  static const Color _muteColor = Color(0xFF2C3E50);
-  static const Color _disabledColor = Color(0xFF95A5A6);
-  static const Color _sliderTrack = Color(0xFF34495E);
   static const Color _sliderActive = Color(0xFF3498DB);
 
   // ─── State ────────────────────────────────────────────────────────────────
@@ -193,12 +186,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        _buildVideoArea(),
-        _buildControlBar(),
-      ],
-    );
+    return _buildVideoArea();
   }
 
   Widget _buildVideoArea() {
@@ -250,109 +238,6 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         _placeholder,
         style: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
         textAlign: TextAlign.center,
-      ),
-    );
-  }
-
-  Widget _buildControlBar() {
-    final hasStream = widget.streamUrl.isNotEmpty;
-    return Container(
-      color: _surfaceColor,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        children: [
-          // ▶ Play
-          _ControlButton(
-            icon: Icons.play_arrow,
-            color: hasStream ? _playColor : _disabledColor,
-            tooltip: 'Play',
-            onPressed: hasStream && !_isPlaying ? _startPlayback : null,
-          ),
-          // ⏹ Stop
-          _ControlButton(
-            icon: Icons.stop,
-            color: _controller != null ? _stopColor : _disabledColor,
-            tooltip: 'Stop',
-            onPressed: _controller != null ? _stopPlayback : null,
-          ),
-          // ⛶ Fullscreen
-          _ControlButton(
-            icon: Icons.fullscreen,
-            color: _controller != null ? _fsColor : _disabledColor,
-            tooltip: 'Fullscreen',
-            onPressed: _controller != null ? _goFullscreen : null,
-          ),
-          // ↗ Open in VLC
-          _ControlButton(
-            icon: Icons.open_in_new,
-            color: hasStream ? _extColor : _disabledColor,
-            tooltip: 'Open in VLC',
-            onPressed: hasStream ? _openExternal : null,
-          ),
-          // 🔊 Mute
-          _ControlButton(
-            icon: _isMuted ? Icons.volume_off : Icons.volume_up,
-            color: _muteColor,
-            tooltip: _isMuted ? 'Unmute' : 'Mute',
-            onPressed: _toggleMute,
-          ),
-          // Volume slider
-          Expanded(
-            child: SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 3,
-                activeTrackColor: _sliderActive,
-                inactiveTrackColor: _sliderTrack,
-                thumbColor: _sliderActive,
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape: SliderComponentShape.noOverlay,
-              ),
-              child: Slider(
-                value: _volume,
-                min: 0,
-                max: 100,
-                onChanged: _setVolume,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Helper widget ────────────────────────────────────────────────────────────
-
-const Color _kDisabledColor = Color(0xFF95A5A6);
-
-class _ControlButton extends StatelessWidget {
-  const _ControlButton({
-    required this.icon,
-    required this.color,
-    required this.tooltip,
-    this.onPressed,
-  });
-
-  final IconData icon;
-  final Color color;
-  final String tooltip;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: IconButton(
-        icon: Icon(
-          icon,
-          color: onPressed != null ? color : _kDisabledColor,
-        ),
-        iconSize: 20,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        constraints: const BoxConstraints(),
-        splashRadius: 16,
-        onPressed: onPressed,
       ),
     );
   }
