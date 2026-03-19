@@ -116,6 +116,9 @@ class VlcPlayerService {
       options: options,
     );
 
+    // Wait for the native platform channel to be ready before returning
+    await _controller!.initialize();
+
     return _controller!;
   }
 
