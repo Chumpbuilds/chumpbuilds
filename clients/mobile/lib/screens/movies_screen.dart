@@ -1,7 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
+import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/vlc_player_widget.dart';
@@ -240,12 +240,11 @@ class _MoviesScreenState extends State<MoviesScreen> {
     if (streamId.isEmpty) return;
     final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
     if (url.isEmpty) return;
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (!mounted) return;
-      _showUrlDialog(url);
+    final launched = await ExternalPlayerService.instance.openInVlc(url);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open video in external player.')),
+      );
     }
   }
 
