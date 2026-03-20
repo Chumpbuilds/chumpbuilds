@@ -62,20 +62,17 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   bool _isLoading = false;
   bool _hasError = false;
 
-  // ─── Android HLS detection ────────────────────────────────────────────────
+  // ─── Android ExoPlayer detection ─────────────────────────────────────────
 
-  /// Returns `true` when Android ExoPlayer path should be used.
+  /// Returns `true` when the Android ExoPlayer path should be used.
   ///
-  /// flutter_vlc_player / LibVLC has proven unreliable for .m3u8 streams on
-  /// Android (stuck in `PlayingState.initializing` forever, despite multiple
-  /// previous fix attempts). Using Flutter's `video_player` package (backed
-  /// by ExoPlayer) gives a much more reliable HLS experience on Android.
-  bool get _useAndroidHls =>
-      !kIsWeb && Platform.isAndroid && _isHlsUrl(widget.streamUrl);
-
-  /// Returns `true` if [url] appears to be an HLS stream.
-  static bool _isHlsUrl(String url) =>
-      url.toLowerCase().contains('.m3u8');
+  /// flutter_vlc_player / LibVLC has proven unreliable on Android (stuck in
+  /// `PlayingState.initializing` forever for many stream types, despite
+  /// multiple previous fix attempts). Flutter's `video_player` package
+  /// (backed by ExoPlayer) handles HLS (.m3u8), MP4, MKV, TS, and other
+  /// common IPTV formats reliably on Android, so we route **all** embedded
+  /// Android playback — live, movie, and series — through it.
+  bool get _useAndroidExoPlayer => !kIsWeb && Platform.isAndroid;
 
   String get _placeholder {
     switch (widget.contentType) {
@@ -120,10 +117,10 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       _hasError = false;
     });
 
-    // Route HLS streams on Android through ExoPlayer (video_player) instead
-    // of LibVLC, which has proven unreliable for .m3u8 URLs on Android.
-    if (_useAndroidHls) {
-      await _startAndroidHlsPlayback();
+    // On Android route all embedded streams through ExoPlayer (video_player)
+    // instead of LibVLC, which has proven unreliable on Android.
+    if (_useAndroidExoPlayer) {
+      await _startAndroidExoPlayerPlayback();
       return;
     }
 
@@ -179,10 +176,10 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   ///
   /// Unlike the VLC path there is no async initialization polling: the
   /// [VideoPlayerController.initialize] call either succeeds or throws.
-  Future<void> _startAndroidHlsPlayback() async {
+  Future<void> _startAndroidExoPlayerPlayback() async {
     if (kDebugMode) {
       debugPrint(
-        '[HlsPlayer] _startAndroidHlsPlayback | '
+        '[ExoPlayer] _startAndroidExoPlayerPlayback | '
         'contentType=${widget.contentType} title="${widget.title}"',
       );
     }
@@ -206,7 +203,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
       await ctrl.setVolume(_isMuted ? 0.0 : _volume / 100.0);
     } catch (e) {
-      debugPrint('[HlsPlayer] Playback error: $e');
+      debugPrint('[ExoPlayer] Playback error: $e');
       ctrl?.removeListener(_onVideoControllerChanged);
       await VideoPlayerService.instance.stop();
       if (!mounted) return;
@@ -300,7 +297,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   }
 
   Future<void> _goFullscreen() async {
-    if (_useAndroidHls) {
+    if (_useAndroidExoPlayer) {
       if (_videoController == null) return;
       _videoController!.removeListener(_onVideoControllerChanged);
       await VideoPlayerService.instance.stop();
