@@ -233,6 +233,19 @@ class _SeriesScreenState extends State<SeriesScreen> {
     });
   }
 
+  /// Stops the embedded player and resets it to the idle (placeholder) state.
+  ///
+  /// Incrementing [_vlcPlayerKey] disposes the active [VlcPlayerWidget], whose
+  /// [dispose] stops whichever service (VLC or ExoPlayer) is currently active.
+  void _stopEmbeddedPlayback() {
+    setState(() {
+      _vlcStreamUrl = '';
+      _vlcTitle = '';
+      _vlcAutoPlay = false;
+      _vlcPlayerKey++;
+    });
+  }
+
   Future<void> _openEpisodeExternal(Map<String, dynamic> episode) async {
     final episodeId = episode['id']?.toString() ?? '';
     if (episodeId.isEmpty) return;
@@ -566,6 +579,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
           children: [
             // Embedded player (idle state)
             playerWidget,
+            // ── Player controls (Stop) ─────────────────────────────────────
+            if (_vlcStreamUrl.isNotEmpty)
+              _buildPlayerControls(),
             const Expanded(
               child: Center(
                 child: Text(
@@ -610,6 +626,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
               children: [
                 // ── Embedded VLC player ────────────────────────────────────
                 playerWidget,
+
+                // ── Player controls (Stop) ────────────────────────────────
+                if (_vlcStreamUrl.isNotEmpty)
+                  _buildPlayerControls(),
 
                 // ── Series info + episodes ─────────────────────────────────
                 Expanded(
@@ -840,6 +860,39 @@ class _SeriesScreenState extends State<SeriesScreen> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /// A compact row showing the currently playing episode title and a Stop button.
+  Widget _buildPlayerControls() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              _vlcTitle,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(
+            height: 28,
+            child: ElevatedButton.icon(
+              onPressed: _stopEmbeddedPlayback,
+              icon: const Icon(Icons.stop, size: 14),
+              label: const Text('Stop', style: TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
 }
 

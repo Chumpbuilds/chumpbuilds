@@ -222,6 +222,19 @@ class _MoviesScreenState extends State<MoviesScreen> {
     });
   }
 
+  /// Stops the embedded player and resets it to the idle (placeholder) state.
+  ///
+  /// Incrementing [_vlcPlayerKey] disposes the active [VlcPlayerWidget], whose
+  /// [dispose] stops whichever service (VLC or ExoPlayer) is currently active.
+  void _stopEmbeddedPlayback() {
+    setState(() {
+      _vlcStreamUrl = '';
+      _vlcTitle = '';
+      _vlcAutoPlay = false;
+      _vlcPlayerKey++;
+    });
+  }
+
   Future<void> _openMovieExternal(Map<String, dynamic> movie) async {
     final streamId = movie['stream_id']?.toString() ?? '';
     if (streamId.isEmpty) return;
@@ -601,7 +614,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
                         ),
                         const SizedBox(height: 8),
 
-                        // Play + Open-external row
+                        // Play + Stop + Open-external row
                         Row(
                           children: [
                             Expanded(
@@ -614,6 +627,22 @@ class _MoviesScreenState extends State<MoviesScreen> {
                                 label: const Text('Play Movie'),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF27AE60),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: _stopEmbeddedPlayback,
+                                icon: const Icon(Icons.stop, size: 18),
+                                label: const Text('Stop'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFFE74C3C),
                                   foregroundColor: Colors.white,
                                   padding: const EdgeInsets.symmetric(
                                       vertical: 12),

@@ -103,12 +103,17 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   void dispose() {
     _controller?.removeListener(_onControllerChanged);
     _videoController?.removeListener(_onVideoControllerChanged);
+    // Stop playback so navigating away (or switching content) never leaves a
+    // stream running in the background.  Both calls are safe no-ops when the
+    // respective service has no active controller.
+    _service.stop();
+    VideoPlayerService.instance.stop();
     super.dispose();
   }
 
   // ─── Playback ─────────────────────────────────────────────────────────────
 
-  Future<void> _startPlayback({bool isRetry = false}) async {
+  Future<void> _startPlayback() async {
     if (widget.streamUrl.isEmpty) return;
     setState(() {
       _isLoading = true;
@@ -116,19 +121,10 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     });
 
     // Route HLS streams on Android through ExoPlayer (video_player) instead
-    // of LibVLC, which has repeatedly failed to initialize for .m3u8 URLs.
+    // of LibVLC, which has proven unreliable for .m3u8 URLs on Android.
     if (_useAndroidHls) {
       await _startAndroidHlsPlayback();
       return;
-    }
-
-    if (kDebugMode) {
-      debugPrint(
-        '[VlcPlayer] _startPlayback | '
-        'isRetry=$isRetry '
-        'contentType=${widget.contentType} '
-        'title="${widget.title}"',
-      );
     }
 
     VlcPlayerController? ctrl;
@@ -137,7 +133,6 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         widget.streamUrl,
         widget.title,
         widget.contentType,
-        useMinimalOptions: isRetry,
       );
 
       ctrl.addListener(_onControllerChanged);
@@ -161,29 +156,9 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         _isPlaying = true;
         _isLoading = false;
       });
-    } on TimeoutException catch (e) {
-      // Timeout alone is not a confirmed failure.  Check whether the
-      // controller reported a concrete error before giving up.
-      final errorDesc = _service.controller?.value.errorDescription;
-      final hasConcreteError = errorDesc != null && errorDesc.isNotEmpty;
-
-      debugPrint(
-        '[VlcPlayer] _startPlayback timeout | '
-        'isRetry=$isRetry '
-        'hasConcreteError=$hasConcreteError '
-        'errorDescription=${errorDesc ?? "(none)"} '
-        'error=$e',
-      );
-
-      if (!isRetry && !hasConcreteError) {
-        // First attempt timed out with no concrete error – try once more
-        // using bare LibVLC defaults (no custom flags).
-        debugPrint('[VlcPlayer] Retrying with minimal options...');
-        ctrl?.removeListener(_onControllerChanged);
-        await _startPlayback(isRetry: true);
-        return;
-      }
-
+    } on TimeoutException {
+      debugPrint('[VlcPlayer] _startPlayback: timeout waiting for VLC init');
+      ctrl?.removeListener(_onControllerChanged);
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -191,6 +166,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       });
     } catch (e) {
       debugPrint('[VlcPlayer] Playback error: $e');
+      ctrl?.removeListener(_onControllerChanged);
       if (!mounted) return;
       setState(() {
         _isLoading = false;
@@ -244,14 +220,10 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   /// Wait until the controller reports initialized (or playback begins), with a timeout.
   ///
-  /// On some Android devices/ROMs, flutter_vlc_player never fires the
-  /// `isInitialized` event even though playback starts successfully.  Accepting
-  /// [PlayingState.playing] and [PlayingState.buffering] as "ready" states
-  /// prevents a spurious [TimeoutException] in those cases.
-  ///
-  /// The timeout is set to 25 s to accommodate slow IPTV servers and live
-  /// streams that need time to reach the first segment before LibVLC emits any
-  /// state change.
+  /// Accepts [PlayingState.playing] and [PlayingState.buffering] as "ready"
+  /// states in addition to [isInitialized] to handle devices/ROMs where
+  /// flutter_vlc_player never fires the `isInitialized` event even though
+  /// playback starts successfully.
   Future<void> _waitForInitialized(
     VlcPlayerController ctrl, {
     Duration timeout = const Duration(seconds: 25),
@@ -261,21 +233,8 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         v.playingState == PlayingState.playing ||
         v.playingState == PlayingState.buffering;
 
-    if (kDebugMode) {
-      debugPrint(
-        '[VlcPlayer] _waitForInitialized start | '
-        'timeout=${timeout.inSeconds}s '
-        'conditions=[isInitialized, playing, buffering] '
-        'isInitialized=${ctrl.value.isInitialized} '
-        'playingState=${ctrl.value.playingState} '
-        'errorDescription=${ctrl.value.errorDescription ?? "(none)"}',
-      );
-    }
+    if (isReady(ctrl.value)) return;
 
-    if (isReady(ctrl.value)) {
-      if (kDebugMode) debugPrint('[VlcPlayer] _waitForInitialized: already ready');
-      return;
-    }
     final completer = Completer<void>();
     void listener() {
       if (isReady(ctrl.value) && !completer.isCompleted) {
@@ -285,20 +244,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     ctrl.addListener(listener);
     try {
       await completer.future.timeout(timeout);
-      if (kDebugMode) {
-        debugPrint(
-          '[VlcPlayer] _waitForInitialized: success | '
-          'isInitialized=${ctrl.value.isInitialized} '
-          'playingState=${ctrl.value.playingState}',
-        );
-      }
     } on TimeoutException {
-      debugPrint(
-        '[VlcPlayer] _waitForInitialized: TIMEOUT after ${timeout.inSeconds}s | '
-        'isInitialized=${ctrl.value.isInitialized} '
-        'playingState=${ctrl.value.playingState} '
-        'errorDescription=${ctrl.value.errorDescription ?? "(none)"}',
-      );
       rethrow;
     } finally {
       ctrl.removeListener(listener);

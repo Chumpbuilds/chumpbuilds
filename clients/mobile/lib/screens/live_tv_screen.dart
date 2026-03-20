@@ -234,6 +234,19 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     });
   }
 
+  /// Stops the embedded player and resets it to the idle (placeholder) state.
+  ///
+  /// Incrementing [_vlcPlayerKey] disposes the active [VlcPlayerWidget], whose
+  /// [dispose] stops whichever service (VLC or ExoPlayer) is currently active.
+  void _stopEmbeddedPlayback() {
+    setState(() {
+      _vlcStreamUrl = '';
+      _vlcTitle = '';
+      _vlcAutoPlay = false;
+      _vlcPlayerKey++;
+    });
+  }
+
   Future<void> _openChannelExternal(Map<String, dynamic> channel) async {
     final streamId = channel['stream_id']?.toString() ?? '';
     if (streamId.isEmpty) return;
@@ -617,6 +630,22 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                     label: const Text('Play', style: TextStyle(fontSize: 11)),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF27AE60),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                SizedBox(
+                  height: 28,
+                  child: ElevatedButton.icon(
+                    onPressed: _stopEmbeddedPlayback,
+                    icon: const Icon(Icons.stop, size: 14),
+                    label: const Text('Stop', style: TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE74C3C),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       shape: RoundedRectangleBorder(
