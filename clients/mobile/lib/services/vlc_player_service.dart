@@ -110,13 +110,13 @@ class VlcPlayerService {
         '--live-caching=$_liveCaching',
         '--file-caching=$_fileCaching',
         '--no-video-title-show',
-        // Use AudioTrack (modern Android audio output) instead of OpenSLES,
-        // which is deprecated on newer Android versions and can cause init hangs.
-        '--aout=android_audiotrack',
-        // Use TCP for RTSP streams to improve stability through NAT/firewalls.
-        '--rtsp-tcp',
-        // Keep connection alive for continuous HTTP/HLS streams.
-        '--http-continuous',
+        // NOTE: --aout=android_audiotrack, --rtsp-tcp and --http-continuous
+        // were removed because they can prevent LibVLC from completing
+        // initialization on certain Android devices/ROMs, resulting in a
+        // TimeoutException even though the stream itself is valid.
+        // LibVLC picks the correct audio output automatically; the other flags
+        // are only relevant to RTSP/raw-HTTP streams and are not needed for the
+        // HLS/TS streams used by Xtream-compatible IPTV providers.
       ]),
       http: VlcHttpOptions([
         // Automatically reconnect on dropped HTTP connections.
