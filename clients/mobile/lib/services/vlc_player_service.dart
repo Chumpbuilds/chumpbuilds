@@ -110,10 +110,16 @@ class VlcPlayerService {
         '--live-caching=$_liveCaching',
         '--file-caching=$_fileCaching',
         '--no-video-title-show',
+        // Explicitly set OpenSLES audio output for reliable Android playback.
+        '--aout=opensles',
       ]),
       http: VlcHttpOptions([
         // Automatically reconnect on dropped HTTP connections.
         VlcHttpOptions.httpReconnect(true),
+      ]),
+      rtp: VlcRtpOptions([
+        // Use TCP for RTP/RTSP to improve stability through NAT/firewalls.
+        VlcRtpOptions.rtpOverRtsp(true),
       ]),
     );
 
