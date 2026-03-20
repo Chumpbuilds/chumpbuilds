@@ -54,9 +54,16 @@ class VideoPlayerService {
       Uri.parse(url),
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
     );
-    _controller = ctrl;
 
-    await ctrl.initialize();
+    // Assign to _controller only after successful initialization to avoid
+    // holding a reference to a controller that failed and was never disposed.
+    try {
+      await ctrl.initialize();
+    } catch (e) {
+      try { await ctrl.dispose(); } catch (_) {}
+      rethrow;
+    }
+    _controller = ctrl;
     await ctrl.setVolume(_isMuted ? 0.0 : _volume / 100.0);
     await ctrl.play();
 

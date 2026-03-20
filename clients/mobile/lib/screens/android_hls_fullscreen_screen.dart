@@ -66,10 +66,8 @@ class _AndroidHlsFullscreenScreenState
   void dispose() {
     _controller?.removeListener(_onControllerChanged);
     _service.stop();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    // Restore all orientations so the previous screen can use its preferred orientation.
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
