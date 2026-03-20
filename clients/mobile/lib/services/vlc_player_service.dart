@@ -17,11 +17,6 @@ class VlcPlayerService {
   static const int _defaultLiveCaching = 2000;
   static const int _defaultFileCaching = 5000;
 
-  // ─── HTTP options ─────────────────────────────────────────────────────────
-  // Matches the UA sent by standalone VLC so IPTV providers accept the
-  // embedded player the same way they accept "Open in VLC".
-  static const String _vlcUserAgent = 'LibVLC/3.0.21 (IPTV)';
-
   // ─── Preference keys ──────────────────────────────────────────────────────
   static const String _keyNetworkCaching = 'vlc_network_caching';
   static const String _keyLiveCaching = 'vlc_live_caching';
@@ -117,9 +112,6 @@ class VlcPlayerService {
         '--no-video-title-show',
       ]),
       http: VlcHttpOptions([
-        // Match the UA that standalone VLC sends so IPTV servers accept the
-        // connection (same as "Open in VLC" behaviour).
-        VlcHttpOptions.httpUserAgent(_vlcUserAgent),
         // Automatically reconnect on dropped HTTP connections.
         VlcHttpOptions.httpReconnect(true),
       ]),
@@ -127,10 +119,9 @@ class VlcPlayerService {
 
     _controller = VlcPlayerController.network(
       url,
-      // Full hardware acceleration improves compatibility with common IPTV
-      // codecs (H.264/H.265) on Android without causing the crashes that
-      // were previously worked around with HwAcc.disabled.
-      hwAcc: HwAcc.full,
+      // Software decoding is more compatible across Android devices and ROMs,
+      // avoiding playback errors caused by hardware decoder incompatibilities.
+      hwAcc: HwAcc.disabled,
       autoPlay: true, // flutter_vlc_player Android bug: isInitialized never fires with autoPlay: false
       options: options,
     );
