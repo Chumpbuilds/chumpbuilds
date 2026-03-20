@@ -10,3 +10,39 @@ Thumbs.db
 __pycache__/
 *.pyc
 *.pyo
+
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+
+# Android/Gradle local/build artifacts
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/captures/
+**/outputs/
+**/android/.kotlin/
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets / signing
+**/key.properties
+**/*.jks
+**/*.keystore
+.env
+.env.*
