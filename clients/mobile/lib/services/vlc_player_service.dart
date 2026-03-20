@@ -112,7 +112,8 @@ class VlcPlayerService {
 
     _controller = VlcPlayerController.network(
       url,
-      hwAcc: HwAcc.full,
+      // HwAcc.disabled avoids codec/device-compatibility crashes on Android embedded VLC.
+      hwAcc: HwAcc.disabled,
       autoPlay: true, // flutter_vlc_player Android bug: isInitialized never fires with autoPlay: false
       options: options,
     );
