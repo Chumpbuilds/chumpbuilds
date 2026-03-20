@@ -115,15 +115,27 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
     }
   }
 
-  /// Wait until the controller reports initialized, with a timeout.
+  /// Wait until the controller reports initialized (or playback begins), with a timeout.
+  ///
+  /// On some Android devices/ROMs, flutter_vlc_player never fires the
+  /// `isInitialized` event even though playback starts successfully.  Accepting
+  /// [PlayingState.playing] and [PlayingState.buffering] as "ready" states
+  /// prevents a spurious [TimeoutException] in those cases.
+  ///
+  /// The timeout is set to 25 s to accommodate slow IPTV servers and live
+  /// streams that need time to reach the first segment before LibVLC emits any
+  /// state change.
   Future<void> _waitForInitialized(
     VlcPlayerController ctrl, {
-    Duration timeout = const Duration(seconds: 10),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     if (ctrl.value.isInitialized) return;
     final completer = Completer<void>();
     void listener() {
-      if (ctrl.value.isInitialized && !completer.isCompleted) {
+      if ((ctrl.value.isInitialized ||
+              ctrl.value.playingState == PlayingState.playing ||
+              ctrl.value.playingState == PlayingState.buffering) &&
+          !completer.isCompleted) {
         completer.complete();
       }
     }
