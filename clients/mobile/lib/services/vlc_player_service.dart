@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -9,10 +10,17 @@ class VlcPlayerService {
   VlcPlayerService._();
   static final VlcPlayerService instance = VlcPlayerService._();
 
-  // ─── Caching defaults (matching Windows player) ───────────────────────────
-  static const int _defaultNetworkCaching = 15000;
-  static const int _defaultLiveCaching = 15000;
-  static const int _defaultFileCaching = 20000;
+  // ─── Caching defaults ─────────────────────────────────────────────────────
+  // Reduced from 15 000/20 000 ms – high values caused IPTV servers to drop
+  // the connection before the first read, triggering "cannot play back".
+  static const int _defaultNetworkCaching = 2000;
+  static const int _defaultLiveCaching = 2000;
+  static const int _defaultFileCaching = 5000;
+
+  // ─── HTTP options ─────────────────────────────────────────────────────────
+  // Matches the UA sent by standalone VLC so IPTV providers accept the
+  // embedded player the same way they accept "Open in VLC".
+  static const String _vlcUserAgent = 'LibVLC/3.0.21 (IPTV)';
 
   // ─── Preference keys ──────────────────────────────────────────────────────
   static const String _keyNetworkCaching = 'vlc_network_caching';
@@ -108,15 +116,38 @@ class VlcPlayerService {
         '--file-caching=$_fileCaching',
         '--no-video-title-show',
       ]),
+      http: VlcHttpOptions([
+        // Match the UA that standalone VLC sends so IPTV servers accept the
+        // connection (same as "Open in VLC" behaviour).
+        VlcHttpOptions.httpUserAgent(_vlcUserAgent),
+        // Automatically reconnect on dropped HTTP connections.
+        VlcHttpOptions.httpReconnect(true),
+      ]),
     );
 
     _controller = VlcPlayerController.network(
       url,
-      // HwAcc.disabled avoids codec/device-compatibility crashes on Android embedded VLC.
-      hwAcc: HwAcc.disabled,
+      // Full hardware acceleration improves compatibility with common IPTV
+      // codecs (H.264/H.265) on Android without causing the crashes that
+      // were previously worked around with HwAcc.disabled.
+      hwAcc: HwAcc.full,
       autoPlay: true, // flutter_vlc_player Android bug: isInitialized never fires with autoPlay: false
       options: options,
     );
+
+    if (kDebugMode) {
+      _controller!.addOnInitListener(() {
+        debugPrint(
+          '[VLC] init – state: ${_controller?.value.playingState}',
+        );
+      });
+      _controller!.addListener(() {
+        final err = _controller?.value.errorDescription;
+        if (err != null && err.isNotEmpty) {
+          debugPrint('[VLC] error: $err');
+        }
+      });
+    }
 
     return _controller!;
   }
