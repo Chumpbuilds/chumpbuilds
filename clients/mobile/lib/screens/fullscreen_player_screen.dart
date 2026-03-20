@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
@@ -76,12 +77,23 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
 
   // ─── Playback ─────────────────────────────────────────────────────────────
 
-  Future<void> _startPlayback() async {
+  Future<void> _startPlayback({bool isRetry = false}) async {
+    if (kDebugMode) {
+      debugPrint(
+        '[FullscreenPlayer] _startPlayback | '
+        'isRetry=$isRetry '
+        'contentType=${widget.contentType} '
+        'title="${widget.title}"',
+      );
+    }
+
+    VlcPlayerController? ctrl;
     try {
-      final ctrl = await _service.play(
+      ctrl = await _service.play(
         widget.streamUrl,
         widget.title,
         widget.contentType,
+        useMinimalOptions: isRetry,
       );
 
       ctrl.addListener(_onControllerChanged);
@@ -104,6 +116,34 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
       setState(() {
         _isPlaying = true;
         _isLoading = false;
+      });
+    } on TimeoutException catch (e) {
+      // Timeout alone is not a confirmed failure.  Check whether the
+      // controller reported a concrete error before giving up.
+      final errorDesc = _service.controller?.value.errorDescription;
+      final hasConcreteError = errorDesc != null && errorDesc.isNotEmpty;
+
+      debugPrint(
+        '[FullscreenPlayer] _startPlayback timeout | '
+        'isRetry=$isRetry '
+        'hasConcreteError=$hasConcreteError '
+        'errorDescription=${errorDesc ?? "(none)"} '
+        'error=$e',
+      );
+
+      if (!isRetry && !hasConcreteError) {
+        // First attempt timed out with no concrete error – try once more
+        // using bare LibVLC defaults (no custom flags).
+        debugPrint('[FullscreenPlayer] Retrying with minimal options...');
+        ctrl?.removeListener(_onControllerChanged);
+        await _startPlayback(isRetry: true);
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
       });
     } catch (e) {
       debugPrint('[FullscreenPlayer] Playback error: $e');
@@ -129,19 +169,50 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
     VlcPlayerController ctrl, {
     Duration timeout = const Duration(seconds: 25),
   }) async {
-    if (ctrl.value.isInitialized) return;
+    bool isReady(VlcPlayerValue v) =>
+        v.isInitialized ||
+        v.playingState == PlayingState.playing ||
+        v.playingState == PlayingState.buffering;
+
+    if (kDebugMode) {
+      debugPrint(
+        '[FullscreenPlayer] _waitForInitialized start | '
+        'timeout=${timeout.inSeconds}s '
+        'conditions=[isInitialized, playing, buffering] '
+        'isInitialized=${ctrl.value.isInitialized} '
+        'playingState=${ctrl.value.playingState} '
+        'errorDescription=${ctrl.value.errorDescription ?? "(none)"}',
+      );
+    }
+
+    if (isReady(ctrl.value)) {
+      if (kDebugMode) debugPrint('[FullscreenPlayer] _waitForInitialized: already ready');
+      return;
+    }
     final completer = Completer<void>();
     void listener() {
-      if ((ctrl.value.isInitialized ||
-              ctrl.value.playingState == PlayingState.playing ||
-              ctrl.value.playingState == PlayingState.buffering) &&
-          !completer.isCompleted) {
+      if (isReady(ctrl.value) && !completer.isCompleted) {
         completer.complete();
       }
     }
     ctrl.addListener(listener);
     try {
       await completer.future.timeout(timeout);
+      if (kDebugMode) {
+        debugPrint(
+          '[FullscreenPlayer] _waitForInitialized: success | '
+          'isInitialized=${ctrl.value.isInitialized} '
+          'playingState=${ctrl.value.playingState}',
+        );
+      }
+    } on TimeoutException {
+      debugPrint(
+        '[FullscreenPlayer] _waitForInitialized: TIMEOUT after ${timeout.inSeconds}s | '
+        'isInitialized=${ctrl.value.isInitialized} '
+        'playingState=${ctrl.value.playingState} '
+        'errorDescription=${ctrl.value.errorDescription ?? "(none)"}',
+      );
+      rethrow;
     } finally {
       ctrl.removeListener(listener);
     }

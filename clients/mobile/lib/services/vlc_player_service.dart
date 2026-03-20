@@ -7,6 +7,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 ///
 /// Mirrors `clients/windows/player/vlc_player.py` → `EmbeddedVLCPlayer`.
 class VlcPlayerService {
+  // ─── Logging helpers ──────────────────────────────────────────────────────
+
+  /// Returns a sanitized URL safe for debug logging.
+  ///
+  /// Strips query parameters to avoid leaking credentials (Xtream API tokens
+  /// are typically embedded as query params).  The scheme, host, port and path
+  /// are sufficient to diagnose URL-scheme issues without exposing secrets.
+  static String _safeUrl(String url) {
+    try {
+      final uri = Uri.parse(url);
+      final port = uri.hasPort ? ':${uri.port}' : '';
+      return '${uri.scheme}://${uri.host}$port${uri.path}';
+    } catch (_) {
+      return '(unparseable url)';
+    }
+  }
+
   VlcPlayerService._();
   static final VlcPlayerService instance = VlcPlayerService._();
 
@@ -90,39 +107,59 @@ class VlcPlayerService {
   /// The previous controller is disposed before a new one is created.
   /// Returns the new controller so callers can attach it to a [VlcPlayer]
   /// widget.
+  ///
+  /// When [useMinimalOptions] is `true` the controller is created with no
+  /// custom LibVLC flags.  This is used by callers for a single retry when
+  /// the first attempt timed out without a concrete [errorDescription].
   Future<VlcPlayerController> play(
     String url,
     String title,
-    String contentType,
-  ) async {
+    String contentType, {
+    bool useMinimalOptions = false,
+  }) async {
     await _disposeController();
 
     _currentUrl = url;
     _currentTitle = title;
     _currentContentType = contentType;
 
+    if (kDebugMode) {
+      debugPrint(
+        '[VlcPlayerService] Creating controller | '
+        'contentType=$contentType '
+        'scheme=${Uri.tryParse(url)?.scheme ?? "?"} '
+        'url=${_safeUrl(url)} '
+        'useMinimalOptions=$useMinimalOptions',
+      );
+    }
+
     final cacheMs =
         contentType == 'live' ? _liveCaching : _fileCaching;
 
-    final options = VlcPlayerOptions(
-      advanced: VlcAdvancedOptions([
-        '--network-caching=$cacheMs',
-        '--live-caching=$_liveCaching',
-        '--file-caching=$_fileCaching',
-        '--no-video-title-show',
-        // NOTE: --aout=android_audiotrack, --rtsp-tcp and --http-continuous
-        // were removed because they can prevent LibVLC from completing
-        // initialization on certain Android devices/ROMs, resulting in a
-        // TimeoutException even though the stream itself is valid.
-        // LibVLC picks the correct audio output automatically; the other flags
-        // are only relevant to RTSP/raw-HTTP streams and are not needed for the
-        // HLS/TS streams used by Xtream-compatible IPTV providers.
-      ]),
-      http: VlcHttpOptions([
-        // Automatically reconnect on dropped HTTP connections.
-        VlcHttpOptions.httpReconnect(true),
-      ]),
-    );
+    // useMinimalOptions: no custom flags so LibVLC picks safe defaults.
+    // Used for the retry path when the first init attempt times out without
+    // a concrete errorDescription.
+    final options = useMinimalOptions
+        ? null
+        : VlcPlayerOptions(
+            advanced: VlcAdvancedOptions([
+              '--network-caching=$cacheMs',
+              '--live-caching=$_liveCaching',
+              '--file-caching=$_fileCaching',
+              '--no-video-title-show',
+              // NOTE: --aout=android_audiotrack, --rtsp-tcp and --http-continuous
+              // were removed because they can prevent LibVLC from completing
+              // initialization on certain Android devices/ROMs, resulting in a
+              // TimeoutException even though the stream itself is valid.
+              // LibVLC picks the correct audio output automatically; the other flags
+              // are only relevant to RTSP/raw-HTTP streams and are not needed for the
+              // HLS/TS streams used by Xtream-compatible IPTV providers.
+            ]),
+            http: VlcHttpOptions([
+              // Automatically reconnect on dropped HTTP connections.
+              VlcHttpOptions.httpReconnect(true),
+            ]),
+          );
 
     _controller = VlcPlayerController.network(
       url,
@@ -136,14 +173,27 @@ class VlcPlayerService {
     if (kDebugMode) {
       _controller!.addOnInitListener(() {
         debugPrint(
-          '[VLC] init – state: ${_controller?.value.playingState}',
+          '[VlcPlayerService] onInit fired | '
+          'playingState=${_controller?.value.playingState} '
+          'isInitialized=${_controller?.value.isInitialized}',
         );
       });
+
+      // Track previous state to log only meaningful transitions.
+      String? prevStateKey;
       _controller!.addListener(() {
-        final err = _controller?.value.errorDescription;
-        if (err != null && err.isNotEmpty) {
-          debugPrint('[VLC] error: $err');
-        }
+        final v = _controller?.value;
+        if (v == null) return;
+        final key =
+            '${v.isInitialized}|${v.playingState}|${v.errorDescription}';
+        if (key == prevStateKey) return;
+        prevStateKey = key;
+        debugPrint(
+          '[VlcPlayerService] value changed | '
+          'isInitialized=${v.isInitialized} '
+          'playingState=${v.playingState} '
+          'errorDescription=${v.errorDescription ?? "(none)"}',
+        );
       });
     }
 
