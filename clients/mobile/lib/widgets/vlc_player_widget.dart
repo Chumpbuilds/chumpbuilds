@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
 
@@ -81,18 +82,29 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   // ─── Playback ─────────────────────────────────────────────────────────────
 
-  Future<void> _startPlayback() async {
+  Future<void> _startPlayback({bool isRetry = false}) async {
     if (widget.streamUrl.isEmpty) return;
     setState(() {
       _isLoading = true;
       _hasError = false;
     });
 
+    if (kDebugMode) {
+      debugPrint(
+        '[VlcPlayer] _startPlayback | '
+        'isRetry=$isRetry '
+        'contentType=${widget.contentType} '
+        'title="${widget.title}"',
+      );
+    }
+
+    VlcPlayerController? ctrl;
     try {
-      final ctrl = await _service.play(
+      ctrl = await _service.play(
         widget.streamUrl,
         widget.title,
         widget.contentType,
+        useMinimalOptions: isRetry,
       );
 
       ctrl.addListener(_onControllerChanged);
@@ -115,6 +127,34 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       setState(() {
         _isPlaying = true;
         _isLoading = false;
+      });
+    } on TimeoutException catch (e) {
+      // Timeout alone is not a confirmed failure.  Check whether the
+      // controller reported a concrete error before giving up.
+      final errorDesc = _service.controller?.value.errorDescription;
+      final hasConcreteError = errorDesc != null && errorDesc.isNotEmpty;
+
+      debugPrint(
+        '[VlcPlayer] _startPlayback timeout | '
+        'isRetry=$isRetry '
+        'hasConcreteError=$hasConcreteError '
+        'errorDescription=${errorDesc ?? "(none)"} '
+        'error=$e',
+      );
+
+      if (!isRetry && !hasConcreteError) {
+        // First attempt timed out with no concrete error – try once more
+        // using bare LibVLC defaults (no custom flags).
+        debugPrint('[VlcPlayer] Retrying with minimal options...');
+        ctrl?.removeListener(_onControllerChanged);
+        await _startPlayback(isRetry: true);
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
       });
     } catch (e) {
       debugPrint('[VlcPlayer] Playback error: $e');
@@ -145,7 +185,21 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         v.playingState == PlayingState.playing ||
         v.playingState == PlayingState.buffering;
 
-    if (isReady(ctrl.value)) return;
+    if (kDebugMode) {
+      debugPrint(
+        '[VlcPlayer] _waitForInitialized start | '
+        'timeout=${timeout.inSeconds}s '
+        'conditions=[isInitialized, playing, buffering] '
+        'isInitialized=${ctrl.value.isInitialized} '
+        'playingState=${ctrl.value.playingState} '
+        'errorDescription=${ctrl.value.errorDescription ?? "(none)"}',
+      );
+    }
+
+    if (isReady(ctrl.value)) {
+      if (kDebugMode) debugPrint('[VlcPlayer] _waitForInitialized: already ready');
+      return;
+    }
     final completer = Completer<void>();
     void listener() {
       if (isReady(ctrl.value) && !completer.isCompleted) {
@@ -155,6 +209,21 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     ctrl.addListener(listener);
     try {
       await completer.future.timeout(timeout);
+      if (kDebugMode) {
+        debugPrint(
+          '[VlcPlayer] _waitForInitialized: success | '
+          'isInitialized=${ctrl.value.isInitialized} '
+          'playingState=${ctrl.value.playingState}',
+        );
+      }
+    } on TimeoutException {
+      debugPrint(
+        '[VlcPlayer] _waitForInitialized: TIMEOUT after ${timeout.inSeconds}s | '
+        'isInitialized=${ctrl.value.isInitialized} '
+        'playingState=${ctrl.value.playingState} '
+        'errorDescription=${ctrl.value.errorDescription ?? "(none)"}',
+      );
+      rethrow;
     } finally {
       ctrl.removeListener(listener);
     }
