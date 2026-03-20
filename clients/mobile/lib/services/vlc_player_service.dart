@@ -11,9 +11,9 @@ class VlcPlayerService {
   static final VlcPlayerService instance = VlcPlayerService._();
 
   // ─── Caching defaults ─────────────────────────────────────────────────────
-  // Reduced from 15 000/20 000 ms – high values caused IPTV servers to drop
-  // the connection before the first read, triggering "cannot play back".
-  static const int _defaultNetworkCaching = 2000;
+  // Increased to 5 000 ms to give the initial buffer enough time to fill and
+  // prevent the initialization future from timing out before playback starts.
+  static const int _defaultNetworkCaching = 5000;
   static const int _defaultLiveCaching = 2000;
   static const int _defaultFileCaching = 5000;
 
@@ -110,10 +110,13 @@ class VlcPlayerService {
         '--live-caching=$_liveCaching',
         '--file-caching=$_fileCaching',
         '--no-video-title-show',
-        // Explicitly set OpenSLES audio output for reliable Android playback.
-        '--aout=opensles',
+        // Use AudioTrack (modern Android audio output) instead of OpenSLES,
+        // which is deprecated on newer Android versions and can cause init hangs.
+        '--aout=android_audiotrack',
         // Use TCP for RTSP streams to improve stability through NAT/firewalls.
         '--rtsp-tcp',
+        // Keep connection alive for continuous HTTP/HLS streams.
+        '--http-continuous',
       ]),
       http: VlcHttpOptions([
         // Automatically reconnect on dropped HTTP connections.
