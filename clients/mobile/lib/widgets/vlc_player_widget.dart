@@ -126,15 +126,25 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     }
   }
 
-  /// Wait until the controller reports initialized, with a timeout.
+  /// Wait until the controller reports initialized (or playback begins), with a timeout.
+  ///
+  /// On some Android devices/ROMs, flutter_vlc_player never fires the
+  /// `isInitialized` event even though playback starts successfully.  Accepting
+  /// [PlayingState.playing] and [PlayingState.buffering] as "ready" states
+  /// prevents a spurious [TimeoutException] in those cases.
   Future<void> _waitForInitialized(
     VlcPlayerController ctrl, {
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    if (ctrl.value.isInitialized) return;
+    bool isReady(VlcPlayerValue v) =>
+        v.isInitialized ||
+        v.playingState == PlayingState.playing ||
+        v.playingState == PlayingState.buffering;
+
+    if (isReady(ctrl.value)) return;
     final completer = Completer<void>();
     void listener() {
-      if (ctrl.value.isInitialized && !completer.isCompleted) {
+      if (isReady(ctrl.value) && !completer.isCompleted) {
         completer.complete();
       }
     }
