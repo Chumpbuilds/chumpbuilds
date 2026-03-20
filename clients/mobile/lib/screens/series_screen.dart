@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/vlc_player_widget.dart';
@@ -244,6 +245,28 @@ class _SeriesScreenState extends State<SeriesScreen> {
       _vlcAutoPlay = false;
       _vlcPlayerKey++;
     });
+  }
+
+  /// Replays the current stream by reinitializing the player with autoplay enabled.
+  void _replayCurrentStream() {
+    if (_vlcStreamUrl.isEmpty) return;
+    setState(() {
+      _vlcAutoPlay = true;
+      _vlcPlayerKey++;
+    });
+  }
+
+  /// Opens the currently loaded stream URL in an external player (VLC).
+  Future<void> _openCurrentStreamExternal() async {
+    if (_vlcStreamUrl.isEmpty) return;
+    final launched =
+        await ExternalPlayerService.instance.openInVlc(_vlcStreamUrl);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Unable to open video in external player.')),
+      );
+    }
   }
 
   Future<void> _openEpisodeExternal(Map<String, dynamic> episode) async {
@@ -861,7 +884,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  /// A compact row showing the currently playing episode title and a Stop button.
+  /// Compact control row immediately below the player – mirrors the live TV
+  /// screen layout: `[episode title] [Play ▶] [Stop ■] [↗ VLC]`.
   Widget _buildPlayerControls() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -877,6 +901,22 @@ class _SeriesScreenState extends State<SeriesScreen> {
           SizedBox(
             height: 28,
             child: ElevatedButton.icon(
+              onPressed: _replayCurrentStream,
+              icon: const Icon(Icons.play_arrow, size: 14),
+              label: const Text('Play', style: TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF27AE60),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 28,
+            child: ElevatedButton.icon(
               onPressed: _stopEmbeddedPlayback,
               icon: const Icon(Icons.stop, size: 14),
               label: const Text('Stop', style: TextStyle(fontSize: 11)),
@@ -887,6 +927,21 @@ class _SeriesScreenState extends State<SeriesScreen> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
               ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 28,
+            child: OutlinedButton(
+              onPressed: _openCurrentStreamExternal,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF3D3D3D)),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+              child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
             ),
           ),
         ],

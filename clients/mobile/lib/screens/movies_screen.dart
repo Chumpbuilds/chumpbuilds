@@ -562,6 +562,9 @@ class _MoviesScreenState extends State<MoviesScreen> {
                 // ── Embedded VLC player ────────────────────────────────────
                 playerWidget,
 
+                // ── Compact player controls (Play / Stop / VLC) ────────────
+                _buildPlayerControls(movie, movieData),
+
                 // ── Movie info ─────────────────────────────────────────────
                 Expanded(
                   child: SingleChildScrollView(
@@ -611,71 +614,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
                                 color: _secondaryTextColor, fontSize: 11),
                             textAlign: TextAlign.center,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        // Play + Stop + Open-external row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () {
-                                  final merged = {...movie, ...movieData};
-                                  _playMovie(merged);
-                                },
-                                icon: const Icon(Icons.play_arrow, size: 18),
-                                label: const Text('Play Movie'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF27AE60),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: _stopEmbeddedPlayback,
-                                icon: const Icon(Icons.stop, size: 18),
-                                label: const Text('Stop'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFFE74C3C),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: () {
-                                  final merged = {...movie, ...movieData};
-                                  _openMovieExternal(merged);
-                                },
-                                icon: const Icon(Icons.open_in_new,
-                                    size: 16,
-                                    color: Color(0xFF7F8C8D)),
-                                label: const Text('Open in VLC',
-                                    style: TextStyle(
-                                        color: Color(0xFF7F8C8D),
-                                        fontSize: 12)),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                      color: Color(0xFF7F8C8D)),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
-                                ),
-                              ),
-                            ),
-                          ],
                         ),
                         const SizedBox(height: 8),
 
@@ -730,6 +668,76 @@ class _MoviesScreenState extends State<MoviesScreen> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /// Compact control row immediately below the player – mirrors the live TV
+  /// screen layout: `[movie name] [Play ▶] [Stop ■] [↗ VLC]`.
+  Widget _buildPlayerControls(
+    Map<String, dynamic> movie,
+    Map<String, dynamic> movieData,
+  ) {
+    final merged = {...movie, ...movieData};
+    final name = movie['name']?.toString() ?? '';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          SizedBox(
+            height: 28,
+            child: ElevatedButton.icon(
+              onPressed: () => _playMovie(merged),
+              icon: const Icon(Icons.play_arrow, size: 14),
+              label: const Text('Play', style: TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF27AE60),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 28,
+            child: ElevatedButton.icon(
+              onPressed: _stopEmbeddedPlayback,
+              icon: const Icon(Icons.stop, size: 14),
+              label: const Text('Stop', style: TextStyle(fontSize: 11)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 28,
+            child: OutlinedButton(
+              onPressed: () => _openMovieExternal(merged),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF3D3D3D)),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+              child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _infoField(String label, String value) {
     return Padding(
