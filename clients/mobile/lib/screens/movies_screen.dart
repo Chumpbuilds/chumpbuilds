@@ -506,17 +506,37 @@ class _MoviesScreenState extends State<MoviesScreen> {
     );
 
     if (_selectedMovie == null) {
-      return Container(
+      return ColoredBox(
         color: _bgColor,
         child: Column(
           children: [
-            // Embedded player (idle state)
-            playerWidget,
+            // ── Row 1 (60%): 30% artwork placeholder | 70% player (idle) ──
+            Expanded(
+              flex: 60,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    flex: 30,
+                    child: Container(
+                      color: const Color(0xFF2D2D2D),
+                      child: const Center(
+                        child: Text('🎬', style: TextStyle(fontSize: 32)),
+                      ),
+                    ),
+                  ),
+                  Expanded(flex: 70, child: playerWidget),
+                ],
+              ),
+            ),
+            // ── Row 2 (40%): prompt ──────────────────────────────────────
             const Expanded(
+              flex: 40,
               child: Center(
                 child: Text(
-                  'Select a movie to see details',
-                  style: TextStyle(color: _secondaryTextColor),
+                  '🎬  Select a movie to see details',
+                  style: TextStyle(color: _secondaryTextColor, fontSize: 14),
+                  textAlign: TextAlign.center,
                 ),
               ),
             ),
@@ -551,114 +571,134 @@ class _MoviesScreenState extends State<MoviesScreen> {
     final movieId = movie['stream_id']?.toString() ?? '';
     final isFav = _favMovieIds.contains(movieId);
 
-    return Container(
+    return ColoredBox(
       color: _bgColor,
       child: _loadingDetail
           ? const Center(
               child: CircularProgressIndicator(color: _primaryColor))
           : Column(
               children: [
-                // ── Embedded VLC player ────────────────────────────────────
-                playerWidget,
-
-                // ── Compact player controls (Play / Stop / VLC) ────────────
-                _buildPlayerControls(movie, movieData),
-
-                // ── Movie info ─────────────────────────────────────────────
+                // ── Row 1 (60%): 30% poster | 70% player ──────────────────
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Poster
-                        if (posterUrl.isNotEmpty)
-                          Center(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: CachedNetworkImage(
-                                imageUrl: posterUrl,
-                                width: 120,
-                                height: 180,
-                                placeholder: (_, __) =>
-                                    const SizedBox(width: 120, height: 180),
-                                errorWidget: (_, __, ___) =>
-                                    const SizedBox(width: 120, height: 180),
-                                fit: BoxFit.cover,
+                  flex: 60,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 30% – movie poster/artwork
+                      Expanded(
+                        flex: 30,
+                        child: Container(
+                          color: const Color(0xFF2D2D2D),
+                          child: posterUrl.isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: posterUrl,
+                                  fit: BoxFit.contain,
+                                  placeholder: (_, __) => const Center(
+                                      child: Text('🎬',
+                                          style: TextStyle(fontSize: 32))),
+                                  errorWidget: (_, __, ___) => const Center(
+                                      child: Text('🎬',
+                                          style: TextStyle(fontSize: 32))),
+                                )
+                              : const Center(
+                                  child: Text('🎬',
+                                      style: TextStyle(fontSize: 32))),
+                        ),
+                      ),
+                      // 70% – player
+                      Expanded(flex: 70, child: playerWidget),
+                    ],
+                  ),
+                ),
+
+                // ── Row 2 (40%): metadata/details full width ───────────────
+                Expanded(
+                  flex: 40,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Compact player controls (Play / Stop / VLC)
+                      _buildPlayerControls(movie, movieData),
+
+                      // Scrollable movie info
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Title
+                              Text(
+                                name,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold),
                               ),
-                            ),
-                          ),
-                        const SizedBox(height: 10),
+                              const SizedBox(height: 4),
 
-                        // Title
-                        Text(
-                          name,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
+                              // Quick-info line
+                              Center(
+                                child: Text(
+                                  [
+                                    if (year != null) year,
+                                    if (rating != null) '⭐ $rating',
+                                    if (genre != null) genre,
+                                  ].join('   '),
+                                  style: const TextStyle(
+                                      color: _secondaryTextColor, fontSize: 11),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
 
-                        // Quick-info line
-                        Center(
-                          child: Text(
-                            [
-                              if (year != null) year,
-                              if (rating != null) '⭐ $rating',
-                              if (genre != null) genre,
-                            ].join('   '),
-                            style: const TextStyle(
-                                color: _secondaryTextColor, fontSize: 11),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
+                              const Divider(color: Color(0xFF3D3D3D)),
+                              const SizedBox(height: 6),
 
-                        const Divider(color: Color(0xFF3D3D3D)),
-                        const SizedBox(height: 6),
+                              // Plot
+                              if (plot != null) ...[
+                                Text(plot,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 13,
+                                        height: 1.5)),
+                                const SizedBox(height: 12),
+                              ],
 
-                        // Plot
-                        if (plot != null) ...[
-                          Text(plot,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  height: 1.5)),
-                          const SizedBox(height: 12),
-                        ],
+                              // Extra info
+                              if (director != null)
+                                _infoField('Director', director),
+                              if (cast != null) _infoField('Cast', cast),
+                              const SizedBox(height: 8),
 
-                        // Extra info
-                        if (director != null) _infoField('Director', director),
-                        if (cast != null) _infoField('Cast', cast),
-                        const SizedBox(height: 8),
-
-                        // Favourite toggle
-                        OutlinedButton.icon(
-                          onPressed: () => _toggleMovieFav(movie),
-                          icon: Icon(
-                            isFav ? Icons.star : Icons.star_border,
-                            color: const Color(0xFFFFD700),
-                          ),
-                          label: Text(
-                            isFav
-                                ? 'Remove from Favourites'
-                                : 'Add to Favourites',
-                            style:
-                                const TextStyle(color: Colors.white),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                                color: Color(0xFF3D3D3D)),
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4)),
+                              // Favourite toggle
+                              OutlinedButton.icon(
+                                onPressed: () => _toggleMovieFav(movie),
+                                icon: Icon(
+                                  isFav ? Icons.star : Icons.star_border,
+                                  color: const Color(0xFFFFD700),
+                                ),
+                                label: Text(
+                                  isFav
+                                      ? 'Remove from Favourites'
+                                      : 'Add to Favourites',
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: const BorderSide(
+                                      color: Color(0xFF3D3D3D)),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(4)),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ],
