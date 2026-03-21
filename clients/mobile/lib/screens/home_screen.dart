@@ -304,14 +304,31 @@ class _GradientCard extends StatelessWidget {
 
 // ─── Settings screen ──────────────────────────────────────────────────────────
 
-class _SettingsScreen extends StatelessWidget {
+class _SettingsScreen extends StatefulWidget {
   const _SettingsScreen();
 
+  @override
+  State<_SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<_SettingsScreen> {
   static const Color _bgColor = Color(0xFF1E1E1E);
   static const Color _primaryColor = Color(0xFF0D7377);
   static const Color _surfaceColor = Color(0xFF2D2D2D);
   static const Color _borderColor = Color(0xFF3D3D3D);
   static const Color _descColor = Color(0xFFB0B0B0);
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
 
   String _formatExpiry(dynamic expDate) {
     if (expDate == null) return 'N/A';
