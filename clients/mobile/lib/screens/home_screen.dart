@@ -85,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  void _navigate(BuildContext context, String tag) {
+  Future<void> _navigate(BuildContext context, String tag) async {
     Widget screen;
     switch (tag) {
       case 'live_tv':
@@ -107,15 +107,19 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
     }
 
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => screen),
     );
+    // Re-apply immersive mode after returning from child screen,
+    // since child's dispose() resets to edgeToEdge.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
-  void _openSettings(BuildContext context) {
-    Navigator.of(context).push(
+  Future<void> _openSettings(BuildContext context) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const _SettingsScreen()),
     );
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
