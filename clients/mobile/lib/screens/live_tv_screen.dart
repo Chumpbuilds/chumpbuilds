@@ -14,7 +14,9 @@ import '../widgets/vlc_player_widget.dart';
 ///
 /// Ported from `clients/windows/ui/live_tv/live_tv_view.py`.
 class LiveTvScreen extends StatefulWidget {
-  const LiveTvScreen({super.key});
+  const LiveTvScreen({super.key, this.initialChannel});
+
+  final Map<String, dynamic>? initialChannel;
 
   @override
   State<LiveTvScreen> createState() => _LiveTvScreenState();
@@ -111,6 +113,20 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       _channelCounts.addAll(counts);
       _loadingCategories = false;
     });
+
+    if (widget.initialChannel != null) {
+      final catId = widget.initialChannel!['category_id']?.toString();
+      final matchingCat = _categories.firstWhere(
+        (c) => c['category_id']?.toString() == catId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (matchingCat.isNotEmpty) {
+        await _selectCategory(matchingCat);
+      }
+      if (mounted) {
+        _selectChannel(widget.initialChannel!);
+      }
+    }
   }
 
   Future<void> _selectCategory(Map<String, dynamic> cat) async {

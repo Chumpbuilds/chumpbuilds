@@ -1,9 +1,11 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../services/xtream_service.dart';
+import 'live_tv_screen.dart';
+import 'movies_screen.dart';
+import 'series_screen.dart';
 
 /// Global search screen — searches Live TV, Movies, and Series simultaneously.
 ///
@@ -90,15 +92,24 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
-  Future<void> _play(Map<String, dynamic> item, String type) async {
-    final id = item['stream_id']?.toString() ?? '';
-    final url = _xtream.getStreamUrl(id, type, streamData: item);
-    if (url.isNotEmpty) {
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
+  void _openItem(Map<String, dynamic> item, String type) {
+    Widget screen;
+    switch (type) {
+      case 'live':
+        screen = LiveTvScreen(initialChannel: item);
+        break;
+      case 'movie':
+        screen = MoviesScreen(initialMovie: item);
+        break;
+      case 'series':
+        screen = SeriesScreen(initialSeries: item);
+        break;
+      default:
+        return;
     }
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => screen),
+    );
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -316,7 +327,6 @@ class _SearchScreenState extends State<SearchScreen> {
     final iconUrl = (item['stream_icon'] as String?) ??
         (item['cover'] as String?) ??
         '';
-    final isSeries = type == 'series';
 
     return Card(
       color: _surfaceColor,
@@ -373,14 +383,12 @@ class _SearchScreenState extends State<SearchScreen> {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
-        trailing: isSeries
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.play_circle_fill,
-                    color: Color(0xFF3498DB)),
-                onPressed: () => _play(item, type),
-              ),
-        onTap: isSeries ? null : () => _play(item, type),
+        trailing: IconButton(
+            icon: const Icon(Icons.open_in_new,
+                color: Color(0xFF3498DB)),
+            onPressed: () => _openItem(item, type),
+          ),
+        onTap: () => _openItem(item, type),
       ),
     );
   }

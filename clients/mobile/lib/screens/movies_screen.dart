@@ -12,7 +12,9 @@ import '../widgets/vlc_player_widget.dart';
 ///
 /// Ported from `clients/windows/ui/movies/movies_view.py`.
 class MoviesScreen extends StatefulWidget {
-  const MoviesScreen({super.key});
+  const MoviesScreen({super.key, this.initialMovie});
+
+  final Map<String, dynamic>? initialMovie;
 
   @override
   State<MoviesScreen> createState() => _MoviesScreenState();
@@ -106,6 +108,20 @@ class _MoviesScreenState extends State<MoviesScreen> {
       _movieCounts.addAll(counts);
       _loadingCategories = false;
     });
+
+    if (widget.initialMovie != null) {
+      final catId = widget.initialMovie!['category_id']?.toString();
+      final matchingCat = _categories.firstWhere(
+        (c) => c['category_id']?.toString() == catId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (matchingCat.isNotEmpty) {
+        await _selectCategory(matchingCat);
+      }
+      if (mounted) {
+        _selectMovie(widget.initialMovie!);
+      }
+    }
   }
 
   Future<void> _selectCategory(Map<String, dynamic> cat) async {
