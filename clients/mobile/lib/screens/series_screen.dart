@@ -60,7 +60,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
   final _headerSearchCtrl = TextEditingController();
 
   final Map<String, int> _seriesCounts = {};
-  final Set<int> _expandedSeasons = {};
 
   // ─── Season / episode quick-select state ─────────────────────────────────
   int? _selectedSeason;
@@ -118,7 +117,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
       _selectedCategoryName = cat['category_name']?.toString();
       _selectedSeries = null;
       _seriesInfo = null;
-      _expandedSeasons.clear();
       _loadingSeriesList = true;
     });
 
@@ -139,7 +137,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
     setState(() {
       _selectedSeries = series;
       _seriesInfo = null;
-      _expandedSeasons.clear();
       _loadingDetail = true;
     });
 
@@ -155,7 +152,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
         if (sortedSeasons.isNotEmpty) {
           _selectedSeason = sortedSeasons.first;
           _selectedEpisodeIndex = 0;
-          _expandedSeasons.add(sortedSeasons.first);
         } else {
           _selectedSeason = null;
           _selectedEpisodeIndex = null;
@@ -627,7 +623,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       _selectedCategoryName = null;
                       _selectedSeries = null;
                       _seriesInfo = null;
-                      _expandedSeasons.clear();
                       _selectedSeason = null;
                       _selectedEpisodeIndex = null;
                       _vlcStreamUrl = '';
@@ -811,7 +806,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
     final episodesBySeasonRaw =
         _seriesInfo != null ? _parseEpisodes(_seriesInfo!['episodes']) : <int, List<Map<String, dynamic>>>{};
-    final sortedSeasons = episodesBySeasonRaw.keys.toList()..sort();
 
     final seriesId = series['series_id']?.toString() ?? '';
     final isFav = _favSeriesIds.contains(seriesId);
@@ -865,207 +859,19 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       // Compact player controls (Play / Stop / VLC)
                       _buildPlayerControls(episodesBySeasonRaw),
 
-                      // Scrollable series info + episodes
+                      // Scrollable series/episode info
                       Expanded(
                         child: SingleChildScrollView(
                           padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Title
-                              Text(
-                                name,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-
-                              // Meta
-                              Center(
-                                child: Text(
-                                  [
-                                    if (year.isNotEmpty) year,
-                                    if (rating.isNotEmpty) '⭐ $rating',
-                                    if (genre.isNotEmpty) genre,
-                                  ].join('   '),
-                                  style: const TextStyle(
-                                      color: _secondaryTextColor, fontSize: 11),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-
-                              const Divider(color: Color(0xFF3D3D3D)),
-                              const SizedBox(height: 6),
-
-                              // Plot
-                              if (plot.isNotEmpty) ...[
-                                Text(plot,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        height: 1.5)),
-                                const SizedBox(height: 12),
-                              ],
-
-                              // Favourite toggle
-                              OutlinedButton.icon(
-                                onPressed: () => _toggleSeriesFav(series),
-                                icon: Icon(
-                                  isFav ? Icons.star : Icons.star_border,
-                                  color: const Color(0xFFFFD700),
-                                ),
-                                label: Text(
-                                  isFav
-                                      ? 'Remove from Favourites'
-                                      : 'Add to Favourites',
-                                  style:
-                                      const TextStyle(color: Colors.white),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                      color: Color(0xFF3D3D3D)),
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-
-                              // Seasons & Episodes
-                              if (sortedSeasons.isEmpty && !_loadingDetail)
-                                const Text('No episode data available',
-                                    style: TextStyle(
-                                        color: _secondaryTextColor))
-                              else
-                                ...sortedSeasons.map((season) {
-                                  final episodes =
-                                      episodesBySeasonRaw[season]!;
-                                  final isExpanded =
-                                      _expandedSeasons.contains(season);
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      // Season header
-                                      InkWell(
-                                        onTap: () => setState(() {
-                                          if (isExpanded) {
-                                            _expandedSeasons.remove(season);
-                                          } else {
-                                            _expandedSeasons.add(season);
-                                          }
-                                        }),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 12, vertical: 10),
-                                          margin: const EdgeInsets.only(
-                                              bottom: 4),
-                                          decoration: BoxDecoration(
-                                            color: _surfaceColor,
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Text(
-                                                isExpanded ? '📂' : '📁',
-                                                style: const TextStyle(
-                                                    fontSize: 18),
-                                              ),
-                                              const SizedBox(width: 10),
-                                              Expanded(
-                                                child: Text(
-                                                  'Season $season',
-                                                  style: TextStyle(
-                                                      color: _accentColor,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 15),
-                                                ),
-                                              ),
-                                              Text(
-                                                '${episodes.length} ep',
-                                                style: const TextStyle(
-                                                    color: _secondaryTextColor,
-                                                    fontSize: 12),
-                                              ),
-                                              Icon(
-                                                isExpanded
-                                                    ? Icons.expand_less
-                                                    : Icons.expand_more,
-                                                color: _secondaryTextColor,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-
-                                      // Episode list
-                                      if (isExpanded)
-                                        ...episodes.map((ep) {
-                                          final epNum =
-                                              ep['episode_num']?.toString() ??
-                                                  '';
-                                          final title =
-                                              ep['title']?.toString() ?? '';
-                                          final label = [
-                                            if (epNum.isNotEmpty) 'Ep $epNum',
-                                            if (title.isNotEmpty) title,
-                                          ].join(': ');
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                                left: 16, bottom: 4),
-                                            child: Container(
-                                              decoration: BoxDecoration(
-                                                color: _bgColor,
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                                border: Border.all(
-                                                    color: _surfaceColor,
-                                                    width: 1),
-                                              ),
-                                              child: ListTile(
-                                                dense: true,
-                                                leading: const Text('▶',
-                                                    style: TextStyle(
-                                                        color: _successColor,
-                                                        fontSize: 16)),
-                                                title: Text(
-                                                  label.isEmpty
-                                                      ? 'Episode'
-                                                      : label,
-                                                  style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 13),
-                                                ),
-                                                trailing: IconButton(
-                                                  icon: const Icon(
-                                                    Icons.open_in_new,
-                                                    color: Color(0xFF7F8C8D),
-                                                    size: 16,
-                                                  ),
-                                                  tooltip: 'Open in VLC',
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(),
-                                                  onPressed: () =>
-                                                      _openEpisodeExternal(ep),
-                                                ),
-                                                onTap: () => _playEpisode(ep),
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      const SizedBox(height: 8),
-                                    ],
-                                  );
-                                }),
-                            ],
+                          child: _buildMetadataSection(
+                            series: series,
+                            name: name,
+                            year: year,
+                            rating: rating,
+                            genre: genre,
+                            plot: plot,
+                            isFav: isFav,
+                            episodesBySeason: episodesBySeasonRaw,
                           ),
                         ),
                       ),
@@ -1177,7 +983,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
                           setState(() {
                             _selectedSeason = selected;
                             _selectedEpisodeIndex = 0;
-                            _expandedSeasons.add(selected);
                           });
                         }
                       },
@@ -1308,6 +1113,142 @@ class _SeriesScreenState extends State<SeriesScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Builds the scrollable metadata content below the player controls.
+  ///
+  /// When an episode is selected (via [_selectedSeason] and
+  /// [_selectedEpisodeIndex]), shows episode-specific info (title, plot,
+  /// duration, rating). Falls back to series-level metadata otherwise.
+  Widget _buildMetadataSection({
+    required Map<String, dynamic> series,
+    required String name,
+    required String year,
+    required String rating,
+    required String genre,
+    required String plot,
+    required bool isFav,
+    required Map<int, List<Map<String, dynamic>>> episodesBySeason,
+  }) {
+    // Try to get the currently selected episode
+    Map<String, dynamic>? selectedEpisode;
+    if (_selectedSeason != null && _selectedEpisodeIndex != null) {
+      final episodes = episodesBySeason[_selectedSeason];
+      if (episodes != null && _selectedEpisodeIndex! < episodes.length) {
+        selectedEpisode = episodes[_selectedEpisodeIndex!];
+      }
+    }
+
+    // Extract episode-level info when available
+    final epInfo = selectedEpisode != null && selectedEpisode['info'] is Map
+        ? Map<String, dynamic>.from(selectedEpisode['info'] as Map)
+        : <String, dynamic>{};
+
+    final bool showEpisode = selectedEpisode != null;
+
+    // Episode display fields
+    final epNum = selectedEpisode?['episode_num']?.toString() ?? '';
+    final epTitle = selectedEpisode?['title']?.toString() ?? '';
+    final epTitleLabel = [
+      if (epNum.isNotEmpty) 'Ep $epNum',
+      if (epTitle.isNotEmpty) epTitle,
+    ].join(': ');
+
+    final epPlot = epInfo['plot']?.toString() ?? '';
+    final epDuration = epInfo['duration']?.toString() ?? '';
+    final epRating = epInfo['rating']?.toString() ?? '';
+    final epReleaseDate = epInfo['releasedate']?.toString() ??
+        epInfo['release_date']?.toString() ??
+        epInfo['releaseDate']?.toString() ??
+        '';
+
+    final displayTitle = showEpisode
+        ? (epTitleLabel.isNotEmpty ? epTitleLabel : 'Episode')
+        : name;
+    final displayPlot = showEpisode
+        ? (epPlot.isNotEmpty ? epPlot : plot)
+        : plot;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Primary title
+        Text(
+          displayTitle,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold),
+        ),
+
+        // Series name shown as subtitle when episode is selected
+        if (showEpisode) ...[
+          const SizedBox(height: 2),
+          Text(
+            name,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                color: _secondaryTextColor, fontSize: 12),
+          ),
+        ],
+
+        const SizedBox(height: 4),
+
+        // Meta line
+        Center(
+          child: Text(
+            showEpisode
+                ? [
+                    if (_selectedSeason != null) 'Season $_selectedSeason',
+                    if (epDuration.isNotEmpty) epDuration,
+                    if (epRating.isNotEmpty) '⭐ $epRating',
+                    if (epReleaseDate.isNotEmpty) epReleaseDate,
+                  ].join('   ')
+                : [
+                    if (year.isNotEmpty) year,
+                    if (rating.isNotEmpty) '⭐ $rating',
+                    if (genre.isNotEmpty) genre,
+                  ].join('   '),
+            style: const TextStyle(
+                color: _secondaryTextColor, fontSize: 11),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        const SizedBox(height: 8),
+
+        const Divider(color: Color(0xFF3D3D3D)),
+        const SizedBox(height: 6),
+
+        // Plot / description
+        if (displayPlot.isNotEmpty) ...[
+          Text(displayPlot,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 13, height: 1.5)),
+          const SizedBox(height: 12),
+        ],
+
+        // Favourite toggle (always for the series)
+        OutlinedButton.icon(
+          onPressed: () => _toggleSeriesFav(series),
+          icon: Icon(
+            isFav ? Icons.star : Icons.star_border,
+            color: const Color(0xFFFFD700),
+          ),
+          label: Text(
+            isFav ? 'Remove from Favourites' : 'Add to Favourites',
+            style: const TextStyle(color: Colors.white),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Color(0xFF3D3D3D)),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4)),
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 
