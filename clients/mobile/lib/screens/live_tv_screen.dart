@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../screens/android_hls_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/license_service.dart';
@@ -261,6 +262,22 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       _vlcAutoPlay = false;
       _vlcPlayerKey++;
     });
+  }
+
+  Future<void> _goFullscreen() async {
+    if (_vlcStreamUrl.isEmpty) return;
+    final url = _vlcStreamUrl;
+    final title = _vlcTitle;
+    _stopEmbeddedPlayback();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AndroidHlsFullscreenScreen(
+          streamUrl: url,
+          title: title,
+          contentType: 'live',
+        ),
+      ),
+    );
   }
 
   Future<void> _openChannelExternal(Map<String, dynamic> channel) async {
@@ -816,6 +833,26 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                           ),
                           child: const Text('↗ VLC',
                               style: TextStyle(fontSize: 11)),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        height: 28,
+                        child: ElevatedButton.icon(
+                          onPressed: _vlcStreamUrl.isNotEmpty
+                              ? _goFullscreen
+                              : null,
+                          icon: const Icon(Icons.fullscreen, size: 14),
+                          label: const Text('Fullscreen',
+                              style: TextStyle(fontSize: 11)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF8E44AD),
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 8),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4)),
+                          ),
                         ),
                       ),
                     ],
