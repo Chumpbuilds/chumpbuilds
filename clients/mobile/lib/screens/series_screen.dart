@@ -62,6 +62,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
   final Map<String, int> _seriesCounts = {};
   final Set<int> _expandedSeasons = {};
 
+  // ─── Season / episode quick-select state ─────────────────────────────────
+  int? _selectedSeason;
+  int? _selectedEpisodeIndex;
+
   @override
   void initState() {
     super.initState();
@@ -143,13 +147,27 @@ class _SeriesScreenState extends State<SeriesScreen> {
     if (seriesId.isNotEmpty) {
       final info = await _xtream.getSeriesInfo(seriesId);
       if (!mounted) return;
+      final episodesBySeason = _parseEpisodes(info?['episodes']);
+      final sortedSeasons = episodesBySeason.keys.toList()..sort();
       setState(() {
         _seriesInfo = info;
         _loadingDetail = false;
+        if (sortedSeasons.isNotEmpty) {
+          _selectedSeason = sortedSeasons.first;
+          _selectedEpisodeIndex = 0;
+          _expandedSeasons.add(sortedSeasons.first);
+        } else {
+          _selectedSeason = null;
+          _selectedEpisodeIndex = null;
+        }
       });
     } else {
       if (!mounted) return;
-      setState(() => _loadingDetail = false);
+      setState(() {
+        _loadingDetail = false;
+        _selectedSeason = null;
+        _selectedEpisodeIndex = null;
+      });
     }
   }
 
@@ -234,6 +252,18 @@ class _SeriesScreenState extends State<SeriesScreen> {
       _vlcAutoPlay = true;
       _vlcPlayerKey++;
     });
+  }
+
+  /// Plays the episode currently selected via [_selectedSeason] and
+  /// [_selectedEpisodeIndex]. Used by the Play button and the episode dropdown.
+  void _playSelectedEpisode() {
+    if (_seriesInfo == null ||
+        _selectedSeason == null ||
+        _selectedEpisodeIndex == null) return;
+    final episodesBySeason = _parseEpisodes(_seriesInfo!['episodes']);
+    final episodes = episodesBySeason[_selectedSeason];
+    if (episodes == null || _selectedEpisodeIndex! >= episodes.length) return;
+    _playEpisode(episodes[_selectedEpisodeIndex!]);
   }
 
   /// Stops the embedded player and resets it to the idle (placeholder) state.
@@ -598,6 +628,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       _selectedSeries = null;
                       _seriesInfo = null;
                       _expandedSeasons.clear();
+                      _selectedSeason = null;
+                      _selectedEpisodeIndex = null;
                       _vlcStreamUrl = '';
                       _vlcTitle = '';
                       _vlcAutoPlay = false;
@@ -831,7 +863,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Compact player controls (Play / Stop / VLC)
-                      _buildPlayerControls(),
+                      _buildPlayerControls(episodesBySeasonRaw),
 
                       // Scrollable series info + episodes
                       Expanded(
@@ -1049,7 +1081,39 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   /// Compact control row immediately below the player – mirrors the live TV
   /// screen layout: `[episode title] [Play ▶] [Stop ■] [↗ VLC]`.
-  Widget _buildPlayerControls() {
+  Widget _buildPlayerControls(
+      Map<int, List<Map<String, dynamic>>> episodesBySeason) {
+    final sortedSeasons = episodesBySeason.keys.toList()..sort();
+
+    // Season label shown on the button
+    final seasonLabel =
+        _selectedSeason != null ? 'S$_selectedSeason' : 'Season';
+
+    // Current season's episodes
+    final currentEpisodes = _selectedSeason != null
+        ? (episodesBySeason[_selectedSeason] ?? <Map<String, dynamic>>[])
+        : <Map<String, dynamic>>[];
+
+    // Episode label shown on the button
+    String episodeLabel = 'Episode';
+    if (_selectedEpisodeIndex != null &&
+        _selectedEpisodeIndex! < currentEpisodes.length) {
+      final ep = currentEpisodes[_selectedEpisodeIndex!];
+      final num = ep['episode_num']?.toString() ?? '';
+      episodeLabel = num.isNotEmpty ? 'Ep $num' : 'Ep ${_selectedEpisodeIndex! + 1}';
+    }
+
+    const outlinedStyle = ButtonStyle(
+      foregroundColor: WidgetStatePropertyAll(Colors.white),
+      side: WidgetStatePropertyAll(
+          BorderSide(color: Color(0xFF3D3D3D))),
+      padding: WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 6)),
+      shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+              borderRadius: BorderRadius.all(Radius.circular(4)))),
+    );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -1061,10 +1125,145 @@ class _SeriesScreenState extends State<SeriesScreen> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+
+          // ── Season dropdown ──────────────────────────────────────────────
+          if (sortedSeasons.isNotEmpty) ...[
+            SizedBox(
+              height: 28,
+              child: OutlinedButton(
+                style: outlinedStyle,
+                onPressed: sortedSeasons.isEmpty
+                    ? null
+                    : () async {
+                        final RenderBox button =
+                            context.findRenderObject()! as RenderBox;
+                        final RenderBox overlay = Overlay.of(context)
+                            .context
+                            .findRenderObject()! as RenderBox;
+                        final RelativeRect position = RelativeRect.fromRect(
+                          Rect.fromPoints(
+                            button.localToGlobal(
+                                button.size.bottomRight(Offset.zero),
+                                ancestor: overlay),
+                            button.localToGlobal(
+                                button.size.bottomRight(Offset.zero),
+                                ancestor: overlay),
+                          ),
+                          Offset.zero & overlay.size,
+                        );
+                        final selected = await showMenu<int>(
+                          context: context,
+                          position: position,
+                          color: const Color(0xFF2D2D2D),
+                          constraints: const BoxConstraints(maxHeight: 300),
+                          items: sortedSeasons
+                              .map(
+                                (s) => PopupMenuItem<int>(
+                                  value: s,
+                                  child: Text(
+                                    'Season $s',
+                                    style: TextStyle(
+                                      color: s == _selectedSeason
+                                          ? _accentColor
+                                          : Colors.white,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        );
+                        if (selected != null && mounted) {
+                          setState(() {
+                            _selectedSeason = selected;
+                            _selectedEpisodeIndex = 0;
+                            _expandedSeasons.add(selected);
+                          });
+                        }
+                      },
+                child: Text(
+                  '$seasonLabel ▼',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+
+          // ── Episode dropdown ─────────────────────────────────────────────
+          if (currentEpisodes.isNotEmpty) ...[
+            SizedBox(
+              height: 28,
+              child: OutlinedButton(
+                style: outlinedStyle,
+                onPressed: () async {
+                  final RenderBox button =
+                      context.findRenderObject()! as RenderBox;
+                  final RenderBox overlay = Overlay.of(context)
+                      .context
+                      .findRenderObject()! as RenderBox;
+                  final RelativeRect position = RelativeRect.fromRect(
+                    Rect.fromPoints(
+                      button.localToGlobal(
+                          button.size.bottomRight(Offset.zero),
+                          ancestor: overlay),
+                      button.localToGlobal(
+                          button.size.bottomRight(Offset.zero),
+                          ancestor: overlay),
+                    ),
+                    Offset.zero & overlay.size,
+                  );
+                  final selected = await showMenu<int>(
+                    context: context,
+                    position: position,
+                    color: const Color(0xFF2D2D2D),
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    items: List.generate(
+                      currentEpisodes.length,
+                      (i) {
+                        final ep = currentEpisodes[i];
+                        final num = ep['episode_num']?.toString() ?? '';
+                        final title = ep['title']?.toString() ?? '';
+                        final label = [
+                          if (num.isNotEmpty) 'Ep $num',
+                          if (title.isNotEmpty) title,
+                        ].join(': ');
+                        return PopupMenuItem<int>(
+                          value: i,
+                          child: Text(
+                            label.isNotEmpty ? label : 'Episode ${i + 1}',
+                            style: TextStyle(
+                              color: i == _selectedEpisodeIndex
+                                  ? _accentColor
+                                  : Colors.white,
+                              fontSize: 13,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                  if (selected != null && mounted) {
+                    setState(() => _selectedEpisodeIndex = selected);
+                    if (selected < currentEpisodes.length) {
+                      _playEpisode(currentEpisodes[selected]);
+                    }
+                  }
+                },
+                child: Text(
+                  '$episodeLabel ▼',
+                  style: const TextStyle(fontSize: 11),
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+          ],
+
+          // ── Play button ──────────────────────────────────────────────────
           SizedBox(
             height: 28,
             child: ElevatedButton.icon(
-              onPressed: _replayCurrentStream,
+              onPressed: _playSelectedEpisode,
               icon: const Icon(Icons.play_arrow, size: 14),
               label: const Text('Play', style: TextStyle(fontSize: 11)),
               style: ElevatedButton.styleFrom(
@@ -1113,4 +1312,3 @@ class _SeriesScreenState extends State<SeriesScreen> {
   }
 
 }
-
