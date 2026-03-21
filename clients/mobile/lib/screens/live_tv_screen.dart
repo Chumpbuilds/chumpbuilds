@@ -70,7 +70,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _loadCategories();
     _loadFavoriteIds();
     _headerSearchCtrl.addListener(_onHeaderSearchChanged);
@@ -79,7 +78,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   @override
   void dispose() {
     _headerSearchCtrl.dispose();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
