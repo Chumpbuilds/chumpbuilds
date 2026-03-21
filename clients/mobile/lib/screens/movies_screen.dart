@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
+import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/vlc_player_widget.dart';
 
@@ -44,6 +45,11 @@ class _MoviesScreenState extends State<MoviesScreen> {
   bool _loadingMovies = false;
   bool _loadingDetail = false;
   bool _searchVisible = false;
+
+  /// Whether the user has selected a category.  On first open this is false,
+  /// showing the categories (35%) + portal logo (65%) layout.  After a
+  /// category tap it becomes true, switching to movies list (35%) + detail/player (65%).
+  bool _categorySelected = false;
 
   // ─── VLC embedded player state ────────────────────────────────────────────
   String _vlcStreamUrl = '';
@@ -100,15 +106,12 @@ class _MoviesScreenState extends State<MoviesScreen> {
       _movieCounts.addAll(counts);
       _loadingCategories = false;
     });
-
-    if (cats.isNotEmpty) {
-      _selectCategory(cats.first);
-    }
   }
 
   Future<void> _selectCategory(Map<String, dynamic> cat) async {
     final catId = cat['category_id']?.toString();
     setState(() {
+      _categorySelected = true;
       _selectedCategoryId = catId;
       _selectedCategoryName = cat['category_name']?.toString();
       _selectedMovie = null;
@@ -321,9 +324,18 @@ class _MoviesScreenState extends State<MoviesScreen> {
       ),
       body: Row(
         children: [
-          Expanded(flex: 7, child: _buildCategoriesPanel()),
-          Expanded(flex: 5, child: _buildMoviesPanel()),
-          Expanded(flex: 8, child: _buildDetailPanel()),
+          // ── Panel 1 (35%): Categories → Movies list after selection ──────
+          Expanded(
+            flex: 35,
+            child: _categorySelected
+                ? _buildMoviesPanel()
+                : _buildCategoriesPanel(),
+          ),
+          // ── Panel 2 (65%): Portal logo → Movie detail/player after selection
+          Expanded(
+            flex: 65,
+            child: _categorySelected ? _buildDetailPanel() : _buildLogoPanel(),
+          ),
         ],
       ),
     );
@@ -335,39 +347,34 @@ class _MoviesScreenState extends State<MoviesScreen> {
     return Container(
       decoration: const BoxDecoration(
         color: Color(0xFF1A1A1A),
-        border: Border(right: BorderSide(color: Color(0xFF3D3D3D))),
+        border: Border(right: BorderSide(color: Color(0xFF3A3A3A))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Categories',
-                    style: TextStyle(
-                      color: _accentColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                ),
-              ],
+          // Header
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Text(
+              'Categories',
+              style: TextStyle(
+                color: _accentColor,
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
+          // List
           if (_loadingCategories)
             const Expanded(
                 child: Center(
-                    child: CircularProgressIndicator(color: _primaryColor)))
+                    child: CircularProgressIndicator(color: _accentColor)))
           else if (_filteredCategories.isEmpty)
             const Expanded(
                 child: Center(
                     child: Text('No categories',
-                        style: TextStyle(color: _secondaryTextColor))))
+                        style: TextStyle(
+                            color: _secondaryTextColor, fontSize: 12))))
           else
             Expanded(
               child: ListView.builder(
@@ -376,70 +383,173 @@ class _MoviesScreenState extends State<MoviesScreen> {
                   final cat = _filteredCategories[i];
                   final catId = cat['category_id']?.toString() ?? '';
                   final count = _movieCounts[catId] ?? 0;
-                  final isSelected = catId == _selectedCategoryId;
-                  return ListTile(
-                    dense: true,
-                    selected: isSelected,
-                    selectedTileColor: _surfaceColor,
-                    leading: const Text('📁', style: TextStyle(fontSize: 16)),
-                    title: Text(
-                      cat['category_name']?.toString() ?? '',
-                      style: TextStyle(
-                        color: isSelected ? _accentColor : Colors.white,
-                        fontSize: 13,
+                  final selected = catId == _selectedCategoryId;
+                  return GestureDetector(
+                    onTap: () => _selectCategory(cat),
+                    child: Container(
+                      color: selected
+                          ? const Color(0xFF2C3E50)
+                          : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      child: Row(
+                        children: [
+                          const Text('📁', style: TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              cat['category_name']?.toString() ?? '',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (count > 0)
+                            Text(
+                              '$count',
+                              style: const TextStyle(
+                                  color: _secondaryTextColor, fontSize: 11),
+                            ),
+                        ],
                       ),
                     ),
-                    trailing: count > 0
-                        ? Text('$count',
-                            style: const TextStyle(
-                                color: _secondaryTextColor, fontSize: 11))
-                        : null,
-                    onTap: () => _selectCategory(cat),
                   );
                 },
               ),
             ),
+          // Footer count
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              '${_filteredCategories.length} categories',
+              style: const TextStyle(
+                  color: _secondaryTextColor, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ─── Panel 2 – Movies ─────────────────────────────────────────────────────
+  // ─── Panel 2 – Portal logo (initial state) ───────────────────────────────
+
+  Widget _buildLogoPanel() {
+    final customizations = LicenseService().getAppCustomizations();
+    final logoUrl = customizations['logo_url'] as String? ?? '';
+    final appName = customizations['app_name'] as String? ?? 'X87 Player';
+
+    return ColoredBox(
+      color: _bgColor,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (logoUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: logoUrl,
+                width: 160,
+                height: 160,
+                placeholder: (_, __) => const SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: Center(
+                    child: CircularProgressIndicator(color: _accentColor),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.movie,
+                  size: 80,
+                  color: _accentColor,
+                ),
+                fit: BoxFit.contain,
+              )
+            else
+              const Icon(Icons.movie, size: 80, color: _accentColor),
+            const SizedBox(height: 16),
+            Text(
+              appName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Select a category to browse movies',
+              style: TextStyle(color: _secondaryTextColor, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Panel 1 (after selection) – Movies ──────────────────────────────────
 
   Widget _buildMoviesPanel() {
     return Container(
-      color: _bgColor,
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E),
+        border: Border(right: BorderSide(color: Color(0xFF3A3A3A))),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Header with back button and category name
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            padding: const EdgeInsets.fromLTRB(4, 8, 8, 4),
             child: Row(
               children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, size: 16,
+                      color: _accentColor),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Back to categories',
+                  onPressed: () {
+                    setState(() {
+                      _categorySelected = false;
+                      _selectedCategoryId = null;
+                      _selectedCategoryName = null;
+                      _selectedMovie = null;
+                      _vodInfo = null;
+                      _vlcStreamUrl = '';
+                      _vlcTitle = '';
+                      _vlcAutoPlay = false;
+                      _vlcPlayerKey++;
+                    });
+                  },
+                ),
+                const SizedBox(width: 4),
                 Expanded(
                   child: Text(
                     _selectedCategoryName ?? 'Movies',
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: _accentColor,
-                      fontSize: 13,
+                      fontSize: 14,
                       fontWeight: FontWeight.bold,
                     ),
                     overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
                   ),
                 ),
               ],
             ),
           ),
+          // Loading bar
           if (_loadingMovies)
-            const Expanded(
-                child: Center(
-                    child: CircularProgressIndicator(color: _primaryColor)))
-          else if (_filteredMovies.isEmpty)
+            const LinearProgressIndicator(
+              color: _accentColor,
+              backgroundColor: Color(0xFF2D2D2D),
+            ),
+          // List
+          if (!_loadingMovies && _filteredMovies.isEmpty)
             const Expanded(
                 child: Center(
                     child: Text('No movies found',
-                        style: TextStyle(color: _secondaryTextColor))))
+                        style: TextStyle(
+                            color: _secondaryTextColor, fontSize: 12))))
           else
             Expanded(
               child: ListView.builder(
@@ -448,56 +558,78 @@ class _MoviesScreenState extends State<MoviesScreen> {
                   final movie = _filteredMovies[i];
                   final streamId = movie['stream_id']?.toString() ?? '';
                   final posterUrl = movie['stream_icon']?.toString() ?? '';
-                  final isSelected =
+                  final selected =
                       _selectedMovie != null &&
                       _selectedMovie!['stream_id']?.toString() == streamId;
                   final isFav = _favMovieIds.contains(streamId);
-                  return ListTile(
-                    dense: true,
-                    selected: isSelected,
-                    selectedTileColor: _surfaceColor,
-                    leading: posterUrl.isNotEmpty
-                        ? SizedBox(
-                            width: 32,
-                            height: 48,
-                            child: CachedNetworkImage(
-                              imageUrl: posterUrl,
-                              placeholder: (_, __) => const Text('🎬',
-                                  style: TextStyle(fontSize: 18)),
-                              errorWidget: (_, __, ___) => const Text('🎬',
-                                  style: TextStyle(fontSize: 18)),
-                              fit: BoxFit.cover,
-                            ),
-                          )
-                        : const Text('🎬', style: TextStyle(fontSize: 18)),
-                    title: Text(
-                      movie['name']?.toString() ?? '',
-                      style: TextStyle(
-                        color: isSelected ? _accentColor : Colors.white,
-                        fontSize: 13,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    trailing: GestureDetector(
-                      onTap: () => _toggleMovieFav(movie),
-                      child: Icon(
-                        isFav ? Icons.star : Icons.star_border,
-                        color: const Color(0xFFFFD700),
-                        size: 18,
-                      ),
-                    ),
+                  return GestureDetector(
                     onTap: () => _selectMovie(movie),
+                    child: Container(
+                      color: selected
+                          ? const Color(0xFF2C3E50)
+                          : Colors.transparent,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 4),
+                      child: Row(
+                        children: [
+                          // Poster thumbnail
+                          SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: posterUrl.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: posterUrl,
+                                    placeholder: (_, __) => const Text('🎬',
+                                        style: TextStyle(fontSize: 20)),
+                                    errorWidget: (_, __, ___) => const Text(
+                                        '🎬',
+                                        style: TextStyle(fontSize: 20)),
+                                    fit: BoxFit.contain,
+                                  )
+                                : const Text('🎬',
+                                    style: TextStyle(fontSize: 20)),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              movie['name']?.toString() ?? '',
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          // Favourite star
+                          GestureDetector(
+                            onTap: () => _toggleMovieFav(movie),
+                            child: Icon(
+                              isFav ? Icons.star : Icons.star_border,
+                              color: const Color(0xFFFFD700),
+                              size: 18,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 },
               ),
             ),
+          // Footer count
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              '${_filteredMovies.length} movies',
+              style: const TextStyle(
+                  color: _secondaryTextColor, fontSize: 11),
+              textAlign: TextAlign.center,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ─── Panel 3 – Movie Detail ───────────────────────────────────────────────
+  // ─── Panel 2 (after selection) – Movie Detail ────────────────────────────
 
   Widget _buildDetailPanel() {
     final playerWidget = VlcPlayerWidget(
