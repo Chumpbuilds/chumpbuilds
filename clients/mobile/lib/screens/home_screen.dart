@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
@@ -67,6 +68,20 @@ class _HomeScreenState extends State<HomeScreen> {
       tag: 'favorites',
     ),
   ];
+
+  // ─── Lifecycle ────────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
