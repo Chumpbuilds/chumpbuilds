@@ -16,18 +16,17 @@ class FavoritesScreen extends StatefulWidget {
   State<FavoritesScreen> createState() => _FavoritesScreenState();
 }
 
-class _FavoritesScreenState extends State<FavoritesScreen>
-    with SingleTickerProviderStateMixin {
+class _FavoritesScreenState extends State<FavoritesScreen> {
   // ─── Theme ────────────────────────────────────────────────────────────────
   static const Color _bgColor = Color(0xFF1E1E1E);
   static const Color _surfaceColor = Color(0xFF2D2D2D);
   static const Color _borderColor = Color(0xFF3D3D3D);
-  static const Color _primaryColor = Color(0xFF0D7377);
+  static const Color _channelsColor = Color(0xFF8b9cff);
+  static const Color _moviesColor = Color(0xFFff9eff);
+  static const Color _seriesColor = Color(0xFF64d4ff);
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _favService = FavoritesService();
-
-  late TabController _tabController;
 
   List<Map<String, dynamic>> _channels = [];
   List<Map<String, dynamic>> _movies = [];
@@ -39,13 +38,11 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _tabController = TabController(length: 3, vsync: this);
     _loadFavorites();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
@@ -100,168 +97,208 @@ class _FavoritesScreenState extends State<FavoritesScreen>
     return Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
-        title: const Text('Favorites', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        title: const Text('Favorites',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
-        toolbarHeight: 36,
+        toolbarHeight: 48,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, size: 18),
           padding: EdgeInsets.zero,
           constraints: const BoxConstraints(),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: _primaryColor,
-          unselectedLabelColor: const Color(0xFF95A5A6),
-          indicatorColor: _primaryColor,
-          tabs: [
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('📺', style: TextStyle(fontSize: 16)),
-                  const SizedBox(width: 4),
-                  const Text('Channels'),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('🎬', style: TextStyle(fontSize: 16)),
-                  const SizedBox(width: 4),
-                  const Text('Movies'),
-                ],
-              ),
-            ),
-            Tab(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('📼', style: TextStyle(fontSize: 16)),
-                  const SizedBox(width: 4),
-                  const Text('Series'),
-                ],
-              ),
-            ),
-          ],
-        ),
       ),
       body: _loading
           ? const Center(
               child: CircularProgressIndicator(color: Color(0xFF0D7377)))
-          : TabBarView(
-              controller: _tabController,
+          : Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildFavoritesList(FavoriteType.channel, _channels),
-                _buildFavoritesList(FavoriteType.movie, _movies),
-                _buildFavoritesList(FavoriteType.series, _series),
+                Expanded(
+                  child: _buildFavoritesColumn(
+                    icon: '📺',
+                    label: 'Channels',
+                    color: _channelsColor,
+                    items: _channels,
+                    type: FavoriteType.channel,
+                  ),
+                ),
+                Container(width: 1, color: _borderColor),
+                Expanded(
+                  child: _buildFavoritesColumn(
+                    icon: '🎬',
+                    label: 'Movies',
+                    color: _moviesColor,
+                    items: _movies,
+                    type: FavoriteType.movie,
+                  ),
+                ),
+                Container(width: 1, color: _borderColor),
+                Expanded(
+                  child: _buildFavoritesColumn(
+                    icon: '📼',
+                    label: 'Series',
+                    color: _seriesColor,
+                    items: _series,
+                    type: FavoriteType.series,
+                  ),
+                ),
               ],
             ),
     );
   }
 
-  Widget _buildFavoritesList(
-      FavoriteType type, List<Map<String, dynamic>> items) {
-    if (items.isEmpty) {
-      final (emoji, label) = switch (type) {
-        FavoriteType.channel => ('📺', 'channels'),
-        FavoriteType.movie => ('🎬', 'movies'),
-        FavoriteType.series => ('📼', 'series'),
-      };
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(emoji, style: const TextStyle(fontSize: 64)),
-            const SizedBox(height: 16),
-            Text(
-              'No favourite $label yet',
-              style: const TextStyle(
-                  color: Color(0xFF95A5A6), fontSize: 16),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Tap the ⭐ icon on any item to add it here',
-              style: TextStyle(
-                  color: Color(0xFF666666), fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: items.length,
-      itemBuilder: (context, i) {
-        final item = items[i];
-        final name = item['name'] as String? ?? '';
-        final iconUrl = (item['stream_icon'] as String?) ??
-            (item['cover'] as String?) ??
-            '';
-        final idField = _idField(type);
-        final streamId = item[idField]?.toString() ?? '';
-
-        return Card(
-          color: _surfaceColor,
-          margin: const EdgeInsets.only(bottom: 8),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: const BorderSide(color: _borderColor),
-          ),
-          child: ListTile(
-            leading: iconUrl.isNotEmpty
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: CachedNetworkImage(
-                      imageUrl: iconUrl,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _fallbackIcon(type),
-                    ),
-                  )
-                : _fallbackIcon(type),
-            title: Text(
-              name,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 14),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
+  Widget _buildFavoritesColumn({
+    required String icon,
+    required String label,
+    required Color color,
+    required List<Map<String, dynamic>> items,
+    required FavoriteType type,
+  }) {
+    return Container(
+      color: _bgColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Header ──────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
               children: [
-                // Play button (not for series — no direct stream)
-                if (type != FavoriteType.series)
-                  IconButton(
-                    icon: const Icon(Icons.play_circle_fill,
-                        color: Color(0xFF3498DB)),
-                    onPressed: () => _play(item, type),
+                Text(icon, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    label.toUpperCase(),
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                // Remove favourite
-                IconButton(
-                  icon: const Icon(Icons.star,
-                      color: Color(0xFFFFD700)),
-                  onPressed: () async {
-                    final confirmed =
-                        await _confirmRemove(context, name);
-                    if (confirmed == true) {
-                      await _remove(type, streamId);
-                    }
-                  },
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(51),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
-            onTap: type != FavoriteType.series
-                ? () => _play(item, type)
-                : null,
           ),
-        );
-      },
+          Divider(height: 1, color: _borderColor),
+          // ── List ────────────────────────────────────────────────────────
+          Expanded(
+            child: items.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(icon,
+                            style: const TextStyle(fontSize: 40)),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No favorites yet',
+                          style: TextStyle(
+                              color: Color(0xFF95A5A6), fontSize: 13),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 6),
+                    itemCount: items.length,
+                    itemBuilder: (context, i) =>
+                        _buildFavoriteItem(items[i], type),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFavoriteItem(
+      Map<String, dynamic> item, FavoriteType type) {
+    final name = item['name'] as String? ?? '';
+    final iconUrl = (item['stream_icon'] as String?) ??
+        (item['cover'] as String?) ??
+        '';
+    final idField = _idField(type);
+    final streamId = item[idField]?.toString() ?? '';
+
+    return Card(
+      color: _surfaceColor,
+      margin: const EdgeInsets.only(bottom: 6),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: _borderColor),
+      ),
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        leading: iconUrl.isNotEmpty
+            ? ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: CachedNetworkImage(
+                  imageUrl: iconUrl,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => _fallbackIcon(type),
+                ),
+              )
+            : _fallbackIcon(type),
+        title: Text(
+          name,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Play button (not for series — no direct stream)
+            if (type != FavoriteType.series)
+              IconButton(
+                icon: const Icon(Icons.play_circle_fill,
+                    color: Color(0xFF3498DB), size: 20),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _play(item, type),
+              ),
+            const SizedBox(width: 4),
+            // Remove favourite
+            IconButton(
+              icon: const Icon(Icons.star,
+                  color: Color(0xFFFFD700), size: 20),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () async {
+                final confirmed = await _confirmRemove(context, name);
+                if (confirmed == true) {
+                  await _remove(type, streamId);
+                }
+              },
+            ),
+          ],
+        ),
+        onTap:
+            type != FavoriteType.series ? () => _play(item, type) : null,
+      ),
     );
   }
 
