@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
@@ -142,6 +145,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _showSwitchProfileDialog(BuildContext context) async {
+    final profiles = LicenseService().getCloudProfiles();
+    if (profiles.isEmpty) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) => _SwitchProfileDialog(
+        profiles: profiles,
+        parentContext: context,
+      ),
+    );
+  }
+
   // ─── Build ────────────────────────────────────────────────────────────────
 
   @override
@@ -212,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           iconSize: 20,
                           constraints: const BoxConstraints(),
                           padding: EdgeInsets.zero,
-                          onPressed: () => _openSettings(context),
+                          onPressed: () => _showSwitchProfileDialog(context),
                         ),
                         const SizedBox(width: 8),
                         IconButton(
@@ -371,6 +388,339 @@ class _GradientCard extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Switch Profile dialog ─────────────────────────────────────────────────────
+
+class _SwitchProfileDialog extends StatefulWidget {
+  const _SwitchProfileDialog({
+    required this.profiles,
+    required this.parentContext,
+  });
+
+  final List<dynamic> profiles;
+  final BuildContext parentContext;
+
+  @override
+  State<_SwitchProfileDialog> createState() => _SwitchProfileDialogState();
+}
+
+class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
+  static const Color _surfaceColor = Color(0xFF2D2D2D);
+  static const Color _primaryColor = Color(0xFF0D7377);
+  static const Color _borderColor = Color(0xFF3D3D3D);
+  static const Color _descColor = Color(0xFFB0B0B0);
+
+  int _selectedIndex = 0;
+  final _usernameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  String _statusMessage = '';
+  bool _isError = false;
+
+  String _credsKey(String profileName) => 'cloud_creds_$profileName';
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.profiles.isNotEmpty) {
+      final name = widget.profiles[0]['name'] as String? ?? '';
+      _loadSavedCredentials(name);
+    }
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSavedCredentials(String profileName) async {
+    if (profileName.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_credsKey(profileName)) ?? '{}';
+      final creds = jsonDecode(raw) as Map<String, dynamic>;
+      if (mounted) {
+        _usernameController.text = creds['username'] as String? ?? '';
+        _passwordController.text = creds['password'] as String? ?? '';
+      }
+    } catch (e) {
+      debugPrint('[SwitchProfile] Error loading credentials: $e');
+    }
+  }
+
+  void _onProfileChanged(int index) {
+    setState(() {
+      _selectedIndex = index;
+      _statusMessage = '';
+    });
+    final name = widget.profiles[index]['name'] as String? ?? '';
+    _loadSavedCredentials(name);
+  }
+
+  void _showStatus(String message, {required bool isError}) {
+    if (mounted) {
+      setState(() {
+        _statusMessage = message;
+        _isError = isError;
+      });
+    }
+  }
+
+  Future<void> _switchProfile() async {
+    final profile = widget.profiles[_selectedIndex] as Map;
+    final url = profile['url'] as String? ?? '';
+    final profileName = profile['name'] as String? ?? '';
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text.trim();
+
+    if (username.isEmpty || password.isEmpty) {
+      _showStatus('Please fill in all required fields', isError: true);
+      return;
+    }
+
+    if (url.isEmpty) {
+      _showStatus('No server URL available for the selected profile',
+          isError: true);
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    _showStatus('Connecting to server...', isError: false);
+
+    final xtream = XtreamService();
+    final result = await xtream.login(url, username, password);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (result['success'] == true) {
+      xtream.profileName = profileName;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _credsKey(profileName),
+        jsonEncode({'username': username, 'password': password}),
+      );
+      await prefs.setString('last_used_profile', profileName);
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      Navigator.of(widget.parentContext).pushReplacement(
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } else {
+      _showStatus(
+        result['message'] as String? ?? 'Login failed.',
+        isError: true,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profiles = widget.profiles;
+    final singleProfile = profiles.length == 1;
+
+    return Dialog(
+      backgroundColor: _surfaceColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+        side: const BorderSide(color: _borderColor),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Title
+              Row(
+                children: [
+                  const Icon(Icons.swap_horiz, color: _primaryColor, size: 22),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Switch Profile',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // Profile selector
+              if (singleProfile)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _borderColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    profiles[0]['name'] as String? ?? '',
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(color: _borderColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _selectedIndex,
+                      isExpanded: true,
+                      dropdownColor: _surfaceColor,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      items: List.generate(
+                        profiles.length,
+                        (i) => DropdownMenuItem<int>(
+                          value: i,
+                          child: Text(
+                              profiles[i]['name'] as String? ?? 'Profile $i'),
+                        ),
+                      ),
+                      onChanged: (i) {
+                        if (i != null) _onProfileChanged(i);
+                      },
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+
+              // Username field
+              TextField(
+                controller: _usernameController,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'Username',
+                  labelStyle: const TextStyle(color: _descColor, fontSize: 12),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: _borderColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: _primaryColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Password field
+              TextField(
+                controller: _passwordController,
+                obscureText: true,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  labelText: 'Password',
+                  labelStyle: const TextStyle(color: _descColor, fontSize: 12),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: _borderColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: const BorderSide(color: _primaryColor),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+
+              // Status message
+              if (_statusMessage.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _isError
+                        ? const Color(0xFFDC3545).withAlpha(30)
+                        : const Color(0xFF17A2B8).withAlpha(30),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: _isError
+                          ? const Color(0xFFDC3545)
+                          : const Color(0xFF17A2B8),
+                    ),
+                  ),
+                  child: Text(
+                    _statusMessage,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _isError
+                          ? const Color(0xFFDC3545)
+                          : const Color(0xFF17A2B8),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
+
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed:
+                          _isLoading ? null : () => Navigator.of(context).pop(),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: _borderColor),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: const Text('Cancel', style: TextStyle(fontSize: 13)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _switchProfile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Switch Profile',
+                              style: TextStyle(fontSize: 13)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
