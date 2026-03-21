@@ -535,10 +535,14 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
         side: const BorderSide(color: _borderColor),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 360),
+        constraints: BoxConstraints(
+          maxWidth: 360,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -720,6 +724,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                 ],
               ),
             ],
+          ),
           ),
         ),
       ),
