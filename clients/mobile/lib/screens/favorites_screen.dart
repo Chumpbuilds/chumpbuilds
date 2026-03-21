@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/favorites_service.dart';
@@ -37,6 +38,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _tabController = TabController(length: 3, vsync: this);
     _loadFavorites();
   }
@@ -44,6 +46,7 @@ class _FavoritesScreenState extends State<FavoritesScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
