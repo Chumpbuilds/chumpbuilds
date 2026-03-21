@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
+import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/vlc_player_widget.dart';
 
@@ -47,6 +48,11 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   bool _loadingChannels = false;
   bool _loadingEpg = false;
   bool _searchVisible = false;
+
+  /// Whether the user has selected a category.  On first open this is false,
+  /// showing the categories (35%) + portal logo (65%) layout.  After a
+  /// category tap it becomes true, switching to channels (35%) + player (65%).
+  bool _categorySelected = false;
 
   // ─── VLC embedded player state ────────────────────────────────────────────
   String _vlcStreamUrl = '';
@@ -105,16 +111,12 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       _channelCounts.addAll(counts);
       _loadingCategories = false;
     });
-
-    // Auto-select first category
-    if (cats.isNotEmpty) {
-      _selectCategory(cats.first);
-    }
   }
 
   Future<void> _selectCategory(Map<String, dynamic> cat) async {
     final catId = cat['category_id']?.toString();
     setState(() {
+      _categorySelected = true;
       _selectedCategoryId = catId;
       _selectedCategoryName = cat['category_name']?.toString();
       _selectedChannel = null;
@@ -329,12 +331,18 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       ),
       body: Row(
         children: [
-          // ── Panel 1: Categories ──────────────────────────────────────────
-          Expanded(flex: 3, child: _buildCategoriesPanel()),
-          // ── Panel 2: Channels ────────────────────────────────────────────
-          Expanded(flex: 3, child: _buildChannelsPanel()),
-          // ── Panel 3: EPG / Detail ────────────────────────────────────────
-          Expanded(flex: 4, child: _buildEpgPanel()),
+          // ── Panel 1 (35%): Categories → Channel list after selection ─────
+          Expanded(
+            flex: 35,
+            child: _categorySelected
+                ? _buildChannelsPanel()
+                : _buildCategoriesPanel(),
+          ),
+          // ── Panel 2 (65%): Portal logo → Player/EPG after selection ──────
+          Expanded(
+            flex: 65,
+            child: _categorySelected ? _buildEpgPanel() : _buildLogoPanel(),
+          ),
         ],
       ),
     );
@@ -430,6 +438,60 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     );
   }
 
+  // ─── Panel 2 – Portal logo (initial state) ───────────────────────────────
+
+  Widget _buildLogoPanel() {
+    final customizations = LicenseService().getAppCustomizations();
+    final logoUrl = customizations['logo_url'] as String? ?? '';
+    final appName = customizations['app_name'] as String? ?? 'X87 Player';
+
+    return ColoredBox(
+      color: _bgColor,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (logoUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: logoUrl,
+                width: 160,
+                height: 160,
+                placeholder: (_, __) => const SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: Center(
+                    child: CircularProgressIndicator(color: _accentColor),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.tv,
+                  size: 80,
+                  color: _accentColor,
+                ),
+                fit: BoxFit.contain,
+              )
+            else
+              const Icon(Icons.tv, size: 80, color: _accentColor),
+            const SizedBox(height: 16),
+            Text(
+              appName,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Select a category to browse channels',
+              style: TextStyle(color: _secondaryTextColor, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ─── Panel 2 – Channels ───────────────────────────────────────────────────
 
   Widget _buildChannelsPanel() {
@@ -441,16 +503,44 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Text(
-              'Channels',
-              style: TextStyle(
-                color: _accentColor,
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
+          // Header with back button and category name
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 8, 8, 4),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, size: 16,
+                      color: _accentColor),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  tooltip: 'Back to categories',
+                  onPressed: () {
+                    setState(() {
+                      _categorySelected = false;
+                      _selectedCategoryId = null;
+                      _selectedCategoryName = null;
+                      _selectedChannel = null;
+                      _epgData = null;
+                      _vlcStreamUrl = '';
+                      _vlcTitle = '';
+                      _vlcAutoPlay = false;
+                      _vlcPlayerKey++;
+                    });
+                  },
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    _selectedCategoryName ?? 'Channels',
+                    style: const TextStyle(
+                      color: _accentColor,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ),
           // Loading bar
