@@ -272,22 +272,27 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     // ── Welcome message ────────────────────────────────────
                     const SizedBox(height: 16),
-                    Text(
-                      'Welcome to',
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.dancingScript(
-                        color: _descColor,
-                        fontSize: 16,
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'Welcome to ',
+                            style: GoogleFonts.dancingScript(
+                              color: _descColor,
+                              fontSize: 16,
+                            ),
+                          ),
+                          TextSpan(
+                            text: '"$profileName"',
+                            style: GoogleFonts.dancingScript(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    Text(
-                      '"$profileName"',
                       textAlign: TextAlign.center,
-                      style: GoogleFonts.dancingScript(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
                     ),
                   ],
                 ),
