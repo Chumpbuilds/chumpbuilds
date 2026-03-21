@@ -637,236 +637,287 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   // ─── Panel 3 – EPG / Detail ───────────────────────────────────────────────
 
   Widget _buildEpgPanel() {
-    // Player constrained to ~40% of the panel width, 16:9 aspect ratio
-    final playerWidget = AspectRatio(
-      aspectRatio: 16 / 9,
-      child: VlcPlayerWidget(
-        key: ValueKey(_vlcPlayerKey),
-        streamUrl: _vlcStreamUrl,
-        title: _vlcTitle,
-        contentType: 'live',
-        autoPlay: _vlcAutoPlay,
-      ),
-    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Top row height is driven by the player occupying 70% of section 2
+        // width at a 16:9 aspect ratio.
+        final topRowHeight = constraints.maxWidth * 0.7 * 9.0 / 16.0;
 
-    if (_selectedChannel == null) {
-      return ColoredBox(
-        color: const Color(0xFF1E1E1E),
-        child: Column(
-          children: [
-            // Embedded player (idle state)
-            playerWidget,
-            const Expanded(
-              child: Center(
-                child: Text(
-                  '📺  Select a channel and click Play to start streaming',
-                  style: TextStyle(color: _secondaryTextColor, fontSize: 14),
-                  textAlign: TextAlign.center,
+        final player = VlcPlayerWidget(
+          key: ValueKey(_vlcPlayerKey),
+          streamUrl: _vlcStreamUrl,
+          title: _vlcTitle,
+          contentType: 'live',
+          autoPlay: _vlcAutoPlay,
+        );
+
+        if (_selectedChannel == null) {
+          return ColoredBox(
+            color: const Color(0xFF1E1E1E),
+            child: Column(
+              children: [
+                // ── Top row: 30% logo placeholder | 70% player (idle) ─────
+                SizedBox(
+                  height: topRowHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        flex: 30,
+                        child: Container(
+                          color: const Color(0xFF2D2D2D),
+                          child: const Center(
+                            child: Text('📺',
+                                style: TextStyle(fontSize: 32)),
+                          ),
+                        ),
+                      ),
+                      Expanded(flex: 70, child: player),
+                    ],
+                  ),
+                ),
+                const Expanded(
+                  child: Center(
+                    child: Text(
+                      '📺  Select a channel and click Play to start streaming',
+                      style:
+                          TextStyle(color: _secondaryTextColor, fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final ch = _selectedChannel!;
+        final name = ch['name']?.toString() ?? '';
+        final iconUrl = ch['stream_icon']?.toString() ?? '';
+        final epgListings = (_epgData?['epg_listings'] as List?) ?? [];
+
+        return ColoredBox(
+          color: const Color(0xFF1E1E1E),
+          child: Column(
+            children: [
+              // ── Top row: 30% channel logo | 70% player ─────────────────
+              SizedBox(
+                height: topRowHeight,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 30% – channel logo
+                    Expanded(
+                      flex: 30,
+                      child: Container(
+                        color: const Color(0xFF2D2D2D),
+                        child: iconUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: iconUrl,
+                                fit: BoxFit.contain,
+                                placeholder: (_, __) => const Center(
+                                    child: Text('📺',
+                                        style: TextStyle(fontSize: 32))),
+                                errorWidget: (_, __, ___) => const Center(
+                                    child: Text('📺',
+                                        style: TextStyle(fontSize: 32))),
+                              )
+                            : const Center(
+                                child: Text('📺',
+                                    style: TextStyle(fontSize: 32))),
+                      ),
+                    ),
+                    // 70% – player
+                    Expanded(flex: 70, child: player),
+                  ],
                 ),
               ),
-            ),
-          ],
-        ),
-      );
-    }
 
-    final ch = _selectedChannel!;
-    final name = ch['name']?.toString() ?? '';
-    final iconUrl = ch['stream_icon']?.toString() ?? '';
-    final epgListings = (_epgData?['epg_listings'] as List?) ?? [];
-
-    return ColoredBox(
-      color: const Color(0xFF1E1E1E),
-      child: Column(
-        children: [
-          // ── Embedded VLC player (~40% width, left-aligned) ───────────────
-          playerWidget,
-
-          // ── Compact channel info + action buttons ────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                if (iconUrl.isNotEmpty)
-                  CachedNetworkImage(
-                    imageUrl: iconUrl,
-                    height: 28,
-                    width: 28,
-                    placeholder: (_, __) =>
-                        const Text('📺', style: TextStyle(fontSize: 16)),
-                    errorWidget: (_, __, ___) =>
-                        const Text('📺', style: TextStyle(fontSize: 16)),
-                    fit: BoxFit.contain,
-                  )
-                else
-                  const Text('📺', style: TextStyle(fontSize: 16)),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
+              // ── Compact channel name + action buttons ─────────────────
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                SizedBox(
-                  height: 28,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _playChannel(ch),
-                    icon: const Icon(Icons.play_arrow, size: 14),
-                    label: const Text('Play', style: TextStyle(fontSize: 11)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF27AE60),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
+                    SizedBox(
+                      height: 28,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _playChannel(ch),
+                        icon: const Icon(Icons.play_arrow, size: 14),
+                        label:
+                            const Text('Play', style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF27AE60),
+                          foregroundColor: Colors.white,
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                SizedBox(
-                  height: 28,
-                  child: ElevatedButton.icon(
-                    onPressed: _stopEmbeddedPlayback,
-                    icon: const Icon(Icons.stop, size: 14),
-                    label: const Text('Stop', style: TextStyle(fontSize: 11)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFE74C3C),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      height: 28,
+                      child: ElevatedButton.icon(
+                        onPressed: _stopEmbeddedPlayback,
+                        icon: const Icon(Icons.stop, size: 14),
+                        label:
+                            const Text('Stop', style: TextStyle(fontSize: 11)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE74C3C),
+                          foregroundColor: Colors.white,
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                SizedBox(
-                  height: 28,
-                  child: OutlinedButton(
-                    onPressed: () => _openChannelExternal(ch),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      side: const BorderSide(color: Color(0xFF3D3D3D)),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      height: 28,
+                      child: OutlinedButton(
+                        onPressed: () => _openChannelExternal(ch),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFF3D3D3D)),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 6),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4)),
+                        ),
+                        child: const Text('↗ VLC',
+                            style: TextStyle(fontSize: 11)),
+                      ),
                     ),
-                    child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
 
-          const Divider(color: Color(0xFF3D3D3D), height: 1),
+              const Divider(color: Color(0xFF3D3D3D), height: 1),
 
-          // ── EPG header (fixed small row) ─────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(
-              children: [
-                const Text(
-                  '📅 Program Guide',
-                  style: TextStyle(
-                      color: _accentColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 6),
-                if (_loadingEpg)
-                  const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: _accentColor,
+              // ── EPG header ────────────────────────────────────────────
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    const Text(
+                      '📅 Program Guide',
+                      style: TextStyle(
+                          color: _accentColor,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
                     ),
-                  ),
-              ],
-            ),
-          ),
+                    const SizedBox(width: 6),
+                    if (_loadingEpg)
+                      const SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: _accentColor,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
 
-          // ── EPG list (scrollable, fills remaining space) ─────────────────
-          Expanded(
-            child: ClipRect(
-              child: (!_loadingEpg && epgListings.isEmpty)
-                  ? const Center(
-                      child: Text('No EPG data available',
-                          style: TextStyle(
-                              color: _secondaryTextColor, fontSize: 12)),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: epgListings.length,
-                      itemBuilder: (context, index) {
-                        final p = Map<String, dynamic>.from(
-                            epgListings[index] as Map);
-                        final title =
-                            _decodeEpgTitle(p['title']?.toString() ?? '');
-                        final start = p['start']?.toString() ?? '';
-                        final end = p['end']?.toString() ?? '';
-                        final isNow = p['now_playing'] == 1 ||
-                            p['now_playing'] == true ||
-                            p['now_playing']?.toString() == '1';
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 2),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _surfaceColor,
-                            borderRadius: BorderRadius.circular(4),
-                            border: isNow
-                                ? Border.all(color: _liveColor, width: 1)
-                                : null,
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (isNow) ...[
-                                const Text('🔴',
-                                    style: TextStyle(fontSize: 10)),
-                                const SizedBox(width: 4),
-                              ],
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      title,
-                                      style: TextStyle(
-                                        color: isNow
-                                            ? _liveColor
-                                            : Colors.white,
-                                        fontWeight: isNow
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    if (start.isNotEmpty)
-                                      Text(
-                                        '$start – $end',
-                                        style: const TextStyle(
-                                            color: _secondaryTextColor,
-                                            fontSize: 10),
-                                      ),
-                                  ],
-                                ),
+              // ── EPG list (100% width, fills remaining space) ──────────
+              Expanded(
+                child: ClipRect(
+                  child: (!_loadingEpg && epgListings.isEmpty)
+                      ? const Center(
+                          child: Text('No EPG data available',
+                              style: TextStyle(
+                                  color: _secondaryTextColor,
+                                  fontSize: 12)),
+                        )
+                      : ListView.builder(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 8),
+                          itemCount: epgListings.length,
+                          itemBuilder: (context, index) {
+                            final p = Map<String, dynamic>.from(
+                                epgListings[index] as Map);
+                            final title = _decodeEpgTitle(
+                                p['title']?.toString() ?? '');
+                            final start = p['start']?.toString() ?? '';
+                            final end = p['end']?.toString() ?? '';
+                            final isNow = p['now_playing'] == 1 ||
+                                p['now_playing'] == true ||
+                                p['now_playing']?.toString() == '1';
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _surfaceColor,
+                                borderRadius: BorderRadius.circular(4),
+                                border: isNow
+                                    ? Border.all(
+                                        color: _liveColor, width: 1)
+                                    : null,
                               ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
+                              child: Row(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
+                                children: [
+                                  if (isNow) ...[
+                                    const Text('🔴',
+                                        style: TextStyle(fontSize: 10)),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          title,
+                                          style: TextStyle(
+                                            color: isNow
+                                                ? _liveColor
+                                                : Colors.white,
+                                            fontWeight: isNow
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        if (start.isNotEmpty)
+                                          Text(
+                                            '$start – $end',
+                                            style: const TextStyle(
+                                                color: _secondaryTextColor,
+                                                fontSize: 10),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
