@@ -12,7 +12,9 @@ import '../widgets/vlc_player_widget.dart';
 ///
 /// Ported from `clients/windows/ui/series/series_view.py`.
 class SeriesScreen extends StatefulWidget {
-  const SeriesScreen({super.key});
+  const SeriesScreen({super.key, this.initialSeries});
+
+  final Map<String, dynamic>? initialSeries;
 
   @override
   State<SeriesScreen> createState() => _SeriesScreenState();
@@ -110,6 +112,20 @@ class _SeriesScreenState extends State<SeriesScreen> {
       _seriesCounts.addAll(counts);
       _loadingCategories = false;
     });
+
+    if (widget.initialSeries != null) {
+      final catId = widget.initialSeries!['category_id']?.toString();
+      final matchingCat = _categories.firstWhere(
+        (c) => c['category_id']?.toString() == catId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (matchingCat.isNotEmpty) {
+        await _selectCategory(matchingCat);
+      }
+      if (mounted) {
+        _selectSeries(widget.initialSeries!);
+      }
+    }
   }
 
   Future<void> _selectCategory(Map<String, dynamic> cat) async {
