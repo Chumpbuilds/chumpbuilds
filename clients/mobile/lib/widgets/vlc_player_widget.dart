@@ -62,17 +62,18 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   bool _isLoading = false;
   bool _hasError = false;
 
-  // ─── Android ExoPlayer detection ─────────────────────────────────────────
+  // ─── Native player detection ──────────────────────────────────────────────
 
-  /// Returns `true` when the Android ExoPlayer path should be used.
+  /// Returns `true` when the native player path should be used.
   ///
-  /// flutter_vlc_player / LibVLC has proven unreliable on Android (stuck in
-  /// `PlayingState.initializing` forever for many stream types, despite
-  /// multiple previous fix attempts). Flutter's `video_player` package
-  /// (backed by ExoPlayer) handles HLS (.m3u8), MP4, MKV, TS, and other
-  /// common IPTV formats reliably on Android, so we route **all** embedded
-  /// Android playback — live, movie, and series — through it.
-  bool get _useAndroidExoPlayer => !kIsWeb && Platform.isAndroid;
+  /// flutter_vlc_player / LibVLC has proven unreliable on Android and iOS
+  /// (stuck in `PlayingState.initializing` forever for many stream types, or
+  /// failing with a PlatformException on iOS Simulator). Flutter's
+  /// `video_player` package (backed by ExoPlayer on Android and AVFoundation
+  /// on iOS) handles HLS (.m3u8), MP4, MKV, TS, and other common IPTV formats
+  /// reliably, so we route **all** embedded Android and iOS playback — live,
+  /// movie, and series — through it.
+  bool get _useNativePlayer => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   String get _placeholder {
     switch (widget.contentType) {
@@ -117,10 +118,11 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       _hasError = false;
     });
 
-    // On Android route all embedded streams through ExoPlayer (video_player)
-    // instead of LibVLC, which has proven unreliable on Android.
-    if (_useAndroidExoPlayer) {
-      await _startAndroidExoPlayerPlayback();
+    // On Android and iOS route all embedded streams through the native player
+    // (video_player) instead of LibVLC, which has proven unreliable on both
+    // platforms.
+    if (_useNativePlayer) {
+      await _startNativePlayerPlayback();
       return;
     }
 
@@ -172,14 +174,15 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     }
   }
 
-  /// Starts playback via ExoPlayer (video_player) on Android for HLS streams.
+  /// Starts playback via the native player (video_player) on Android and iOS.
   ///
-  /// Unlike the VLC path there is no async initialization polling: the
+  /// Uses ExoPlayer on Android and AVFoundation on iOS. Unlike the VLC path
+  /// there is no async initialization polling: the
   /// [VideoPlayerController.initialize] call either succeeds or throws.
-  Future<void> _startAndroidExoPlayerPlayback() async {
+  Future<void> _startNativePlayerPlayback() async {
     if (kDebugMode) {
       debugPrint(
-        '[ExoPlayer] _startAndroidExoPlayerPlayback | '
+        '[NativePlayer] _startNativePlayerPlayback | '
         'contentType=${widget.contentType} title="${widget.title}"',
       );
     }
@@ -203,7 +206,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
       await ctrl.setVolume(_isMuted ? 0.0 : _volume / 100.0);
     } catch (e) {
-      debugPrint('[ExoPlayer] Playback error: $e');
+      debugPrint('[NativePlayer] Playback error: $e');
       ctrl?.removeListener(_onVideoControllerChanged);
       await VideoPlayerService.instance.stop();
       if (!mounted) return;
@@ -297,7 +300,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   }
 
   Future<void> _goFullscreen() async {
-    if (_useAndroidExoPlayer) {
+    if (_useNativePlayer) {
       if (_videoController == null) return;
       _videoController!.removeListener(_onVideoControllerChanged);
       await VideoPlayerService.instance.stop();
