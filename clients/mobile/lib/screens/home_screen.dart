@@ -85,6 +85,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
+  String _formatExpiry(dynamic expDate) {
+    if (expDate == null) return 'N/A';
+    try {
+      final ts = int.parse(expDate.toString());
+      final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+      return '${dt.day.toString().padLeft(2, '0')}-'
+          '${dt.month.toString().padLeft(2, '0')}-'
+          '${dt.year}';
+    } catch (_) {
+      return 'N/A';
+    }
+  }
+
   Future<void> _navigate(BuildContext context, String tag) async {
     Widget screen;
     switch (tag) {
@@ -155,33 +168,60 @@ class _HomeScreenState extends State<HomeScreen> {
     final row1 = visibleCards.take(3).toList();
     final row2 = visibleCards.skip(3).toList();
 
+    final xtream = XtreamService();
+    final userInfo = xtream.userInfo ?? {};
+    final username =
+        userInfo['username'] as String? ?? xtream.username ?? '';
+    final expiry = _formatExpiry(userInfo['exp_date']);
+
+    final customizations = LicenseService().getAppCustomizations();
+    final appName = customizations['app_name'] as String? ?? 'X87 Player';
+    final profileName =
+        (xtream.profileName?.isNotEmpty ?? false) ? xtream.profileName! : appName;
+
     return Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
         child: Column(
           children: [
-            // ── Top bar: icon buttons (top-right only) ────────────────────
+            // ── Top bar: user info (left) + icon buttons (right) ──────────
             SizedBox(
               height: 32,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    IconButton(
-                      icon: const Icon(Icons.account_circle, color: Colors.white),
-                      iconSize: 20,
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
-                      onPressed: () => _openSettings(context),
+                    // Left side: username and expiry date
+                    Text(
+                      '👤 $username  |  📅 Exp: $expiry',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: _descColor,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      icon: const Icon(Icons.settings, color: Colors.white),
-                      iconSize: 20,
-                      constraints: const BoxConstraints(),
-                      padding: EdgeInsets.zero,
-                      onPressed: () => _openSettings(context),
+                    // Right side: icon buttons
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.account_circle,
+                              color: Colors.white),
+                          iconSize: 20,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _openSettings(context),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          icon: const Icon(Icons.settings, color: Colors.white),
+                          iconSize: 20,
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          onPressed: () => _openSettings(context),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -229,6 +269,30 @@ class _HomeScreenState extends State<HomeScreen> {
                             )
                             .toList(),
                       ),
+                    // ── Welcome message ────────────────────────────────────
+                    const SizedBox(height: 16),
+                    RichText(
+                      textAlign: TextAlign.center,
+                      text: TextSpan(
+                        children: [
+                          const TextSpan(
+                            text: 'Welcome to ',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _descColor,
+                            ),
+                          ),
+                          TextSpan(
+                            text: '"$profileName"',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
