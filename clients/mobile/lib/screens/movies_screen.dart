@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
@@ -57,6 +58,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _loadCategories();
     _loadFavoriteIds();
     _headerSearchCtrl.addListener(_onHeaderSearchChanged);
@@ -65,6 +67,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
   @override
   void dispose() {
     _headerSearchCtrl.dispose();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
