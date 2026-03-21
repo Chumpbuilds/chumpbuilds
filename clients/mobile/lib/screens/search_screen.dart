@@ -25,6 +25,7 @@ class _SearchScreenState extends State<SearchScreen> {
   static const Color _liveTvColor = Color(0xFF8b9cff);
   static const Color _moviesColor = Color(0xFFff9eff);
   static const Color _seriesColor = Color(0xFF64d4ff);
+  static const Color _secondaryTextColor = Color(0xFF95A5A6);
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _xtream = XtreamService();
@@ -118,6 +119,7 @@ class _SearchScreenState extends State<SearchScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bgColor,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: const Text('Search', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         backgroundColor: _bgColor,
@@ -237,87 +239,110 @@ class _SearchScreenState extends State<SearchScreen> {
       );
     }
 
-    return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (_liveResults.isNotEmpty)
-          _buildSection(
+        Expanded(
+          child: _buildColumnSection(
             icon: '📺',
             label: 'LIVE TV',
             color: _liveTvColor,
             items: _liveResults,
             type: 'live',
           ),
-        if (_movieResults.isNotEmpty)
-          _buildSection(
+        ),
+        Container(width: 1, color: _borderColor),
+        Expanded(
+          child: _buildColumnSection(
             icon: '🎬',
             label: 'MOVIES',
             color: _moviesColor,
             items: _movieResults,
             type: 'movie',
           ),
-        if (_seriesResults.isNotEmpty)
-          _buildSection(
+        ),
+        Container(width: 1, color: _borderColor),
+        Expanded(
+          child: _buildColumnSection(
             icon: '📼',
             label: 'SERIES',
             color: _seriesColor,
             items: _seriesResults,
             type: 'series',
           ),
+        ),
       ],
     );
   }
 
-  Widget _buildSection({
+  Widget _buildColumnSection({
     required String icon,
     required String label,
     required Color color,
     required List<Map<String, dynamic>> items,
     required String type,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section header
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Row(
-            children: [
-              Text(icon, style: const TextStyle(fontSize: 20)),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: color.withAlpha(51),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${items.length}',
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+    return Container(
+      color: _bgColor,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                Text(icon, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-            ],
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color.withAlpha(51),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${items.length}',
+                    style: TextStyle(
+                        color: color,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        // Items
-        ...items.map((item) => _buildResultTile(item, type, color)),
-        const SizedBox(height: 8),
-      ],
+          const Divider(height: 1, color: _borderColor),
+          Expanded(
+            child: items.isEmpty
+                ? Center(
+                    child: Text(
+                      'No results',
+                      style: TextStyle(
+                          color: _secondaryTextColor, fontSize: 12),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 4),
+                    itemCount: items.length,
+                    itemBuilder: (_, i) =>
+                        _buildResultTile(items[i], type, color),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 
