@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
@@ -271,26 +272,21 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     // ── Welcome message ────────────────────────────────────
                     const SizedBox(height: 16),
-                    RichText(
+                    Text(
+                      'Welcome to',
                       textAlign: TextAlign.center,
-                      text: TextSpan(
-                        children: [
-                          const TextSpan(
-                            text: 'Welcome to ',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _descColor,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '"$profileName"',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      style: GoogleFonts.dancingScript(
+                        color: _descColor,
+                        fontSize: 16,
+                      ),
+                    ),
+                    Text(
+                      '"$profileName"',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.dancingScript(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ],
