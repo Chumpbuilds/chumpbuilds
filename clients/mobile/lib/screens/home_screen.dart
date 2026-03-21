@@ -110,16 +110,22 @@ class _HomeScreenState extends State<HomeScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => screen),
     );
-    // Re-apply immersive mode after returning from child screen,
-    // since child's dispose() resets to edgeToEdge.
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // Small delay to ensure child's dispose() async work completes
+    // before re-applying immersive mode.
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (mounted) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
   }
 
   Future<void> _openSettings(BuildContext context) async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const _SettingsScreen()),
     );
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await Future.delayed(const Duration(milliseconds: 100));
+    if (mounted) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    }
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -321,18 +327,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   static const Color _surfaceColor = Color(0xFF2D2D2D);
   static const Color _borderColor = Color(0xFF3D3D3D);
   static const Color _descColor = Color(0xFFB0B0B0);
-
-  @override
-  void initState() {
-    super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-  }
-
-  @override
-  void dispose() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    super.dispose();
-  }
 
   String _formatExpiry(dynamic expDate) {
     if (expDate == null) return 'N/A';
