@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/tv_text_field.dart';
 import 'home_screen.dart';
 
 /// IPTV Login screen — mirrors the Windows client's `ModernLoginDialog`.
@@ -339,7 +340,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const Text('Username:',
             style: TextStyle(fontSize: 12, color: _descColor)),
         const SizedBox(height: 4),
-        TextField(
+        TvTextField(
           controller: _usernameController,
           enabled: !_isLoading,
           style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -356,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const Text('Password:',
             style: TextStyle(fontSize: 12, color: _descColor)),
         const SizedBox(height: 4),
-        TextField(
+        TvTextField(
           controller: _passwordController,
           enabled: !_isLoading,
           obscureText: true,

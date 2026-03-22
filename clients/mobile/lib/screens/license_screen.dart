@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/license_service.dart';
+import '../widgets/tv_text_field.dart';
 import 'login_screen.dart';
 
 /// License activation screen — mirrors the Windows client's LicenseDialog.
@@ -141,7 +142,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                 const SizedBox(height: 20),
 
                 // License key input
-                TextField(
+                TvTextField(
                   controller: _controller,
                   focusNode: _focusNode,
                   maxLength: 19,
