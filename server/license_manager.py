@@ -153,39 +153,72 @@ def is_valid_license(license_key, hardware_id=None):
             except Exception as e:
                 logger.error(f"[License] Error parsing expiry date: {e}")
         
-        # Handle hardware binding
+        # Handle hardware binding using license_devices table
         if hardware_id:
-            current_device_id = license_data['device_id']
-            max_devices = license_data.get('max_devices', 1)
-            
-            if not current_device_id:
-                # Bind hardware ID to this license
-                logger.info(f"[License] Binding hardware ID: {hardware_id[:16]}...")
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        UPDATE licenses 
-                        SET device_id = ?, last_used = ?, app_version = ?
-                        WHERE license_key = ?
-                    """, (hardware_id, datetime.now().isoformat(), '1.0.0', license_data['license_key']))
-                    
-                    if cursor.rowcount > 0:
-                        conn.commit()
-                        logger.info(f"[License] Hardware ID bound successfully")
-                    
-                    conn.close()
-                except Exception as e:
-                    logger.error(f"[License] Error binding hardware ID: {e}")
-                    
-            elif current_device_id != hardware_id:
-                if max_devices <= 1:
-                    logger.warning(f"[License] Hardware ID mismatch - single device license")
-                    # OPTIONAL: strict binding enforcement
-                    # return False, "License is bound to a different device"
-                    pass
+            max_devices = license_data.get('max_devices') if license_data.get('max_devices') is not None else 3
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            try:
+                # Check if this device is already bound
+                cursor.execute(
+                    'SELECT id FROM license_devices WHERE license_key = ? AND device_id = ?',
+                    (license_data['license_key'], hardware_id)
+                )
+                existing_device = cursor.fetchone()
+
+                if existing_device:
+                    # Device already bound — update last_used
+                    cursor.execute(
+                        'UPDATE license_devices SET last_used = CURRENT_TIMESTAMP WHERE id = ?',
+                        (existing_device['id'],)
+                    )
+                    cursor.execute(
+                        'UPDATE licenses SET last_used = ?, app_version = ? WHERE license_key = ?',
+                        (datetime.now().isoformat(), '1.0.0', license_data['license_key'])
+                    )
+                    conn.commit()
+                    logger.info(f"[License] Device already bound, updated last_used")
                 else:
-                    logger.info(f"[License] Hardware ID different but multiple devices allowed ({max_devices})")
+                    # New device — check if limit is reached
+                    cursor.execute(
+                        'SELECT COUNT(*) as cnt FROM license_devices WHERE license_key = ?',
+                        (license_data['license_key'],)
+                    )
+                    device_count = cursor.fetchone()['cnt']
+
+                    if device_count >= max_devices:
+                        conn.close()
+                        logger.warning(
+                            f"[License] Device limit reached ({device_count}/{max_devices}) "
+                            f"for license {license_data['license_key']}"
+                        )
+                        return False, (
+                            f"Device limit reached ({device_count}/{max_devices}). "
+                            "Unbind a device from your portal or purchase additional device slots."
+                        )
+
+                    # Auto-bind the new device
+                    cursor.execute(
+                        '''INSERT INTO license_devices (license_key, device_id)
+                           VALUES (?, ?)''',
+                        (license_data['license_key'], hardware_id)
+                    )
+                    # Keep legacy device_id in sync for first device
+                    if device_count == 0:
+                        cursor.execute(
+                            'UPDATE licenses SET device_id = ?, last_used = ?, app_version = ? WHERE license_key = ?',
+                            (hardware_id, datetime.now().isoformat(), '1.0.0', license_data['license_key'])
+                        )
+                    else:
+                        cursor.execute(
+                            'UPDATE licenses SET last_used = ?, app_version = ? WHERE license_key = ?',
+                            (datetime.now().isoformat(), '1.0.0', license_data['license_key'])
+                        )
+                    conn.commit()
+                    logger.info(f"[License] New device auto-bound ({device_count + 1}/{max_devices})")
+            finally:
+                conn.close()
         
         return True, license_data
         

@@ -35,12 +35,26 @@ def init_database():
             status TEXT DEFAULT 'active',
             expires_at DATETIME,
             device_id TEXT,
-            max_devices INTEGER DEFAULT 1,
+            max_devices INTEGER DEFAULT 3,
             features TEXT,
             notes TEXT,
             user_dns TEXT, /* Legacy field, kept for compatibility */
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # License devices table (multi-device tracking)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS license_devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            license_key TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            device_name TEXT,
+            platform TEXT,
+            bound_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(license_key, device_id)
         )
     ''')
     
@@ -186,7 +200,50 @@ def migrate_database():
             cursor.execute('ALTER TABLE licenses ADD COLUMN notes TEXT')
         if 'user_dns' not in license_columns:
             cursor.execute('ALTER TABLE licenses ADD COLUMN user_dns TEXT')
-            
+
+        # Migrate license_devices table (one-time)
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='license_devices'")
+        if not cursor.fetchone():
+            print("➕ Creating license_devices table...")
+            cursor.execute('''
+                CREATE TABLE license_devices (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    license_key TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    device_name TEXT,
+                    platform TEXT,
+                    bound_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_used DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(license_key, device_id)
+                )
+            ''')
+            print("✅ Created license_devices table")
+
+            # Migrate existing device_id values (one-time)
+            cursor.execute('''
+                SELECT license_key, device_id FROM licenses
+                WHERE device_id IS NOT NULL AND device_id != ""
+            ''')
+            rows = cursor.fetchall()
+            migrated = 0
+            for row in rows:
+                try:
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO license_devices (license_key, device_id)
+                        VALUES (?, ?)
+                    ''', (row[0], row[1]))
+                    if cursor.rowcount:
+                        migrated += 1
+                except Exception:
+                    pass
+            if migrated:
+                print(f"✅ Migrated {migrated} existing device_id(s) into license_devices")
+
+            # One-time: update existing licenses with old default max_devices=1 to 3
+            cursor.execute('UPDATE licenses SET max_devices = 3 WHERE max_devices = 1')
+            if cursor.rowcount:
+                print(f"✅ Updated {cursor.rowcount} license(s) max_devices from 1 to 3")
+
         conn.commit()
         print("✅ Database migrations completed")
         

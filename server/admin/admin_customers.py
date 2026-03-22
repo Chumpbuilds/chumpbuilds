@@ -116,7 +116,9 @@ def manage_customers():
                    (SELECT COUNT(*) FROM license_logs 
                     WHERE license_key = l.license_key 
                     AND action = 'binding_conflict'
-                    AND timestamp > datetime('now', '-7 days')) as recent_binding_conflicts
+                    AND timestamp > datetime('now', '-7 days')) as recent_binding_conflicts,
+                   (SELECT COUNT(*) FROM license_devices
+                    WHERE license_key = l.license_key) as bound_device_count
             FROM licenses l 
             ORDER BY l.created_at DESC
         ''')
@@ -183,7 +185,7 @@ def manage_customers():
         cursor.execute('SELECT COUNT(*) FROM licenses WHERE status = "suspended"')
         suspended_licenses = cursor.fetchone()[0]
         
-        cursor.execute('SELECT COUNT(*) FROM licenses WHERE device_id IS NOT NULL')
+        cursor.execute('SELECT COUNT(DISTINCT license_key) FROM license_devices')
         bound_licenses = cursor.fetchone()[0]
         
         # Check for expiring soon (within 7 days)
@@ -330,7 +332,7 @@ def add_license():
         customer_email = request.form.get('customer_email', '')
         status = request.form.get('status', 'active')
         expires_at_raw = request.form.get('expires_at', '')
-        max_devices = request.form.get('max_devices', 1)
+        max_devices = request.form.get('max_devices', 3)
         notes = request.form.get('notes', '')
         
         # Convert the datetime format
@@ -356,8 +358,6 @@ def add_license():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (license_key, customer_name, customer_email, status, expires_at, 
               max_devices, json.dumps(features), notes))
-        
-        # Log the action
         cursor.execute('''
             INSERT INTO license_logs (license_key, action, ip_address, user_agent, details)
             VALUES (?, ?, ?, ?, ?)
@@ -396,7 +396,7 @@ def edit_license():
         customer_email = request.form.get('customer_email', '')
         status = request.form.get('status', 'active')
         expires_at_raw = request.form.get('expires_at', '')
-        max_devices = request.form.get('max_devices', 1)
+        max_devices = request.form.get('max_devices', 3)
         notes = request.form.get('notes', '')
         
         # Convert the datetime format
@@ -437,6 +437,8 @@ def edit_license():
                     WHERE id = ?
                 ''', (customer_name, customer_email, status, expires_at, 
                       max_devices, json.dumps(features), notes, license_id))
+                # Also clear all devices from license_devices table
+                cursor.execute('DELETE FROM license_devices WHERE license_key = ?', (license_key,))
             else:
                 cursor.execute('''
                     UPDATE licenses 
@@ -506,6 +508,9 @@ def delete_customer(license_id):
             # Start transaction
             conn.execute('BEGIN TRANSACTION')
             
+            # Delete from license_devices table
+            cursor.execute('DELETE FROM license_devices WHERE license_key = ?', (license_key,))
+
             # Delete from customizations table
             cursor.execute('DELETE FROM customizations WHERE license_key = ?', (license_key,))
             
@@ -547,7 +552,10 @@ def unbind_device(license_id):
         if result:
             license_key = result['license_key']
             
-            # Unbind device
+            # Unbind all devices from license_devices table
+            cursor.execute('DELETE FROM license_devices WHERE license_key = ?', (license_key,))
+
+            # Clear legacy device_id column
             cursor.execute('UPDATE licenses SET device_id = NULL WHERE id = ?', (license_id,))
             
             # Also clear any binding conflicts for this license
@@ -557,7 +565,7 @@ def unbind_device(license_id):
             ''', (license_key,))
             
             conn.commit()
-            flash(f'✅ Device unbound and conflicts cleared for license {license_key}', 'success')
+            flash(f'✅ All devices unbound and conflicts cleared for license {license_key}', 'success')
         else:
             flash('❌ License not found!', 'error')
         

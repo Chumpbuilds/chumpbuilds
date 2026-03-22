@@ -329,8 +329,58 @@ DASHBOARD_TEMPLATE = '''
             </div>
             <div class="stat-card">
                 <div class="stat-icon">📱</div>
-                <div class="stat-content"><div class="stat-label">Device</div><div class="stat-value">{% if license.device_id %}Bound{% else %}Not Bound{% endif %}</div></div>
+                <div class="stat-content"><div class="stat-label">Devices</div><div class="stat-value">{{ devices|length }} / {{ license.max_devices or 3 }}</div></div>
             </div>
+        </div>
+
+        <!-- MY DEVICES SECTION -->
+        <div class="info-section" style="border-left: 4px solid #7c3aed;">
+            <h3 class="info-title">📱 My Devices</h3>
+            <p style="color: #6b7280; margin-bottom: 1rem;">
+                Devices currently bound to your license.
+                <strong>{{ devices|length }} / {{ license.max_devices or 3 }} devices used.</strong>
+            </p>
+
+            {% if devices %}
+            <table class="profile-table">
+                <thead>
+                    <tr>
+                        <th>Platform</th>
+                        <th>Device Name</th>
+                        <th>Bound On</th>
+                        <th>Last Used</th>
+                        <th style="text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in devices %}
+                    <tr>
+                        <td>
+                            {% if device.platform == 'iOS' %}🍎
+                            {% elif device.platform == 'Android' %}🤖
+                            {% elif device.platform == 'Windows' %}🖥️
+                            {% elif device.platform %}{{ device.platform }}
+                            {% else %}📱
+                            {% endif %}
+                            {{ device.platform or '' }}
+                        </td>
+                        <td>{{ device.device_name or 'Unknown Device' }}</td>
+                        <td style="font-size: 0.875rem; color: #6b7280;">{{ device.bound_at[:10] if device.bound_at else '—' }}</td>
+                        <td style="font-size: 0.875rem; color: #6b7280;">{{ device.last_used[:10] if device.last_used else '—' }}</td>
+                        <td style="text-align: right;">
+                            <form method="POST" action="{{ url_for('dashboard.unbind_device', device_record_id=device.id) }}"
+                                  style="display: inline;"
+                                  onsubmit="return confirm('Remove this device? It will need to re-activate.');">
+                                <button type="submit" class="btn-delete">🔓 Remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color: #9ca3af; text-align: center; padding: 1.5rem 0;">No devices bound yet. Activate the app on a device to bind it.</p>
+            {% endif %}
         </div>
     </div>
 <script>
@@ -378,6 +428,16 @@ def customer_dashboard():
     
     cursor.execute('SELECT * FROM customizations WHERE license_key = ?', (license_key,))
     customization = cursor.fetchone()
+
+    # Fetch bound devices from license_devices table
+    try:
+        cursor.execute(
+            'SELECT * FROM license_devices WHERE license_key = ? ORDER BY bound_at ASC',
+            (license_key,)
+        )
+        devices = cursor.fetchall()
+    except Exception:
+        devices = []
     
     days_remaining = None
     if license and license['expires_at']:
@@ -402,7 +462,7 @@ def customer_dashboard():
             logo_version = str(customization['updated_at']).replace(' ', '').replace(':', '').replace('-', '')
         except Exception:
             logo_version = ''
-    return render_template_string(DASHBOARD_TEMPLATE, license=license, profiles=profiles, customization=customization, days_remaining=days_remaining, features=features, session=session, url_for=url_for, logo_version=logo_version)
+    return render_template_string(DASHBOARD_TEMPLATE, license=license, profiles=profiles, customization=customization, days_remaining=days_remaining, features=features, session=session, url_for=url_for, logo_version=logo_version, devices=devices)
 
 @dashboard_bp.route('/update_branding', methods=['POST'])
 @login_required
@@ -530,6 +590,54 @@ def delete_profile(profile_id):
         flash('🗑️ Profile removed', 'success')
     except Exception as e: flash(f'❌ Error: {e}', 'error')
     finally: conn.close()
+    return redirect(url_for('dashboard.customer_dashboard'))
+
+@dashboard_bp.route('/unbind_device/<int:device_record_id>', methods=['POST'])
+@login_required
+def unbind_device(device_record_id):
+    """Remove a device binding for the logged-in customer's license."""
+    license_key = session.get('license_key')
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
+        # Verify the device belongs to this customer's license
+        cursor.execute(
+            'SELECT id FROM license_devices WHERE id = ? AND license_key = ?',
+            (device_record_id, license_key)
+        )
+        record = cursor.fetchone()
+        if not record:
+            flash('❌ Device not found or access denied.', 'error')
+            return redirect(url_for('dashboard.customer_dashboard'))
+
+        cursor.execute('DELETE FROM license_devices WHERE id = ?', (device_record_id,))
+
+        # Log the action
+        cursor.execute(
+            '''INSERT INTO license_logs (license_key, action, ip_address, details)
+               VALUES (?, ?, ?, ?)''',
+            (license_key, 'device_unbound', request.remote_addr,
+             f'Device record {device_record_id} removed by customer via portal')
+        )
+
+        # Keep legacy device_id in sync: if no devices remain, clear it
+        cursor.execute(
+            'SELECT COUNT(*) as cnt FROM license_devices WHERE license_key = ?',
+            (license_key,)
+        )
+        remaining = cursor.fetchone()['cnt']
+        if remaining == 0:
+            cursor.execute(
+                'UPDATE licenses SET device_id = NULL WHERE license_key = ?',
+                (license_key,)
+            )
+
+        conn.commit()
+        flash('✅ Device removed successfully.', 'success')
+    except Exception as e:
+        flash(f'❌ Error removing device: {e}', 'error')
+    finally:
+        conn.close()
     return redirect(url_for('dashboard.customer_dashboard'))
 
 @dashboard_bp.route('/remove_logo', methods=['POST'])
