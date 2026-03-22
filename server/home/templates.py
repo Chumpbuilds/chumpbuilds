@@ -488,6 +488,7 @@ HOME_PAGE_TEMPLATE = '''
         <div class="hero-content">
             <div class="hero-icon">🎬</div>
             <h1>X87 Player</h1>
+            <p class="subheading" style="font-size: 1.8rem; color: rgba(255, 255, 255, 0.9); margin-bottom: 1rem; font-weight: 600;">One account, every device.</p>
             <p class="tagline">
                 The Professional Xtream Codes Player — Available on Windows, Android &amp; iOS<br>
                 A powerful player for your Xtream Codes service — no streams provided, just the best way to watch them.
