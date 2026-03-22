@@ -98,9 +98,12 @@ class LicenseService {
     final hwId = await hardwareId;
     final platform = Platform.isIOS ? 'iOS' : 'Android';
 
+    final deviceName = await getDeviceName();
+
     final payload = {
       'license_key': licenseKey,
       'hardware_id': hwId,
+      'device_name': deviceName,
       'app_version': '1.0.0',
       'platform': platform,
     };

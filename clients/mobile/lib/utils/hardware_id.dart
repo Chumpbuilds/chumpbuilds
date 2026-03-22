@@ -42,6 +42,27 @@ Future<String> generateHardwareId() async {
   }
 }
 
+/// Returns a human-readable device name.
+///
+/// On Android: manufacturer + model (e.g. "Samsung SM-S926B")
+/// On iOS:     the user-assigned device name (e.g. "Richard's iPhone")
+/// Fallback:   the OS name
+Future<String> getDeviceName() async {
+  try {
+    final plugin = DeviceInfoPlugin();
+    if (Platform.isAndroid) {
+      final info = await plugin.androidInfo;
+      return '${info.manufacturer.trim()} ${info.model.trim()}'.trim();
+    } else if (Platform.isIOS) {
+      final info = await plugin.iosInfo;
+      return info.name;
+    }
+    return Platform.operatingSystem;
+  } catch (e) {
+    return 'Unknown Device';
+  }
+}
+
 /// Returns a stable fallback ID.
 ///
 /// On the first call a random 32-byte hex string is generated and stored
