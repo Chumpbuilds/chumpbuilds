@@ -153,7 +153,7 @@ HOME_PAGE_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X87 Player - Professional Windows IPTV Player</title>
+    <title>X87 Player - Professional IPTV Player for Windows, Android & iOS</title>
     <style>
         ''' + BASE_STYLES + '''
         .hero {
@@ -489,9 +489,9 @@ HOME_PAGE_TEMPLATE = '''
             <div class="hero-icon">🎬</div>
             <h1>X87 Player</h1>
             <p class="tagline">
-                A Professional Windows-Based Xtream Codes Player<br>
-                We do not supply any streams, but the platform to use your existing Xtream Codes info.
-                <small>(Username, Password, and URL required)</small>
+                The Professional Xtream Codes Player — Available on Windows, Android &amp; iOS<br>
+                A powerful player for your Xtream Codes service — no streams provided, just the best way to watch them.
+                <small>(Server URL, Username &amp; Password required to connect)</small>
             </p>
             
             <!-- Plans Section -->
@@ -790,7 +790,7 @@ FEATURES_PAGE_TEMPLATE = '''
     <div class="page-header">
         <div class="container">
             <h1>Powerful Features</h1>
-            <p style="font-size: 1.3rem; color: rgba(255,255,255,0.8);">The ultimate Windows player for Xtream Codes</p>
+            <p style="font-size: 1.3rem; color: rgba(255,255,255,0.8);">The professional Xtream Codes player for Windows, Android &amp; iOS</p>
         </div>
     </div>
     
