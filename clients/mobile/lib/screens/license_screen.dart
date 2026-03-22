@@ -161,7 +161,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(4),
                       borderSide:
-                          const BorderSide(color: _primaryColor, width: 2),
+                          const BorderSide(color: Colors.white, width: 3),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 12),
@@ -196,6 +196,13 @@ class _LicenseScreenState extends State<LicenseScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(4),
                       ),
+                    ).copyWith(
+                      side: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return const BorderSide(color: Colors.white, width: 3);
+                        }
+                        return BorderSide.none;
+                      }),
                     ),
                     child: _isLoading
                         ? const SizedBox(
@@ -226,6 +233,13 @@ class _LicenseScreenState extends State<LicenseScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(4),
                       ),
+                    ).copyWith(
+                      side: WidgetStateProperty.resolveWith((states) {
+                        if (states.contains(WidgetState.focused)) {
+                          return const BorderSide(color: Colors.white, width: 3);
+                        }
+                        return const BorderSide(color: _borderColor);
+                      }),
                     ),
                     child: const Text(
                       'Exit Application',

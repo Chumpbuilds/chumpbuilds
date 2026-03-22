@@ -33,6 +33,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _dropdownFocusNode = FocusNode();
+  bool _dropdownFocused = false;
+  late void Function() _dropdownFocusListener;
 
   List<dynamic> _profiles = [];
   int _selectedIndex = 0;
@@ -45,6 +48,10 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void initState() {
     super.initState();
+    _dropdownFocusListener = () {
+      setState(() => _dropdownFocused = _dropdownFocusNode.hasFocus);
+    };
+    _dropdownFocusNode.addListener(_dropdownFocusListener);
     _profiles = LicenseService().getCloudProfiles();
     if (_profiles.isNotEmpty) {
       _selectedIndex = 0;
@@ -56,6 +63,8 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _dropdownFocusNode.removeListener(_dropdownFocusListener);
+    _dropdownFocusNode.dispose();
     super.dispose();
   }
 
@@ -306,13 +315,17 @@ class _LoginScreenState extends State<LoginScreen> {
         Container(
           decoration: BoxDecoration(
             color: _surfaceColor,
-            border: Border.all(color: _borderColor),
+            border: Border.all(
+              color: _dropdownFocused ? Colors.white : _borderColor,
+              width: _dropdownFocused ? 3 : 1,
+            ),
             borderRadius: BorderRadius.circular(4),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: DropdownButtonHideUnderline(
             child: DropdownButton<int>(
               value: _selectedIndex,
+              focusNode: _dropdownFocusNode,
               dropdownColor: _surfaceColor,
               isExpanded: true,
               style: const TextStyle(color: Colors.white, fontSize: 13),
@@ -383,7 +396,7 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(4),
-        borderSide: const BorderSide(color: _primaryColor, width: 2),
+        borderSide: const BorderSide(color: Colors.white, width: 3),
       ),
       disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(4),
@@ -436,6 +449,13 @@ class _LoginScreenState extends State<LoginScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(4),
           ),
+        ).copyWith(
+          side: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.focused)) {
+              return const BorderSide(color: Colors.white, width: 3);
+            }
+            return BorderSide.none;
+          }),
         ),
         child: _isLoading
             ? const SizedBox(
@@ -464,6 +484,13 @@ class _LoginScreenState extends State<LoginScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(4),
           ),
+        ).copyWith(
+          side: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.focused)) {
+              return const BorderSide(color: Colors.white, width: 3);
+            }
+            return const BorderSide(color: _borderColor);
+          }),
         ),
         child: const Text('Cancel', style: TextStyle(fontSize: 14)),
       ),

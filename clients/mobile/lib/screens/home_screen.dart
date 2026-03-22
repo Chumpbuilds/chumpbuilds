@@ -272,16 +272,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           if (row1.isNotEmpty)
                             Row(
                               children: row1
+                                  .asMap()
+                                  .entries
                                   .map(
-                                    (c) => Expanded(
+                                    (entry) => Expanded(
                                       child: Padding(
                                         padding:
                                             const EdgeInsets.all(6),
                                         child: _GradientCard(
-                                          card: c,
+                                          card: entry.value,
                                           height: cardHeight,
+                                          autofocus: entry.key == 0,
                                           onTap: () => _navigate(
-                                              context, c.tag),
+                                              context, entry.value.tag),
                                         ),
                                       ),
                                     ),
@@ -375,54 +378,84 @@ class _CardDef {
 
 // ─── Gradient card widget ─────────────────────────────────────────────────────
 
-class _GradientCard extends StatelessWidget {
+class _GradientCard extends StatefulWidget {
   const _GradientCard({
     required this.card,
     required this.onTap,
     this.height = 120,
+    this.autofocus = false,
   });
 
   final _CardDef card;
   final VoidCallback onTap;
   final double height;
+  final bool autofocus;
+
+  @override
+  State<_GradientCard> createState() => _GradientCardState();
+}
+
+class _GradientCardState extends State<_GradientCard> {
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [card.color1, card.color2],
-          ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: card.color1.withAlpha(102),
-              blurRadius: 12,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(card.emoji,
-                style: const TextStyle(fontSize: 36)),
-            const SizedBox(height: 8),
-            Text(
-              card.label,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
+    return Focus(
+      autofocus: widget.autofocus,
+      onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
+      onKeyEvent: (node, event) {
+        if (event is KeyDownEvent &&
+            (event.logicalKey == LogicalKeyboardKey.select ||
+                event.logicalKey == LogicalKeyboardKey.enter ||
+                event.logicalKey == LogicalKeyboardKey.gameButtonA)) {
+          widget.onTap();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: Transform.scale(
+          scale: _focused ? 1.05 : 1.0,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: widget.height,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [widget.card.color1, widget.card.color2],
               ),
-              textAlign: TextAlign.center,
+              borderRadius: BorderRadius.circular(16),
+              border: _focused
+                  ? Border.all(color: Colors.white, width: 3)
+                  : null,
+              boxShadow: [
+                BoxShadow(
+                  color: widget.card.color1.withAlpha(102),
+                  blurRadius: 12,
+                  offset: const Offset(0, 6),
+                ),
+              ],
             ),
-          ],
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(widget.card.emoji,
+                    style: const TextStyle(fontSize: 36)),
+                const SizedBox(height: 8),
+                Text(
+                  widget.card.label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
