@@ -7,6 +7,7 @@ import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_list_item.dart';
 import '../widgets/vlc_player_widget.dart';
 
 /// Movies / VOD screen — categories → movie list → movie detail + play.
@@ -415,7 +416,8 @@ class _MoviesScreenState extends State<MoviesScreen> {
                   final catId = cat['category_id']?.toString() ?? '';
                   final count = _movieCounts[catId] ?? 0;
                   final selected = catId == _selectedCategoryId;
-                  return GestureDetector(
+                  return FocusListItem(
+                    autofocus: i == 0,
                     onTap: () => _selectCategory(cat),
                     child: Container(
                       color: selected
@@ -593,7 +595,8 @@ class _MoviesScreenState extends State<MoviesScreen> {
                       _selectedMovie != null &&
                       _selectedMovie!['stream_id']?.toString() == streamId;
                   final isFav = _favMovieIds.contains(streamId);
-                  return GestureDetector(
+                  return FocusListItem(
+                    autofocus: i == 0,
                     onTap: () => _selectMovie(movie),
                     child: Container(
                       color: selected
@@ -899,13 +902,13 @@ class _MoviesScreenState extends State<MoviesScreen> {
               onPressed: () => _playMovie(merged),
               icon: const Icon(Icons.play_arrow, size: 14),
               label: const Text('Play', style: TextStyle(fontSize: 11)),
-              style: ElevatedButton.styleFrom(
+              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF27AE60),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
             ),
           ),
           const SizedBox(width: 4),
@@ -915,13 +918,13 @@ class _MoviesScreenState extends State<MoviesScreen> {
               onPressed: _stopEmbeddedPlayback,
               icon: const Icon(Icons.stop, size: 14),
               label: const Text('Stop', style: TextStyle(fontSize: 11)),
-              style: ElevatedButton.styleFrom(
+              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE74C3C),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
             ),
           ),
           const SizedBox(width: 4),
@@ -929,13 +932,13 @@ class _MoviesScreenState extends State<MoviesScreen> {
             height: 28,
             child: OutlinedButton(
               onPressed: () => _openMovieExternal(merged),
-              style: OutlinedButton.styleFrom(
+              style: tvFocusOutlinedButtonStyle(OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Color(0xFF3D3D3D)),
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
               child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
             ),
           ),
@@ -946,13 +949,13 @@ class _MoviesScreenState extends State<MoviesScreen> {
               onPressed: _vlcStreamUrl.isNotEmpty ? _goFullscreen : null,
               icon: const Icon(Icons.fullscreen, size: 14),
               label: const Text('Fullscreen', style: TextStyle(fontSize: 11)),
-              style: ElevatedButton.styleFrom(
+              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF8E44AD),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
             ),
           ),
         ],

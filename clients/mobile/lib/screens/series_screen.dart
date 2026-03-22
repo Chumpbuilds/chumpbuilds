@@ -7,6 +7,7 @@ import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_list_item.dart';
 import '../widgets/vlc_player_widget.dart';
 
 /// Series screen — categories → series list → seasons/episodes tree + play.
@@ -527,7 +528,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
                   final catId = cat['category_id']?.toString() ?? '';
                   final count = _seriesCounts[catId] ?? 0;
                   final selected = catId == _selectedCategoryId;
-                  return GestureDetector(
+                  return FocusListItem(
+                    autofocus: i == 0,
                     onTap: () => _selectCategory(cat),
                     child: Container(
                       color: selected
@@ -705,7 +707,8 @@ class _SeriesScreenState extends State<SeriesScreen> {
                   final isSelected = _selectedSeries != null &&
                       _selectedSeries!['series_id']?.toString() == seriesId;
                   final isFav = _favSeriesIds.contains(seriesId);
-                  return GestureDetector(
+                  return FocusListItem(
+                    autofocus: i == 0,
                     onTap: () => _selectSeries(s),
                     child: Container(
                       color: isSelected
@@ -943,15 +946,14 @@ class _SeriesScreenState extends State<SeriesScreen> {
       episodeLabel = num.isNotEmpty ? 'Ep $num' : 'Ep ${_selectedEpisodeIndex! + 1}';
     }
 
-    const outlinedStyle = ButtonStyle(
-      foregroundColor: WidgetStatePropertyAll(Colors.white),
-      side: WidgetStatePropertyAll(
-          BorderSide(color: Color(0xFF3D3D3D))),
-      padding: WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 6)),
-      shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(4)))),
+    final outlinedStyle = tvFocusOutlinedButtonStyle(
+      OutlinedButton.styleFrom(
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: Color(0xFF3D3D3D)),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(4))),
+      ),
     );
 
     return Padding(
@@ -1105,13 +1107,13 @@ class _SeriesScreenState extends State<SeriesScreen> {
               onPressed: _playSelectedEpisode,
               icon: const Icon(Icons.play_arrow, size: 14),
               label: const Text('Play', style: TextStyle(fontSize: 11)),
-              style: ElevatedButton.styleFrom(
+              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF27AE60),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
             ),
           ),
           const SizedBox(width: 4),
@@ -1121,13 +1123,13 @@ class _SeriesScreenState extends State<SeriesScreen> {
               onPressed: _stopEmbeddedPlayback,
               icon: const Icon(Icons.stop, size: 14),
               label: const Text('Stop', style: TextStyle(fontSize: 11)),
-              style: ElevatedButton.styleFrom(
+              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE74C3C),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
             ),
           ),
           const SizedBox(width: 4),
@@ -1135,13 +1137,13 @@ class _SeriesScreenState extends State<SeriesScreen> {
             height: 28,
             child: OutlinedButton(
               onPressed: _openCurrentStreamExternal,
-              style: OutlinedButton.styleFrom(
+              style: tvFocusOutlinedButtonStyle(OutlinedButton.styleFrom(
                 foregroundColor: Colors.white,
                 side: const BorderSide(color: Color(0xFF3D3D3D)),
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
               child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
             ),
           ),
@@ -1152,13 +1154,13 @@ class _SeriesScreenState extends State<SeriesScreen> {
               onPressed: _vlcStreamUrl.isNotEmpty ? _goFullscreen : null,
               icon: const Icon(Icons.fullscreen, size: 14),
               label: const Text('Fullscreen', style: TextStyle(fontSize: 11)),
-              style: ElevatedButton.styleFrom(
+              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF8E44AD),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
-              ),
+              )),
             ),
           ),
         ],
