@@ -46,3 +46,5 @@ venv/
 **/*.keystore
 .env
 .env.*
+clients/mobile/ios/Pods/
+clients/mobile/ios/Podfile.lock
