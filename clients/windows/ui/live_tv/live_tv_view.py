@@ -529,8 +529,7 @@ class LiveTVView(QWidget):
         controls_layout.addWidget(self.mute_btn)
         controls_layout.addWidget(self.volume_slider)
 
-        # controls_layout is intentionally NOT added to the layout — buttons are
-        # kept as orphan attributes so other methods can reference them without crashing.
+        layout.addLayout(controls_layout)
 
         # ── 3. Channel Info (hidden orphan widgets — referenced by other methods) ──
         # Not added to the layout so the video player fills more space,
