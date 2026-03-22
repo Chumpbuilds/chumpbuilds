@@ -517,11 +517,12 @@ CUSTOMER_TEMPLATE = '''
                             </span>
                         </td>
                         <td>
-                            {% if license['device_id'] %}
-                                <span class="device-bound">🔗 Bound</span>
-                                <br><small>{{ license['device_id'][:12] }}...</small>
+                            {% set bound_count = license.get('bound_device_count', 0) %}
+                            {% set max_dev = license['max_devices'] or 3 %}
+                            {% if bound_count > 0 %}
+                                <span class="device-bound">🔗 {{ bound_count }}/{{ max_dev }} devices</span>
                             {% else %}
-                                <span class="device-unbound">⭕ Not bound</span>
+                                <span class="device-unbound">⭕ 0/{{ max_dev }} devices</span>
                             {% endif %}
                         </td>
                         <td>
@@ -547,9 +548,9 @@ CUSTOMER_TEMPLATE = '''
                             <div class="action-buttons">
                                 <button class="btn btn-edit" onclick='editLicense({{ license|tojson }})'>✏️ Edit</button>
                                 
-                                {% if license['device_id'] %}
+                                {% if license.get('bound_device_count', 0) > 0 or license['device_id'] %}
                                 <form method="POST" action="{{ url_for('customers.unbind_device', license_id=license['id']) }}" style="display: inline;">
-                                    <button type="submit" class="btn btn-unbind" title="Unbind device and clear conflicts">🔓 Unbind</button>
+                                    <button type="submit" class="btn btn-unbind" title="Unbind all devices and clear conflicts">🔓 Unbind All</button>
                                 </form>
                                 {% endif %}
                                 
@@ -618,7 +619,7 @@ CUSTOMER_TEMPLATE = '''
                     
                     <div class="form-group">
                         <label for="max_devices">Max Devices</label>
-                        <input type="number" id="max_devices" name="max_devices" value="1" min="1" max="10">
+                        <input type="number" id="max_devices" name="max_devices" value="3" min="1" max="100">
                     </div>
                 </div>
                 
@@ -713,7 +714,7 @@ CUSTOMER_TEMPLATE = '''
             document.getElementById('customer_name').value = license.customer_name || '';
             document.getElementById('customer_email').value = license.customer_email || '';
             document.getElementById('status').value = license.status || 'active';
-            document.getElementById('max_devices').value = license.max_devices || 1;
+            document.getElementById('max_devices').value = license.max_devices || 3;
             document.getElementById('notes').value = license.notes || '';
             
             // Set expiry date if exists
@@ -734,8 +735,8 @@ CUSTOMER_TEMPLATE = '''
             document.getElementById('feature_favorites').checked = features.favorites !== false;
             document.getElementById('feature_epg').checked = features.epg !== false;
             
-            // Show reset device option if device is bound
-            if (license.device_id) {
+            // Show reset device option if any devices are bound
+            if (license.device_id || (license.bound_device_count && license.bound_device_count > 0)) {
                 document.getElementById('resetDeviceGroup').style.display = 'block';
                 document.getElementById('reset_device').checked = false;
             } else {

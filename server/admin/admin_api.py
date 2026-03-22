@@ -2,6 +2,7 @@
 X87 Player - API Module
 Handles all API endpoints for license validation and other operations
 FIXED: Now fetches 'customizations' (Branding) from DB and sends to client
+UPDATED: Strict multi-device binding enforcement using license_devices table
 """
 
 from flask import Blueprint, request, jsonify
@@ -24,6 +25,7 @@ def validate_license():
         license_key = data.get('license_key', '').strip()
         hardware_id = data.get('hardware_id', '').strip()
         app_version = data.get('app_version', '')
+        platform = data.get('platform', '')
         
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -38,14 +40,79 @@ def validate_license():
         if license_data['status'] != 'active':
             conn.close()
             return jsonify({'success': False, 'message': f'License is {license_data["status"]}'}), 200
-        
-        # ... (Hardware binding logic) ...
-        stored_hardware = license_data['device_id']
-        # (Simple binding update for brevity)
-        if not stored_hardware:
-            cursor.execute('UPDATE licenses SET device_id = ?, last_used = CURRENT_TIMESTAMP WHERE license_key = ?', (hardware_id, license_key))
+
+        # Check expiry
+        if license_data['expires_at']:
+            try:
+                expires_str = license_data['expires_at']
+                if 'T' in expires_str:
+                    expiry_date = datetime.strptime(expires_str[:19], '%Y-%m-%dT%H:%M:%S')
+                else:
+                    expiry_date = datetime.strptime(expires_str, '%Y-%m-%d %H:%M:%S')
+                if expiry_date < datetime.now():
+                    conn.close()
+                    return jsonify({'success': False, 'message': 'License has expired'}), 200
+            except Exception:
+                pass
+
+        # --- Multi-device binding enforcement ---
+        if hardware_id:
+            max_devices = license_data['max_devices'] if license_data['max_devices'] is not None else 3
+
+            # Check if this device is already bound
+            cursor.execute(
+                'SELECT id FROM license_devices WHERE license_key = ? AND device_id = ?',
+                (license_key, hardware_id)
+            )
+            existing_device = cursor.fetchone()
+
+            if existing_device:
+                # Device already bound — update last_used
+                cursor.execute(
+                    'UPDATE license_devices SET last_used = CURRENT_TIMESTAMP WHERE id = ?',
+                    (existing_device['id'],)
+                )
+            else:
+                # New device — check if limit is reached
+                cursor.execute(
+                    'SELECT COUNT(*) as cnt FROM license_devices WHERE license_key = ?',
+                    (license_key,)
+                )
+                device_count = cursor.fetchone()['cnt']
+
+                if device_count >= max_devices:
+                    conn.close()
+                    return jsonify({
+                        'success': False,
+                        'message': (
+                            f'Device limit reached ({device_count}/{max_devices}). '
+                            'Unbind a device from your portal or purchase additional device slots.'
+                        )
+                    }), 200
+
+                # Auto-bind the new device
+                cursor.execute(
+                    '''INSERT INTO license_devices (license_key, device_id, platform)
+                       VALUES (?, ?, ?)''',
+                    (license_key, hardware_id, platform or None)
+                )
+                # Also keep legacy device_id column in sync (first device only)
+                if device_count == 0:
+                    cursor.execute(
+                        'UPDATE licenses SET device_id = ? WHERE license_key = ?',
+                        (hardware_id, license_key)
+                    )
+
+            cursor.execute(
+                'UPDATE licenses SET last_used = CURRENT_TIMESTAMP WHERE license_key = ?',
+                (license_key,)
+            )
         else:
-            cursor.execute('UPDATE licenses SET last_used = CURRENT_TIMESTAMP WHERE license_key = ?', (license_key,))
+            cursor.execute(
+                'UPDATE licenses SET last_used = CURRENT_TIMESTAMP WHERE license_key = ?',
+                (license_key,)
+            )
+
         conn.commit()
         
         # --- 1. FETCH CLOUD PROFILES ---
@@ -104,4 +171,5 @@ def validate_license():
         
     except Exception as e:
         print(f"[API Error] {e}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 200
