@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/tv_text_field.dart';
 import 'favorites_screen.dart';
 import 'license_screen.dart';
 import 'live_tv_screen.dart';
@@ -641,7 +642,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
               const SizedBox(height: 12),
 
               // Username field
-              TextField(
+              TvTextField(
                 controller: _usernameController,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
                 decoration: InputDecoration(
@@ -662,7 +663,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
               const SizedBox(height: 12),
 
               // Password field
-              TextField(
+              TvTextField(
                 controller: _passwordController,
                 obscureText: true,
                 style: const TextStyle(color: Colors.white, fontSize: 13),
