@@ -613,33 +613,28 @@ HOME_PAGE_TEMPLATE = '''
         <div class="features-grid">
             <div class="feature-card">
                 <span class="feature-icon">📺</span>
-                <h3 class="feature-title">Live TV Support</h3>
-                <p class="feature-desc">Compatible with thousands of live channels via Xtream Codes API</p>
+                <h3 class="feature-title">Live TV</h3>
+                <p class="feature-desc">Stream thousands of live channels instantly via Xtream Codes</p>
             </div>
             <div class="feature-card">
-                <span class="feature-icon">🎥</span>
-                <h3 class="feature-title">VOD Library</h3>
-                <p class="feature-desc">Rich interface for Movies and Series with metadata support</p>
+                <span class="feature-icon">🎬</span>
+                <h3 class="feature-title">Movies &amp; Series</h3>
+                <p class="feature-desc">Browse a rich VOD library with artwork, descriptions &amp; categories</p>
             </div>
             <div class="feature-card">
                 <span class="feature-icon">🔐</span>
-                <h3 class="feature-title">Secure Platform</h3>
-                <p class="feature-desc">Hardware-bound licensing ensures secure access to the player</p>
+                <h3 class="feature-title">Secure &amp; Private</h3>
+                <p class="feature-desc">Hardware-bound licensing keeps your credentials and data safe</p>
             </div>
             <div class="feature-card">
                 <span class="feature-icon">🎨</span>
-                <h3 class="feature-title">Modern Interface</h3>
-                <p class="feature-desc">Sleek, dark-themed UI designed for Windows desktop environment</p>
+                <h3 class="feature-title">Sleek Interface</h3>
+                <p class="feature-desc">A modern, dark-themed UI built for effortless navigation</p>
             </div>
             <div class="feature-card">
-                <span class="feature-icon">📊</span>
-                <h3 class="feature-title">User Analytics</h3>
-                <p class="feature-desc">Track your viewing habits and favorites</p>
-            </div>
-            <div class="feature-card">
-                <span class="feature-icon">🟠</span>
-                <h3 class="feature-title">VLC Powered</h3>
-                <p class="feature-desc">Built on the ultra-reliable VLC media player engine for smooth playback</p>
+                <span class="feature-icon">📱</span>
+                <h3 class="feature-title">Multi-Platform</h3>
+                <p class="feature-desc">Available on Windows, Android &amp; iOS — one account, every device</p>
             </div>
         </div>
         
@@ -647,20 +642,20 @@ HOME_PAGE_TEMPLATE = '''
             <div class="container">
                 <div class="stats-grid">
                     <div class="stat-item">
-                        <div class="stat-number">10K+</div>
-                        <div class="stat-label">Active Users</div>
+                        <div class="stat-number">3</div>
+                        <div class="stat-label">Platforms</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number">Windows</div>
-                        <div class="stat-label">Native App</div>
+                        <div class="stat-number">24/7</div>
+                        <div class="stat-label">Streaming</div>
                     </div>
                     <div class="stat-item">
                         <div class="stat-number">Xtream</div>
                         <div class="stat-label">Compatible</div>
                     </div>
                     <div class="stat-item">
-                        <div class="stat-number">99.9%</div>
-                        <div class="stat-label">Uptime</div>
+                        <div class="stat-number">Instant</div>
+                        <div class="stat-label">Setup</div>
                     </div>
                 </div>
             </div>
