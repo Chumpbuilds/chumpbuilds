@@ -700,8 +700,18 @@ class MainWindow(QMainWindow):
             self.epg_cache.clear()
             self.show_initial_login()
     
+    def _stop_all_playback(self):
+        """Stop embedded playback on all views before switching."""
+        if self.live_tv_view and hasattr(self.live_tv_view, 'stop_playback'):
+            self.live_tv_view.stop_playback()
+        if self.movies_view and hasattr(self.movies_view, 'stop_playback'):
+            self.movies_view.stop_playback()
+        if self.series_view and hasattr(self.series_view, 'stop_playback'):
+            self.series_view.stop_playback()
+
     def go_back(self):
         """Go back to home page"""
+        self._stop_all_playback()
         self.stacked_widget.setCurrentIndex(0)
         self.back_button.hide()
         self.header_search.hide()
@@ -891,6 +901,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please login first")
             return
         
+        self._stop_all_playback()
         if not self.live_tv_view:
             self.live_tv_view = LiveTVView(self.api)
             self.stacked_widget.addWidget(self.live_tv_view)
@@ -907,6 +918,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please login first")
             return
         
+        self._stop_all_playback()
         if not self.movies_view:
             self.movies_view = MoviesView(self.api)
             self.stacked_widget.addWidget(self.movies_view)
@@ -926,6 +938,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please login first")
             return
         
+        self._stop_all_playback()
         if not self.series_view:
             self.series_view = SeriesView(self.api)
             self.stacked_widget.addWidget(self.series_view)
@@ -945,6 +958,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please login first")
             return
         
+        self._stop_all_playback()
         if not self.global_search:
             self.global_search = ModernGlobalSearch(self.api)
             self.stacked_widget.addWidget(self.global_search)
@@ -961,6 +975,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", "Please login first")
             return
         
+        self._stop_all_playback()
         if not self.favorites_view:
             self.favorites_view = FavoritesView(self.api)
             self.stacked_widget.addWidget(self.favorites_view)
