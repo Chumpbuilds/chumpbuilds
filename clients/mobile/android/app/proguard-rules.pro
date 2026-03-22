@@ -8,3 +8,10 @@
 
 # VLC
 -keep class org.videolan.** { *; }
+
+# Google Play Core (deferred components / split install)
+# These classes are referenced by Flutter but not present on
+# non-Play-Store devices (e.g. Fire Stick, sideloaded APKs).
+-dontwarn com.google.android.play.core.splitcompat.**
+-dontwarn com.google.android.play.core.splitinstall.**
+-dontwarn com.google.android.play.core.tasks.**
