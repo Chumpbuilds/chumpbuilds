@@ -1,7 +1,7 @@
 name: x87_mobile
 description: X87 IPTV Player - Mobile client for Android and iOS
 publish_to: 'none'
-version: 1.0.0+3
+version: 1.0.0+4
 
 environment:
   sdk: ^3.7.0
@@ -33,5 +33,5 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon/app_icon.png"
+  image_path: "assets/icon/icon.png"
   remove_alpha_ios: true
