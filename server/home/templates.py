@@ -507,7 +507,7 @@ HOME_PAGE_TEMPLATE = '''
                         <div class="plan-icon">🎁</div>
                         <h3 class="plan-title">Free Trial</h3>
                         <div class="plan-price free">FREE</div>
-                        <div class="plan-duration">7 days unlimited access</div>
+                        <div class="plan-duration">7 days · up to 3 devices</div>
                         
                         <ul class="plan-features">
                             <li>
@@ -516,11 +516,7 @@ HOME_PAGE_TEMPLATE = '''
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
-                                <span>VLC Powered Engine</span>
-                            </li>
-                            <li>
-                                <span class="feature-icon">✅</span>
-                                <span>Windows Desktop App</span>
+                                <span>Windows, Android &amp; iOS</span>
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
@@ -537,21 +533,17 @@ HOME_PAGE_TEMPLATE = '''
                     <div class="plan-card featured">
                         <div class="plan-badge">BEST VALUE</div>
                         <div class="plan-icon">⭐</div>
-                        <h3 class="plan-title">Lifetime</h3>
+                        <h3 class="plan-title">Yearly</h3>
                         <div class="plan-price lifetime">
-                            £3.99
-                            <small>one-time</small>
+                            £4.99
+                            <small>/year</small>
                         </div>
-                        <div class="plan-duration">Single Device License</div>
+                        <div class="plan-duration">Single Licence - Up to 5 devices</div>
                         
                         <ul class="plan-features">
                             <li>
                                 <span class="feature-icon">✅</span>
-                                <span>Unlimited Access Forever</span>
-                            </li>
-                            <li>
-                                <span class="feature-icon">✅</span>
-                                <span>Windows PC License</span>
+                                <span>Windows, Android &amp; iOS</span>
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
@@ -563,12 +555,12 @@ HOME_PAGE_TEMPLATE = '''
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
-                                <span>No Monthly Fees</span>
+                                <span>No Hidden Fees</span>
                             </li>
                         </ul>
                         
                         <a href="/purchase" class="plan-btn btn-gold">
-                            <span>💳 Buy Lifetime</span>
+                            <span>💳 Subscribe Yearly</span>
                         </a>
                     </div>
 
@@ -577,10 +569,10 @@ HOME_PAGE_TEMPLATE = '''
                         <div class="plan-icon">🏢</div>
                         <h3 class="plan-title">Rebrand</h3>
                         <div class="plan-price business">
-                            £19.99
-                            <small>license</small>
+                            £9.99
+                            <small>/month</small>
                         </div>
-                        <div class="plan-duration">Business Solution</div>
+                        <div class="plan-duration">Unlimited devices</div>
                         
                         <ul class="plan-features">
                             <li>
@@ -589,19 +581,15 @@ HOME_PAGE_TEMPLATE = '''
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
-                                <span>Up to 200 Devices</span>
+                                <span>Unlimited Devices</span>
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
-                                <span>Your Logo & Name</span>
+                                <span>Your Logo &amp; Name</span>
                             </li>
                             <li>
                                 <span class="feature-icon">✅</span>
-                                <span>Reseller Panel Access</span>
-                            </li>
-                            <li>
-                                <span class="feature-icon">✅</span>
-                                <span>Hardcoded DNS Option</span>
+                                <span>Hidden DNS</span>
                             </li>
                         </ul>
                         
@@ -1001,11 +989,10 @@ PRICING_PAGE_TEMPLATE = '''
             <div class="pricing-card">
                 <h3 class="plan-name">Free Trial</h3>
                 <div class="plan-price free">FREE</div>
-                <div class="plan-period">7 days</div>
+                <div class="plan-period">7 days · up to 3 devices</div>
                 <ul class="plan-features">
                     <li><span>✅</span> Full player access</li>
-                    <li><span>✅</span> Windows support</li>
-                    <li><span>✅</span> Xtream Codes support</li>
+                    <li><span>✅</span> Windows, Android &amp; iOS</li>
                     <li><span>✅</span> No credit card</li>
                 </ul>
                 <a href="/register-trial" class="btn btn-secondary pricing-btn">Start Trial</a>
@@ -1013,29 +1000,27 @@ PRICING_PAGE_TEMPLATE = '''
             
             <div class="pricing-card featured">
                 <span class="popular-badge">Best Value</span>
-                <h3 class="plan-name">Lifetime</h3>
-                <div class="plan-price lifetime">£3.99</div>
-                <div class="plan-period">one-time payment</div>
+                <h3 class="plan-name">Yearly</h3>
+                <div class="plan-price lifetime">£4.99</div>
+                <div class="plan-period">per year</div>
                 <ul class="plan-features">
-                    <li><span>✅</span> Unlimited Access</li>
-                    <li><span>✅</span> Single Device</li>
+                    <li><span>✅</span> Windows, Android &amp; iOS</li>
+                    <li><span>✅</span> Free Updates Included</li>
                     <li><span>✅</span> Priority Support</li>
-                    <li><span>✅</span> Free Updates</li>
-                    <li><span>✅</span> No Monthly Fees</li>
+                    <li><span>✅</span> No Hidden Fees</li>
                 </ul>
-                <a href="/purchase" class="btn btn-gold pricing-btn">Buy Now</a>
+                <a href="/purchase" class="btn btn-gold pricing-btn">Subscribe Yearly</a>
             </div>
             
             <div class="pricing-card">
                 <h3 class="plan-name">Rebrand</h3>
-                <div class="plan-price business">£19.99</div>
-                <div class="plan-period">business solution</div>
+                <div class="plan-price business">£9.99</div>
+                <div class="plan-period">per month</div>
                 <ul class="plan-features">
                     <li><span>✅</span> Custom App Branding</li>
-                    <li><span>✅</span> Up to 200 Devices</li>
-                    <li><span>✅</span> Your Logo & Name</li>
-                    <li><span>✅</span> Hardcoded DNS</li>
-                    <li><span>✅</span> Reseller Panel</li>
+                    <li><span>✅</span> Unlimited Devices</li>
+                    <li><span>✅</span> Your Logo &amp; Name</li>
+                    <li><span>✅</span> Hidden DNS</li>
                 </ul>
                 <a href="/purchase" class="btn btn-purple pricing-btn">Contact Sales</a>
             </div>
