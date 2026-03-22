@@ -248,71 +248,103 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // ── Card grid ─────────────────────────────────────────────────
             Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Column(
-                  children: [
-                    if (row1.isNotEmpty)
-                      Row(
-                        children: row1
-                            .map(
-                              (c) => Expanded(
-                                child: Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: _GradientCard(
-                                    card: c,
-                                    onTap: () => _navigate(context, c.tag),
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    const SizedBox(height: 4),
-                    if (row2.isNotEmpty)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: row2
-                            .map(
-                              (c) => SizedBox(
-                                width: (MediaQuery.of(context).size.width - 32) / 3,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(6),
-                                  child: _GradientCard(
-                                    card: c,
-                                    onTap: () => _navigate(context, c.tag),
-                                  ),
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                    // ── Welcome message ────────────────────────────────────
-                    const SizedBox(height: 16),
-                    Text.rich(
-                      TextSpan(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final availableHeight = constraints.maxHeight;
+                  // Scale card height proportionally; clamp so cards never
+                  // become too tiny on very small screens or too tall on
+                  // large tablets.
+                  final cardHeight =
+                      (availableHeight * 0.28).clamp(72.0, 130.0);
+                  final welcomeFontSize = availableHeight < 350 ? 13.0 : 16.0;
+                  final welcomeBoldFontSize =
+                      availableHeight < 350 ? 15.0 : 18.0;
+
+                  return SizedBox(
+                    height: availableHeight,
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 16),
+                      child: Column(
                         children: [
-                          TextSpan(
-                            text: 'Welcome to ',
-                            style: GoogleFonts.dancingScript(
-                              color: _descColor,
-                              fontSize: 16,
+                          const Spacer(),
+                          if (row1.isNotEmpty)
+                            Row(
+                              children: row1
+                                  .map(
+                                    (c) => Expanded(
+                                      child: Padding(
+                                        padding:
+                                            const EdgeInsets.all(6),
+                                        child: _GradientCard(
+                                          card: c,
+                                          height: cardHeight,
+                                          onTap: () => _navigate(
+                                              context, c.tag),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             ),
-                          ),
-                          TextSpan(
-                            text: '"$profileName"',
-                            style: GoogleFonts.dancingScript(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                          const Spacer(),
+                          if (row2.isNotEmpty)
+                            Row(
+                              mainAxisAlignment:
+                                  MainAxisAlignment.center,
+                              children: row2
+                                  .map(
+                                    (c) => SizedBox(
+                                      width:
+                                          (MediaQuery.of(context)
+                                                      .size
+                                                      .width -
+                                                  32) /
+                                              3,
+                                      child: Padding(
+                                        padding:
+                                            const EdgeInsets.all(6),
+                                        child: _GradientCard(
+                                          card: c,
+                                          height: cardHeight,
+                                          onTap: () => _navigate(
+                                              context, c.tag),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
                             ),
+                          // ── Welcome message ──────────────────────
+                          const Spacer(),
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: 'Welcome to ',
+                                  style: GoogleFonts.dancingScript(
+                                    color: _descColor,
+                                    fontSize: welcomeFontSize,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: '"$profileName"',
+                                  style: GoogleFonts.dancingScript(
+                                    color: Colors.white,
+                                    fontSize: welcomeBoldFontSize,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            textAlign: TextAlign.center,
                           ),
+                          const Spacer(),
                         ],
                       ),
-                      textAlign: TextAlign.center,
                     ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
           ],
@@ -346,17 +378,19 @@ class _GradientCard extends StatelessWidget {
   const _GradientCard({
     required this.card,
     required this.onTap,
+    this.height = 120,
   });
 
   final _CardDef card;
   final VoidCallback onTap;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 120,
+        height: height,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
