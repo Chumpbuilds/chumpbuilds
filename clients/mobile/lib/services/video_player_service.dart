@@ -50,11 +50,40 @@ class VideoPlayerService {
       );
     }
 
-    final player = Player();
+    final player = Player(
+      configuration: PlayerConfiguration(
+        bufferSize: 32 * 1024 * 1024, // 32 MB buffer
+      ),
+    );
     final videoCtrl = VideoController(player);
 
     _player = player;
     _videoController = videoCtrl;
+
+    // ── mpv tuning for IPTV/HLS streams ──
+    // Hardware decoding with automatic software fallback
+    await player.setProperty('hwdec', 'auto');
+    await player.setProperty('vo', 'gpu');
+
+    // Low-latency profile for live TV — reduces buffering delay
+    if (contentType == 'live') {
+      await player.setProperty('profile', 'low-latency');
+      await player.setProperty('cache-secs', '3');
+    } else {
+      // Movies/series can tolerate more buffer for smoother playback
+      await player.setProperty('cache-secs', '10');
+    }
+
+    // General cache/demuxer settings
+    await player.setProperty('cache', 'yes');
+    await player.setProperty('demuxer-max-bytes', '32MiB');
+    await player.setProperty('demuxer-max-back-bytes', '8MiB');
+
+    // Network reconnection for IPTV streams that drop
+    await player.setProperty(
+      'demuxer-lavf-o',
+      'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5',
+    );
 
     await player.setVolume(_isMuted ? 0.0 : _volume.toDouble());
     await player.open(Media(url));
