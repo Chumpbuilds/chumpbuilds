@@ -318,49 +318,51 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bgColor,
-      appBar: AppBar(
-        title: _searchVisible
-            ? TextField(
-                controller: _headerSearchCtrl,
-                autofocus: true,
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                decoration: InputDecoration(
-                  hintText: '🔍 Search channels & categories...',
-                  hintStyle: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
-                  filled: true,
-                  fillColor: const Color(0xFF2D2D2D),
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: BorderSide.none,
-                  ),
+      appBar: _categorySelected
+          ? null
+          : AppBar(
+              title: _searchVisible
+                  ? TextField(
+                      controller: _headerSearchCtrl,
+                      autofocus: true,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      decoration: InputDecoration(
+                        hintText: '🔍 Search channels & categories...',
+                        hintStyle: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
+                        filled: true,
+                        fillColor: const Color(0xFF2D2D2D),
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    )
+                  : const Text('Live TV', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+              backgroundColor: _bgColor,
+              foregroundColor: Colors.white,
+              toolbarHeight: 48,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back, size: 18),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => Navigator.pop(context),
+              ),
+              actions: [
+                IconButton(
+                  icon: Icon(_searchVisible ? Icons.close : Icons.search, size: 20),
+                  onPressed: () {
+                    setState(() {
+                      _searchVisible = !_searchVisible;
+                      if (!_searchVisible) {
+                        _headerSearchCtrl.clear();
+                      }
+                    });
+                  },
                 ),
-              )
-            : const Text('Live TV', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-        backgroundColor: _bgColor,
-        foregroundColor: Colors.white,
-        toolbarHeight: 48,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, size: 18),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-          onPressed: () => Navigator.pop(context),
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(_searchVisible ? Icons.close : Icons.search, size: 20),
-            onPressed: () {
-              setState(() {
-                _searchVisible = !_searchVisible;
-                if (!_searchVisible) {
-                  _headerSearchCtrl.clear();
-                }
-              });
-            },
-          ),
-        ],
-      ),
+              ],
+            ),
       body: Row(
         children: [
           // ── Panel 1 (35%): Categories → Channel list after selection ─────
@@ -653,16 +655,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                 },
               ),
             ),
-          // Footer count
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              '${_filteredChannels.length} channels',
-              style: const TextStyle(
-                  color: _secondaryTextColor, fontSize: 11),
-              textAlign: TextAlign.center,
-            ),
-          ),
         ],
       ),
     );
