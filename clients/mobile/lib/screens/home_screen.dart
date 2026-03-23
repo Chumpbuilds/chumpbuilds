@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/tv_text_field.dart';
+import '../widgets/system_ui_wrapper.dart';
 import 'favorites_screen.dart';
 import 'license_screen.dart';
 import 'live_tv_screen.dart';
@@ -198,7 +199,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final profileName =
         (xtream.profileName?.isNotEmpty ?? false) ? xtream.profileName! : appName;
 
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
         child: Column(
@@ -354,7 +355,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

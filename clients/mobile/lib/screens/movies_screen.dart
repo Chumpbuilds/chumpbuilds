@@ -9,6 +9,7 @@ import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/vlc_player_widget.dart';
+import '../widgets/system_ui_wrapper.dart';
 
 /// Movies / VOD screen — categories → movie list → movie detail + play.
 ///
@@ -154,6 +155,9 @@ class _MoviesScreenState extends State<MoviesScreen> {
       _vodInfo = null;
       _loadingDetail = true;
     });
+
+    // Auto-start playback immediately on first select — mirrors live TV behaviour.
+    _playMovie(movie);
 
     final vodId = movie['stream_id']?.toString() ?? '';
     if (vodId.isNotEmpty) {
@@ -309,7 +313,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: _bgColor,
@@ -370,7 +374,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ─── Panel 1 – Categories ─────────────────────────────────────────────────
