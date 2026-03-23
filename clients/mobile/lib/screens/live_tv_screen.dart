@@ -772,17 +772,39 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 1.5, color: _accentColor),
                           )
-                        else
-                          Text(
-                            _currentProgrammeTitle(),
-                            style: const TextStyle(
-                              color: _accentColor,
-                              fontSize: 12,
-                            ),
-                            textAlign: TextAlign.center,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
+                        else ...[
+                          Builder(
+                            builder: (_) {
+                              final info = _currentProgrammeInfo();
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    info.title,
+                                    style: const TextStyle(
+                                      color: _accentColor,
+                                      fontSize: 12,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  if (info.time.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      info.time,
+                                      style: const TextStyle(
+                                        color: _secondaryTextColor,
+                                        fontSize: 11,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ],
+                              );
+                            },
                           ),
+                        ],
                       ],
                     ),
                   ),
@@ -1067,5 +1089,61 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     final raw = first['title']?.toString() ?? '';
     final decoded = _decodeEpgTitle(raw);
     return decoded.isNotEmpty ? decoded : 'No programme info';
+  }
+
+  /// Returns a record with the title and formatted time (HH:mm – HH:mm) of the
+  /// currently-playing EPG entry. Uses the same three-pass detection logic as
+  /// [_currentProgrammeTitle].
+  ({String title, String time}) _currentProgrammeInfo() {
+    const fallback = (title: 'No programme info', time: '');
+    if (_epgData == null) return fallback;
+    final listings = (_epgData!['epg_listings'] as List?) ?? [];
+    if (listings.isEmpty) return fallback;
+
+    Map? match;
+
+    // Pass 1: now_playing flag.
+    for (final entry in listings) {
+      final p = entry as Map;
+      final isNow = p['now_playing'] == 1 ||
+          p['now_playing'] == true ||
+          p['now_playing']?.toString() == '1';
+      if (isNow) { match = p; break; }
+    }
+
+    // Pass 2: timestamp-based.
+    if (match == null) {
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      for (final entry in listings) {
+        final p = entry as Map;
+        final start = int.tryParse(p['start']?.toString() ?? '');
+        final end   = int.tryParse(p['end']?.toString()   ?? '');
+        if (start != null && end != null && now >= start && now < end) {
+          match = p; break;
+        }
+      }
+    }
+
+    // Pass 3: first entry fallback.
+    match ??= listings.first as Map;
+
+    final raw     = match['title']?.toString() ?? '';
+    final decoded = _decodeEpgTitle(raw);
+    final title   = decoded.isNotEmpty ? decoded : 'No programme info';
+
+    // Format start/end Unix timestamps as HH:mm – HH:mm.
+    String time = '';
+    final startTs = int.tryParse(match['start']?.toString() ?? '');
+    final endTs   = int.tryParse(match['end']?.toString()   ?? '');
+    if (startTs != null && endTs != null) {
+      final s = DateTime.fromMillisecondsSinceEpoch(startTs * 1000);
+      final e = DateTime.fromMillisecondsSinceEpoch(endTs   * 1000);
+      time =
+          '${s.hour.toString().padLeft(2, '0')}:${s.minute.toString().padLeft(2, '0')}'
+          ' – '
+          '${e.hour.toString().padLeft(2, '0')}:${e.minute.toString().padLeft(2, '0')}';
+    }
+
+    return (title: title, time: time);
   }
 }
