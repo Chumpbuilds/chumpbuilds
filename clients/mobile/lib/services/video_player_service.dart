@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit/src/player/native/player/player.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 /// Singleton service that manages a [Player] (media_kit) for video playback.
@@ -52,38 +53,58 @@ class VideoPlayerService {
 
     final player = Player(
       configuration: PlayerConfiguration(
-        bufferSize: 32 * 1024 * 1024, // 32 MB buffer
+        bufferSize: 32 * 1024 * 1024, // 32 MB demuxer cache
       ),
     );
-    final videoCtrl = VideoController(player);
+
+    // ── Set mpv properties for IPTV/HLS optimization ──
+    // These must be set BEFORE player.open() and AFTER Player() creation.
+    // The setProperty method is on NativePlayer (the platform implementation),
+    // not the public Player class.
+    if (!kIsWeb) {
+      final nativePlayer = player.platform;
+      if (nativePlayer is NativePlayer) {
+        // Low-latency profile for live TV — reduces internal buffering
+        if (contentType == 'live') {
+          await nativePlayer.setProperty('profile', 'low-latency');
+          await nativePlayer.setProperty('cache-secs', '3');
+        } else {
+          // Movies/series can tolerate more buffer for smoother playback
+          await nativePlayer.setProperty('cache-secs', '10');
+        }
+
+        // General cache/demuxer settings
+        await nativePlayer.setProperty('cache', 'yes');
+        await nativePlayer.setProperty('demuxer-max-bytes', '32MiB');
+        await nativePlayer.setProperty('demuxer-max-back-bytes', '8MiB');
+
+        // Network reconnection for IPTV streams that may drop
+        await nativePlayer.setProperty(
+          'demuxer-lavf-o',
+          'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5',
+        );
+
+        if (kDebugMode) {
+          debugPrint('[VideoPlayerService] mpv properties set for $contentType');
+        }
+      }
+    }
+
+    // Create VideoController — this is where hwdec and vo are configured.
+    // On Android, media_kit's AndroidVideoController already defaults to:
+    //   vo=gpu, hwdec=auto-safe, hwdec-codecs=h264,hevc,mpeg4,...
+    // So we don't need to override those — they're already optimal.
+    // On other platforms (Windows/Linux/macOS/iOS), NativeVideoController
+    // defaults to vo=libmpv, hwdec=auto.
+    final videoCtrl = VideoController(
+      player,
+      configuration: const VideoControllerConfiguration(
+        enableHardwareAcceleration: true, // explicit — ensures hwdec is enabled
+      ),
+    );
 
     _player = player;
     _videoController = videoCtrl;
-
-    // ── mpv tuning for IPTV/HLS streams ──
-    // Hardware decoding with automatic software fallback
-    await player.setProperty('hwdec', 'auto');
-    await player.setProperty('vo', 'gpu');
-
-    // Low-latency profile for live TV — reduces buffering delay
-    if (contentType == 'live') {
-      await player.setProperty('profile', 'low-latency');
-      await player.setProperty('cache-secs', '3');
-    } else {
-      // Movies/series can tolerate more buffer for smoother playback
-      await player.setProperty('cache-secs', '10');
-    }
-
-    // General cache/demuxer settings
-    await player.setProperty('cache', 'yes');
-    await player.setProperty('demuxer-max-bytes', '32MiB');
-    await player.setProperty('demuxer-max-back-bytes', '8MiB');
-
-    // Network reconnection for IPTV streams that drop
-    await player.setProperty(
-      'demuxer-lavf-o',
-      'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5',
-    );
 
     await player.setVolume(_isMuted ? 0.0 : _volume.toDouble());
     await player.open(Media(url));
