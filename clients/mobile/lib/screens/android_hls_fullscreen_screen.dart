@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
 import '../widgets/system_ui_wrapper.dart';
 
-/// Full-screen video playback screen for Android HLS streams.
+/// Full-screen video playback screen.
 ///
-/// Used instead of [FullscreenPlayerScreen] when playing HLS (.m3u8) content
-/// on Android, routing through the ExoPlayer-backed [video_player] package
-/// rather than the LibVLC / flutter_vlc_player path that has proven
-/// unreliable on Android for these streams.
+/// Uses media_kit which supports hardware and software decoding with automatic
+/// fallback, working on Android phones, Android TV boxes (including
+/// Amlogic-based devices), iOS, and other platforms.
 ///
-/// UX is intentionally kept identical to [FullscreenPlayerScreen]:
+/// UX:
 /// - Fills the entire screen with the video player.
 /// - Tap to show/hide controls overlay (play/pause, stop, volume, back).
 /// - Back button or Android back gesture returns to the previous screen.
@@ -45,7 +44,7 @@ class _AndroidHlsFullscreenScreenState
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _service = VideoPlayerService.instance;
-  VideoPlayerController? _controller;
+  VideoController? _controller;
   bool _isPlaying = false;
   bool _isMuted = false;
   double _volume = 80;
@@ -67,7 +66,6 @@ class _AndroidHlsFullscreenScreenState
 
   @override
   void dispose() {
-    _controller?.removeListener(_onControllerChanged);
     _service.stop();
     WakelockPlus.disable();
     // Restore app-level orientation
@@ -82,15 +80,12 @@ class _AndroidHlsFullscreenScreenState
   // ─── Playback ─────────────────────────────────────────────────────────────
 
   Future<void> _startPlayback() async {
-    VideoPlayerController? ctrl;
     try {
-      ctrl = await _service.play(
+      final ctrl = await _service.play(
         widget.streamUrl,
         widget.title,
         widget.contentType,
       );
-
-      ctrl.addListener(_onControllerChanged);
 
       if (!mounted) return;
       setState(() {
@@ -98,11 +93,8 @@ class _AndroidHlsFullscreenScreenState
         _isPlaying = true;
         _isLoading = false;
       });
-
-      await ctrl.setVolume(_isMuted ? 0.0 : _volume / 100.0);
     } catch (e) {
       debugPrint('[HlsFullscreen] Playback error: $e');
-      ctrl?.removeListener(_onControllerChanged);
       await _service.stop();
       if (!mounted) return;
       setState(() {
@@ -118,17 +110,17 @@ class _AndroidHlsFullscreenScreenState
     } else {
       await _service.resume();
     }
+    if (!mounted) return;
+    setState(() => _isPlaying = _service.isPlaying);
   }
 
   Future<void> _stop() async {
-    _controller?.removeListener(_onControllerChanged);
     await _service.stop();
     if (!mounted) return;
     Navigator.of(context).pop();
   }
 
   Future<void> _openExternal() async {
-    _controller?.removeListener(_onControllerChanged);
     await _service.stop();
 
     final url = widget.streamUrl;
@@ -139,13 +131,6 @@ class _AndroidHlsFullscreenScreenState
     if (mounted) Navigator.of(context).pop();
   }
 
-  void _onControllerChanged() {
-    if (!mounted) return;
-    setState(() {
-      _isPlaying = _controller?.value.isPlaying ?? false;
-    });
-  }
-
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
   }
@@ -153,9 +138,6 @@ class _AndroidHlsFullscreenScreenState
   Future<void> _setVolume(double v) async {
     setState(() => _volume = v);
     await _service.setVolume(v.toInt());
-    if (!_isMuted) {
-      await _controller?.setVolume(v / 100.0);
-    }
   }
 
   Future<void> _toggleMute() async {
@@ -222,13 +204,8 @@ class _AndroidHlsFullscreenScreenState
     }
 
     final ctrl = _controller;
-    if (ctrl != null && ctrl.value.isInitialized) {
-      return Center(
-        child: AspectRatio(
-          aspectRatio: ctrl.value.aspectRatio,
-          child: VideoPlayer(ctrl),
-        ),
-      );
+    if (ctrl != null) {
+      return Video(controller: ctrl);
     }
 
     return const SizedBox.shrink();
@@ -334,3 +311,4 @@ class _AndroidHlsFullscreenScreenState
     );
   }
 }
+

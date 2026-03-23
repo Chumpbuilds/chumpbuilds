@@ -1,21 +1,15 @@
-import 'dart:async';
-import 'dart:io' show Platform;
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_vlc_player/flutter_vlc_player.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../screens/android_hls_fullscreen_screen.dart';
-import '../screens/fullscreen_player_screen.dart';
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
-import '../services/vlc_player_service.dart';
 
-/// Embedded VLC player widget (video area only, no control bar).
+/// Embedded video player widget (video area only, no control bar).
 ///
-/// Matches the Windows desktop player layout from
-/// `clients/windows/player/vlc_player.py` → `EmbeddedVLCPlayer`.
+/// Uses media_kit under the hood which supports hardware and software decoding
+/// with automatic fallback, working on Android phones, Android TV boxes
+/// (including Amlogic-based devices), iOS, and other platforms.
 ///
 /// Parameters:
 ///   [streamUrl]   – HLS/RTSP/HTTP stream URL to play.
@@ -48,32 +42,15 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   static const Color _sliderActive = Color(0xFF3498DB);
 
   // ─── State ────────────────────────────────────────────────────────────────
-  final _service = VlcPlayerService.instance;
 
-  /// VLC controller – used on non-Android platforms and for non-HLS content.
-  VlcPlayerController? _controller;
-
-  /// ExoPlayer-backed controller – used on Android for HLS (.m3u8) streams.
-  VideoPlayerController? _videoController;
+  /// media_kit VideoController returned by [VideoPlayerService.play].
+  VideoController? _videoController;
 
   bool _isPlaying = false;
   bool _isMuted = false;
   double _volume = 80;
   bool _isLoading = false;
   bool _hasError = false;
-
-  // ─── Native player detection ──────────────────────────────────────────────
-
-  /// Returns `true` when the native player path should be used.
-  ///
-  /// flutter_vlc_player / LibVLC has proven unreliable on Android and iOS
-  /// (stuck in `PlayingState.initializing` forever for many stream types, or
-  /// failing with a PlatformException on iOS Simulator). Flutter's
-  /// `video_player` package (backed by ExoPlayer on Android and AVFoundation
-  /// on iOS) handles HLS (.m3u8), MP4, MKV, TS, and other common IPTV formats
-  /// reliably, so we route **all** embedded Android and iOS playback — live,
-  /// movie, and series — through it.
-  bool get _useNativePlayer => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   String get _placeholder {
     switch (widget.contentType) {
@@ -99,12 +76,6 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   @override
   void dispose() {
-    _controller?.removeListener(_onControllerChanged);
-    _videoController?.removeListener(_onVideoControllerChanged);
-    // Stop playback so navigating away (or switching content) never leaves a
-    // stream running in the background.  Both calls are safe no-ops when the
-    // respective service has no active controller.
-    _service.stop();
     VideoPlayerService.instance.stop();
     super.dispose();
   }
@@ -118,84 +89,12 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       _hasError = false;
     });
 
-    // On Android and iOS route all embedded streams through the native player
-    // (video_player) instead of LibVLC, which has proven unreliable on both
-    // platforms.
-    if (_useNativePlayer) {
-      await _startNativePlayerPlayback();
-      return;
-    }
-
-    VlcPlayerController? ctrl;
     try {
-      ctrl = await _service.play(
+      final ctrl = await VideoPlayerService.instance.play(
         widget.streamUrl,
         widget.title,
         widget.contentType,
       );
-
-      ctrl.addListener(_onControllerChanged);
-
-      if (!mounted) return;
-      // Set controller into state FIRST so VlcPlayer widget mounts and the
-      // native surface is created (mirrors Windows: attach to frame, then play)
-      setState(() {
-        _controller = ctrl;
-      });
-
-      // Wait for the native surface + autoPlay to initialize
-      await _waitForInitialized(ctrl);
-
-      // Apply volume/mute after init (autoPlay already started playback)
-      if (!mounted) return;
-      await ctrl.setVolume(_isMuted ? 0 : _volume.toInt());
-
-      if (!mounted) return;
-      setState(() {
-        _isPlaying = true;
-        _isLoading = false;
-      });
-    } on TimeoutException {
-      debugPrint('[VlcPlayer] _startPlayback: timeout waiting for VLC init');
-      ctrl?.removeListener(_onControllerChanged);
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-      });
-    } catch (e) {
-      debugPrint('[VlcPlayer] Playback error: $e');
-      ctrl?.removeListener(_onControllerChanged);
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-      });
-    }
-  }
-
-  /// Starts playback via the native player (video_player) on Android and iOS.
-  ///
-  /// Uses ExoPlayer on Android and AVFoundation on iOS. Unlike the VLC path
-  /// there is no async initialization polling: the
-  /// [VideoPlayerController.initialize] call either succeeds or throws.
-  Future<void> _startNativePlayerPlayback() async {
-    if (kDebugMode) {
-      debugPrint(
-        '[NativePlayer] _startNativePlayerPlayback | '
-        'contentType=${widget.contentType} title="${widget.title}"',
-      );
-    }
-
-    VideoPlayerController? ctrl;
-    try {
-      ctrl = await VideoPlayerService.instance.play(
-        widget.streamUrl,
-        widget.title,
-        widget.contentType,
-      );
-
-      ctrl.addListener(_onVideoControllerChanged);
 
       if (!mounted) return;
       setState(() {
@@ -203,11 +102,8 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         _isPlaying = true;
         _isLoading = false;
       });
-
-      await ctrl.setVolume(_isMuted ? 0.0 : _volume / 100.0);
     } catch (e) {
-      debugPrint('[NativePlayer] Playback error: $e');
-      ctrl?.removeListener(_onVideoControllerChanged);
+      debugPrint('[VlcPlayerWidget] Playback error: $e');
       await VideoPlayerService.instance.stop();
       if (!mounted) return;
       setState(() {
@@ -218,71 +114,12 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     }
   }
 
-  /// Wait until the controller reports initialized (or playback begins), with a timeout.
-  ///
-  /// Accepts [PlayingState.playing] and [PlayingState.buffering] as "ready"
-  /// states in addition to [isInitialized] to handle devices/ROMs where
-  /// flutter_vlc_player never fires the `isInitialized` event even though
-  /// playback starts successfully.
-  Future<void> _waitForInitialized(
-    VlcPlayerController ctrl, {
-    Duration timeout = const Duration(seconds: 25),
-  }) async {
-    bool isReady(VlcPlayerValue v) =>
-        v.isInitialized ||
-        v.playingState == PlayingState.playing ||
-        v.playingState == PlayingState.buffering;
-
-    if (isReady(ctrl.value)) return;
-
-    final completer = Completer<void>();
-    void listener() {
-      if (isReady(ctrl.value) && !completer.isCompleted) {
-        completer.complete();
-      }
-    }
-    ctrl.addListener(listener);
-    try {
-      await completer.future.timeout(timeout);
-    } on TimeoutException {
-      rethrow;
-    } finally {
-      ctrl.removeListener(listener);
-    }
-  }
-
   Future<void> _stopPlayback() async {
-    if (_videoController != null) {
-      _videoController!.removeListener(_onVideoControllerChanged);
-      await VideoPlayerService.instance.stop();
-      if (!mounted) return;
-      setState(() {
-        _videoController = null;
-        _isPlaying = false;
-      });
-      return;
-    }
-    _controller?.removeListener(_onControllerChanged);
-    await _service.stop();
+    await VideoPlayerService.instance.stop();
     if (!mounted) return;
     setState(() {
-      _controller = null;
+      _videoController = null;
       _isPlaying = false;
-    });
-  }
-
-  void _onControllerChanged() {
-    if (!mounted) return;
-    final state = _controller?.value.playingState;
-    setState(() {
-      _isPlaying = state == PlayingState.playing;
-    });
-  }
-
-  void _onVideoControllerChanged() {
-    if (!mounted) return;
-    setState(() {
-      _isPlaying = _videoController?.value.isPlaying ?? false;
     });
   }
 
@@ -300,51 +137,23 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   }
 
   Future<void> _goFullscreen() async {
-    if (_useNativePlayer) {
-      if (_videoController == null) return;
-      _videoController!.removeListener(_onVideoControllerChanged);
-      await VideoPlayerService.instance.stop();
-      if (!mounted) return;
-      setState(() {
-        _videoController = null;
-        _isPlaying = false;
-      });
-
-      await Navigator.of(context).push(
-        MaterialPageRoute<void>(
-          builder: (_) => AndroidHlsFullscreenScreen(
-            streamUrl: widget.streamUrl,
-            title: widget.title,
-            contentType: widget.contentType,
-          ),
-        ),
-      );
-      if (mounted && widget.streamUrl.isNotEmpty) {
-        await _startPlayback();
-      }
-      return;
-    }
-
-    if (_controller == null) return;
-    // Stop embedded playback before pushing fullscreen route
-    _controller?.removeListener(_onControllerChanged);
-    await _service.stop();
+    if (_videoController == null) return;
+    await VideoPlayerService.instance.stop();
     if (!mounted) return;
     setState(() {
-      _controller = null;
+      _videoController = null;
       _isPlaying = false;
     });
 
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => FullscreenPlayerScreen(
+        builder: (_) => AndroidHlsFullscreenScreen(
           streamUrl: widget.streamUrl,
           title: widget.title,
           contentType: widget.contentType,
         ),
       ),
     );
-    // After returning from fullscreen, restart embedded playback
     if (mounted && widget.streamUrl.isNotEmpty) {
       await _startPlayback();
     }
@@ -352,28 +161,13 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   Future<void> _setVolume(double v) async {
     setState(() => _volume = v);
-    if (_videoController != null) {
-      await VideoPlayerService.instance.setVolume(v.toInt());
-      if (!_isMuted) await _videoController!.setVolume(v / 100.0);
-      return;
-    }
-    await _service.setVolume(v.toInt());
-    if (!_isMuted) {
-      await _controller?.setVolume(v.toInt());
-    }
+    await VideoPlayerService.instance.setVolume(v.toInt());
   }
 
   Future<void> _toggleMute() async {
-    if (_videoController != null) {
-      await VideoPlayerService.instance.toggleMute();
-      if (!mounted) return;
-      setState(() => _isMuted = VideoPlayerService.instance.isMuted);
-      return;
-    }
-    await _service.toggleMute();
+    await VideoPlayerService.instance.toggleMute();
     if (!mounted) return;
-    setState(() => _isMuted = _service.isMuted);
-    await _controller?.setVolume(_isMuted ? 0 : _volume.toInt());
+    setState(() => _isMuted = VideoPlayerService.instance.isMuted);
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -417,26 +211,9 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       );
     }
 
-    if (_controller != null) {
-      return VlcPlayer(
-        controller: _controller!,
-        aspectRatio: 16 / 9,
-        placeholder: const Center(
-          child: CircularProgressIndicator(color: _sliderActive),
-        ),
-      );
-    }
-
-    final vc = _videoController;
-    if (vc != null && vc.value.isInitialized) {
-      return FittedBox(
-        fit: BoxFit.contain,
-        child: SizedBox(
-          width: vc.value.size.width,
-          height: vc.value.size.height,
-          child: VideoPlayer(vc),
-        ),
-      );
+    final ctrl = _videoController;
+    if (ctrl != null) {
+      return Video(controller: ctrl);
     }
 
     return Center(
@@ -448,3 +225,4 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     );
   }
 }
+
