@@ -64,33 +64,58 @@ class VideoPlayerService {
     if (!kIsWeb) {
       final nativePlayer = player.platform;
       if (nativePlayer is NativePlayer) {
-        // Low-latency profile for live TV — reduces internal buffering
+        // ── A/V sync & frame dropping ──
+        // Allow mpv to drop frames at both decoder and display level when
+        // video falls behind audio. Without this, every frame is rendered
+        // late → visual lag and progressive lip-sync drift on weak GPUs.
+        await nativePlayer.setProperty('framedrop', 'decoder+vo');
+
+        // ── Decoder performance ──
+        // Let libavcodec use all available CPU cores for any software
+        // decode paths (fallback when HW decoder rejects a frame).
+        await nativePlayer.setProperty('vd-lavc-threads', '0');
+        // Skip deblocking filter on non-reference frames — reduces CPU
+        // load with minimal visual impact on live and VOD streams.
+        await nativePlayer.setProperty('vd-lavc-skiploopfilter', 'nonref');
+        // Enable the "fast" flag for libavcodec — trades minor quality
+        // for significant decode speed on ARM CPUs.
+        await nativePlayer.setProperty('vd-lavc-fast', 'yes');
+
+        // ── GPU / rendering ──
+        // Flush OpenGL commands early to reduce frame latency on embedded
+        // GPUs (Amlogic Mali, etc.).
+        await nativePlayer.setProperty('opengl-early-flush', 'yes');
+
+        // ── Buffering / cache ──
+        await nativePlayer.setProperty('cache', 'yes');
         if (contentType == 'live') {
-          await nativePlayer.setProperty('profile', 'low-latency');
-          await nativePlayer.setProperty('cache-secs', '3');
+          // Live TV: small buffer to stay near real-time, but enough to
+          // absorb network jitter without rebuffering.
+          await nativePlayer.setProperty('cache-secs', '5');
+          await nativePlayer.setProperty('demuxer-max-bytes', '16MiB');
+          await nativePlayer.setProperty('demuxer-max-back-bytes', '4MiB');
         } else {
-          // Movies/series can tolerate more buffer for smoother playback
-          await nativePlayer.setProperty('cache-secs', '10');
+          // Movies/series: larger buffer for smooth playback and seeking.
+          await nativePlayer.setProperty('cache-secs', '30');
+          await nativePlayer.setProperty('demuxer-max-bytes', '64MiB');
+          await nativePlayer.setProperty('demuxer-max-back-bytes', '16MiB');
         }
 
-        // General cache/demuxer settings
-        await nativePlayer.setProperty('cache', 'yes');
-        await nativePlayer.setProperty('demuxer-max-bytes', '32MiB');
-        await nativePlayer.setProperty('demuxer-max-back-bytes', '8MiB');
-
-        // Network reconnection for IPTV streams that may drop
+        // ── Network resilience ──
         await nativePlayer.setProperty(
           'demuxer-lavf-o',
           'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5',
         );
 
-        // Ensure ALL codecs are eligible for hardware decoding.
-        // The default hwdec-codecs list on Android only includes common codecs;
-        // 'all' ensures IPTV streams with unusual codecs also get HW decoded.
+        // ── Hardware codec eligibility ──
+        // Ensure ALL codecs are sent to the hardware decoder, not just
+        // the default shortlist.
         await nativePlayer.setProperty('hwdec-codecs', 'all');
 
         if (kDebugMode) {
-          debugPrint('[VideoPlayerService] mpv properties set for $contentType');
+          debugPrint(
+            '[VideoPlayerService] mpv properties set for $contentType',
+          );
         }
       }
     }
