@@ -986,8 +986,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                                   epgListings[index] as Map);
                               final title = _decodeEpgTitle(
                                   p['title']?.toString() ?? '');
-                              final start = _formatUnixTimestamp(p['start']?.toString() ?? '');
-                              final end = _formatUnixTimestamp(p['end']?.toString() ?? '');
+                              final start = _formatEpgTime(p['start']?.toString());
+                              final end = _formatEpgTime(p['end']?.toString());
                               final isNow = p['now_playing'] == 1 ||
                                   p['now_playing'] == true ||
                                   p['now_playing']?.toString() == '1';
@@ -1056,14 +1056,98 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  /// Converts a Unix-seconds timestamp string (e.g. "1742905200") to "HH:mm".
-  /// Returns an empty string if [raw] is empty or cannot be parsed.
-  String _formatUnixTimestamp(String raw) {
-    if (raw.isEmpty) return '';
-    final ts = int.tryParse(raw);
-    if (ts == null) return '';
-    final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
-    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  /// Parses an EPG time field and returns it formatted as "HH:mm" (local time).
+  /// Handles Unix-seconds integers, "YYYY-MM-DD HH:mm:ss", and
+  /// "YYYYMMDDHHmmss[ +HHMM]" (XMLTV compact format).
+  /// Returns '' if the value cannot be parsed.
+  String _formatEpgTime(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+
+    // 1. Pure integer → Unix seconds
+    final ts = int.tryParse(raw.trim());
+    if (ts != null && ts > 0) {
+      final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+      return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+    }
+
+    // 2. "YYYY-MM-DD HH:mm:ss"
+    try {
+      final dt = DateTime.parse(raw.trim());
+      return '${dt.toLocal().hour.toString().padLeft(2, '0')}:${dt.toLocal().minute.toString().padLeft(2, '0')}';
+    } catch (_) {}
+
+    // 3. XMLTV compact: "YYYYMMDDHHmmss[ +HHMM]"
+    final compact = raw.trim();
+    if (compact.length >= 14 && RegExp(r'^\d{14}').hasMatch(compact)) {
+      try {
+        final year   = int.parse(compact.substring(0, 4));
+        final month  = int.parse(compact.substring(4, 6));
+        final day    = int.parse(compact.substring(6, 8));
+        final hour   = int.parse(compact.substring(8, 10));
+        final minute = int.parse(compact.substring(10, 12));
+        final second = int.parse(compact.substring(12, 14));
+        DateTime dt;
+        final rest = compact.substring(14).trim();
+        if (rest.isNotEmpty && (rest.startsWith('+') || rest.startsWith('-')) && rest.length >= 5) {
+          final sign       = rest[0] == '+' ? 1 : -1;
+          final offH       = int.tryParse(rest.substring(1, 3)) ?? 0;
+          final offM       = int.tryParse(rest.substring(3, 5)) ?? 0;
+          final offsetMins = sign * (offH * 60 + offM);
+          dt = DateTime.utc(year, month, day, hour, minute, second)
+              .subtract(Duration(minutes: offsetMins))
+              .toLocal();
+        } else {
+          dt = DateTime.utc(year, month, day, hour, minute, second).toLocal();
+        }
+        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    return '';
+  }
+
+  /// Parses an EPG time field and returns a DateTime (local), or null if unparseable.
+  /// Used internally for timestamp-based "now playing" detection.
+  DateTime? _parseEpgDateTime(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+
+    // 1. Pure integer → Unix seconds
+    final ts = int.tryParse(raw.trim());
+    if (ts != null && ts > 0) {
+      return DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+    }
+
+    // 2. "YYYY-MM-DD HH:mm:ss"
+    try {
+      return DateTime.parse(raw.trim()).toLocal();
+    } catch (_) {}
+
+    // 3. XMLTV compact: "YYYYMMDDHHmmss[ +HHMM]"
+    final compact = raw.trim();
+    if (compact.length >= 14 && RegExp(r'^\d{14}').hasMatch(compact)) {
+      try {
+        final year   = int.parse(compact.substring(0, 4));
+        final month  = int.parse(compact.substring(4, 6));
+        final day    = int.parse(compact.substring(6, 8));
+        final hour   = int.parse(compact.substring(8, 10));
+        final minute = int.parse(compact.substring(10, 12));
+        final second = int.parse(compact.substring(12, 14));
+        final rest   = compact.substring(14).trim();
+        if (rest.isNotEmpty && (rest.startsWith('+') || rest.startsWith('-')) && rest.length >= 5) {
+          final sign       = rest[0] == '+' ? 1 : -1;
+          final offH       = int.tryParse(rest.substring(1, 3)) ?? 0;
+          final offM       = int.tryParse(rest.substring(3, 5)) ?? 0;
+          final offsetMins = sign * (offH * 60 + offM);
+          return DateTime.utc(year, month, day, hour, minute, second)
+              .subtract(Duration(minutes: offsetMins))
+              .toLocal();
+        } else {
+          return DateTime.utc(year, month, day, hour, minute, second).toLocal();
+        }
+      } catch (_) {}
+    }
+
+    return null;
   }
 
   /// EPG titles are sometimes base64-encoded.
@@ -1145,12 +1229,12 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
     // Pass 2: timestamp-based.
     if (match == null) {
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      final now = DateTime.now();
       for (final entry in listings) {
         final p = entry as Map;
-        final start = int.tryParse(p['start']?.toString() ?? '');
-        final end   = int.tryParse(p['end']?.toString()   ?? '');
-        if (start != null && end != null && now >= start && now < end) {
+        final start = _parseEpgDateTime(p['start']?.toString());
+        final end   = _parseEpgDateTime(p['end']?.toString());
+        if (start != null && end != null && now.isAfter(start) && !now.isAfter(end)) {
           match = p; break;
         }
       }
@@ -1163,17 +1247,12 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     final decoded = _decodeEpgTitle(raw);
     final title   = decoded.isNotEmpty ? decoded : 'No programme info';
 
-    // Format start/end Unix timestamps as HH:mm – HH:mm.
+    // Format start/end timestamps as HH:mm – HH:mm.
     String time = '';
-    final startTs = int.tryParse(match['start']?.toString() ?? '');
-    final endTs   = int.tryParse(match['end']?.toString()   ?? '');
-    if (startTs != null && endTs != null) {
-      final s = DateTime.fromMillisecondsSinceEpoch(startTs * 1000);
-      final e = DateTime.fromMillisecondsSinceEpoch(endTs   * 1000);
-      time =
-          '${s.hour.toString().padLeft(2, '0')}:${s.minute.toString().padLeft(2, '0')}'
-          ' – '
-          '${e.hour.toString().padLeft(2, '0')}:${e.minute.toString().padLeft(2, '0')}';
+    final startStr = _formatEpgTime(match['start']?.toString());
+    final endStr   = _formatEpgTime(match['end']?.toString());
+    if (startStr.isNotEmpty && endStr.isNotEmpty) {
+      time = '$startStr – $endStr';
     }
 
     return (title: title, time: time);
