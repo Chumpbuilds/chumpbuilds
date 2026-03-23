@@ -1056,9 +1056,10 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  /// Converts a Unix timestamp string to a formatted `HH:mm` string.
-  /// Returns an empty string if [raw] cannot be parsed.
+  /// Converts a Unix-seconds timestamp string (e.g. "1742905200") to "HH:mm".
+  /// Returns an empty string if [raw] is empty or cannot be parsed.
   String _formatUnixTimestamp(String raw) {
+    if (raw.isEmpty) return '';
     final ts = int.tryParse(raw);
     if (ts == null) return '';
     final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
