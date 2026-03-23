@@ -754,11 +754,31 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
+                        // "🔴 NOW PLAYING" badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Color(0x26E74C3C),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: _liveColor, width: 0.8),
+                          ),
+                          child: const Text(
+                            '🔴  NOW PLAYING',
+                            style: TextStyle(
+                              color: _liveColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // Channel name
                         Text(
                           name,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 16,
+                            fontSize: 15,
                             fontWeight: FontWeight.bold,
                           ),
                           textAlign: TextAlign.center,
@@ -766,13 +786,14 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 8),
+                        // Programme title + time
                         if (_loadingEpg)
                           const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(strokeWidth: 1.5, color: _accentColor),
                           )
-                        else ...[
+                        else
                           Builder(
                             builder: (_) {
                               final info = _currentProgrammeInfo();
@@ -804,7 +825,6 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                               );
                             },
                           ),
-                        ],
                       ],
                     ),
                   ),
