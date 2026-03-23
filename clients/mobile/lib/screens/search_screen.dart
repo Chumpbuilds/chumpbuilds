@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../services/xtream_service.dart';
+import '../widgets/system_ui_wrapper.dart';
 import 'live_tv_screen.dart';
 import 'movies_screen.dart';
 import 'series_screen.dart';
@@ -115,7 +116,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
@@ -196,7 +197,7 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildEmptyPrompt() {

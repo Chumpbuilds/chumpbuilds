@@ -19,6 +19,9 @@ void main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
+  // Hide system bars globally on startup.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
   // 1. Silently validate any stored licence.
   final isValid = await LicenseService().validateLicense();
 

@@ -5,6 +5,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
+import '../widgets/system_ui_wrapper.dart';
 
 /// Full-screen video playback screen for Android HLS streams.
 ///
@@ -167,7 +168,7 @@ class _AndroidHlsFullscreenScreenState
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    return SystemUiWrapper(child: PopScope(
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) _service.stop();
       },
@@ -184,7 +185,7 @@ class _AndroidHlsFullscreenScreenState
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildPlayer() {

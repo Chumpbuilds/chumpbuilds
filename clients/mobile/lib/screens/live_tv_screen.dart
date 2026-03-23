@@ -12,6 +12,7 @@ import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/vlc_player_widget.dart';
+import '../widgets/system_ui_wrapper.dart';
 
 /// Live TV screen — categories → channels → EPG + play.
 ///
@@ -332,7 +333,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       appBar: _categorySelected
           ? null
@@ -395,7 +396,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ─── Panel 1 – Categories ─────────────────────────────────────────────────

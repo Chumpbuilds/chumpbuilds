@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/external_player_service.dart';
 import '../services/vlc_player_service.dart';
+import '../widgets/system_ui_wrapper.dart';
 
 /// Full-screen video playback screen.
 ///
@@ -280,7 +281,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
+    return SystemUiWrapper(child: PopScope(
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) _service.stop();
       },
@@ -297,7 +298,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildPlayer() {

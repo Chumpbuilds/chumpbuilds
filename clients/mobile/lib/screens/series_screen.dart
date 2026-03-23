@@ -9,6 +9,7 @@ import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/vlc_player_widget.dart';
+import '../widgets/system_ui_wrapper.dart';
 
 /// Series screen — categories → series list → seasons/episodes tree + play.
 ///
@@ -423,7 +424,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
         backgroundColor: _bgColor,
@@ -482,7 +483,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 
   // ─── Panel 1 – Categories ─────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../services/license_service.dart';
 import '../widgets/tv_text_field.dart';
+import '../widgets/system_ui_wrapper.dart';
 import 'login_screen.dart';
 
 /// License activation screen — mirrors the Windows client's LicenseDialog.
@@ -114,7 +115,7 @@ class _LicenseScreenState extends State<LicenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
         child: Center(
@@ -252,6 +253,6 @@ class _LicenseScreenState extends State<LicenseScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 }

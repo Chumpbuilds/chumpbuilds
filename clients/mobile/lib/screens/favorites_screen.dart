@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/system_ui_wrapper.dart';
 
 /// Favorites screen — Channels, Movies, and Series favourites.
 ///
@@ -92,7 +93,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       appBar: AppBar(
         title: const Text('Favorites',
@@ -144,7 +145,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
                 ),
               ],
             ),
-    );
+    ));
   }
 
   Widget _buildFavoritesColumn({
