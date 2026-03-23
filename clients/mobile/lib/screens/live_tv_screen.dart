@@ -1024,9 +1024,15 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   }
 
   /// Returns the title of the currently-playing EPG entry, or a fallback.
+  /// Returns the title of the currently-playing EPG entry, or a fallback.
+  /// First checks the `now_playing` flag; if not set by the provider,
+  /// falls back to time-based detection using `start`/`end` timestamps.
   String _currentProgrammeTitle() {
     if (_epgData == null) return 'No programme info';
     final listings = (_epgData!['epg_listings'] as List?) ?? [];
+    if (listings.isEmpty) return 'No programme info';
+
+    // Pass 1: trust the provider's now_playing flag.
     for (final entry in listings) {
       final p = entry as Map;
       final isNow = p['now_playing'] == 1 ||
@@ -1038,6 +1044,28 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
         return decoded.isNotEmpty ? decoded : 'No programme info';
       }
     }
-    return 'No programme info';
+
+    // Pass 2: no now_playing flag set — use start/end timestamps.
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000; // Unix seconds
+    for (final entry in listings) {
+      final p = entry as Map;
+      final startRaw = p['start'];
+      final endRaw = p['end'];
+      if (startRaw == null || endRaw == null) continue;
+      final start = int.tryParse(startRaw.toString());
+      final end = int.tryParse(endRaw.toString());
+      if (start == null || end == null) continue;
+      if (now >= start && now < end) {
+        final raw = p['title']?.toString() ?? '';
+        final decoded = _decodeEpgTitle(raw);
+        return decoded.isNotEmpty ? decoded : 'No programme info';
+      }
+    }
+
+    // Pass 3: fall back to first entry if nothing matched (e.g. EPG is future-only).
+    final first = listings.first as Map;
+    final raw = first['title']?.toString() ?? '';
+    final decoded = _decodeEpgTitle(raw);
+    return decoded.isNotEmpty ? decoded : 'No programme info';
   }
 }
