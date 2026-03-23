@@ -1,116 +1,107 @@
 import 'package:flutter/foundation.dart';
-import 'package:video_player/video_player.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
-/// Singleton service that manages a [VideoPlayerController] for Android HLS
-/// (ExoPlayer-backed) playback.
+/// Singleton service that manages a [Player] (media_kit) for video playback.
 ///
-/// Used as a drop-in alternative to [VlcPlayerService] when playing HLS
-/// streams on Android, where LibVLC / flutter_vlc_player has proven
-/// unreliable (stuck in `PlayingState.initializing` forever for .m3u8
-/// streams despite multiple previous fix attempts).
+/// Replaces the previous ExoPlayer-backed (video_player) and LibVLC-backed
+/// (flutter_vlc_player) services with a single media_kit implementation that
+/// works reliably on Android phones, Android TV boxes (including Amlogic
+/// hardware), iOS, and other platforms.
+///
+/// Volume is on a 0–100 scale (same as the old VLC service).
 class VideoPlayerService {
   VideoPlayerService._();
   static final VideoPlayerService instance = VideoPlayerService._();
 
   // ─── State ────────────────────────────────────────────────────────────────
 
-  VideoPlayerController? _controller;
+  Player? _player;
+  VideoController? _videoController;
   bool _isMuted = false;
   int _volume = 80;
 
   // ─── Public getters ───────────────────────────────────────────────────────
 
-  VideoPlayerController? get controller => _controller;
+  VideoController? get controller => _videoController;
   bool get isMuted => _isMuted;
   int get volume => _volume;
 
-  bool get isPlaying => _controller?.value.isPlaying ?? false;
+  bool get isPlaying => _player?.state.playing ?? false;
 
   // ─── Playback ─────────────────────────────────────────────────────────────
 
   /// Initializes and starts playback of [url].
   ///
-  /// Any previous controller is disposed first.  Returns the initialized
-  /// [VideoPlayerController] so callers can attach it to a [VideoPlayer]
-  /// widget.
-  ///
-  /// Throws if [VideoPlayerController.initialize] fails (e.g. network error).
-  Future<VideoPlayerController> play(
+  /// Any previous player is disposed first.  Returns a [VideoController] that
+  /// can be passed to a [Video] widget for rendering.
+  Future<VideoController> play(
     String url,
     String title,
     String contentType,
   ) async {
-    await _disposeController();
+    await _disposePlayer();
 
     if (kDebugMode) {
       debugPrint(
-        '[VideoPlayerService] Creating controller | '
+        '[VideoPlayerService] Creating player | '
         'contentType=$contentType '
         'url=${_safeUrl(url)}',
       );
     }
 
-    final ctrl = VideoPlayerController.networkUrl(
-      Uri.parse(url),
-      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
-    );
+    final player = Player();
+    final videoCtrl = VideoController(player);
 
-    // Assign to _controller only after successful initialization to avoid
-    // holding a reference to a controller that failed and was never disposed.
-    try {
-      await ctrl.initialize();
-    } catch (e) {
-      try { await ctrl.dispose(); } catch (_) {}
-      rethrow;
-    }
-    _controller = ctrl;
-    await ctrl.setVolume(_isMuted ? 0.0 : _volume / 100.0);
-    await ctrl.play();
+    _player = player;
+    _videoController = videoCtrl;
+
+    await player.setVolume(_isMuted ? 0.0 : _volume.toDouble());
+    await player.open(Media(url));
 
     if (kDebugMode) {
       debugPrint(
-        '[VideoPlayerService] initialized | '
-        'isInitialized=${ctrl.value.isInitialized} '
-        'isPlaying=${ctrl.value.isPlaying} '
-        'size=${ctrl.value.size}',
+        '[VideoPlayerService] opened | '
+        'playing=${player.state.playing}',
       );
     }
 
-    return ctrl;
+    return videoCtrl;
   }
 
   Future<void> stop() async {
-    await _disposeController();
+    await _disposePlayer();
   }
 
   Future<void> pause() async {
-    await _controller?.pause();
+    await _player?.pause();
   }
 
   Future<void> resume() async {
-    await _controller?.play();
+    await _player?.play();
   }
 
   Future<void> setVolume(int vol) async {
     _volume = vol.clamp(0, 100);
     if (!_isMuted) {
-      await _controller?.setVolume(_volume / 100.0);
+      await _player?.setVolume(_volume.toDouble());
     }
   }
 
   Future<void> toggleMute() async {
     _isMuted = !_isMuted;
-    await _controller?.setVolume(_isMuted ? 0.0 : _volume / 100.0);
+    await _player?.setVolume(_isMuted ? 0.0 : _volume.toDouble());
   }
 
   // ─── Internal ─────────────────────────────────────────────────────────────
 
-  Future<void> _disposeController() async {
-    final c = _controller;
-    _controller = null;
-    if (c != null) {
+  Future<void> _disposePlayer() async {
+    final p = _player;
+    _player = null;
+    _videoController = null;
+    if (p != null) {
       try {
-        await c.dispose();
+        await p.dispose();
       } catch (_) {}
     }
   }

@@ -1,248 +1,42 @@
-import 'package:flutter/foundation.dart';
-import 'package:flutter_vlc_player/flutter_vlc_player.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
-/// Singleton service that manages a [VlcPlayerController] and exposes
-/// playback controls matching the Windows `EmbeddedVLCPlayer` API.
+import 'video_player_service.dart';
+
+/// Legacy service kept for API compatibility.
 ///
-/// Mirrors `clients/windows/player/vlc_player.py` → `EmbeddedVLCPlayer`.
+/// All playback now goes through [VideoPlayerService] which uses media_kit
+/// under the hood (libmpv-based, hardware + software decoding with automatic
+/// fallback). This class delegates every call to [VideoPlayerService.instance].
 class VlcPlayerService {
-  // ─── Logging helpers ──────────────────────────────────────────────────────
-
-  /// Returns a sanitized URL safe for debug logging.
-  ///
-  /// Strips query parameters to avoid leaking credentials (Xtream API tokens
-  /// are typically embedded as query params).  The scheme, host, port and path
-  /// are sufficient to diagnose URL-scheme issues without exposing secrets.
-  static String _safeUrl(String url) {
-    try {
-      final uri = Uri.parse(url);
-      final port = uri.hasPort ? ':${uri.port}' : '';
-      return '${uri.scheme}://${uri.host}$port${uri.path}';
-    } catch (_) {
-      return '(unparseable url)';
-    }
-  }
-
   VlcPlayerService._();
   static final VlcPlayerService instance = VlcPlayerService._();
 
-  // ─── Caching defaults ─────────────────────────────────────────────────────
-  // Increased to 5 000 ms to give the initial buffer enough time to fill and
-  // prevent the initialization future from timing out before playback starts.
-  static const int _defaultNetworkCaching = 5000;
-  static const int _defaultLiveCaching = 2000;
-  static const int _defaultFileCaching = 5000;
+  final _delegate = VideoPlayerService.instance;
 
-  // ─── Preference keys ──────────────────────────────────────────────────────
-  static const String _keyNetworkCaching = 'vlc_network_caching';
-  static const String _keyLiveCaching = 'vlc_live_caching';
-  static const String _keyFileCaching = 'vlc_file_caching';
+  VideoController? get controller => _delegate.controller;
+  bool get isMuted => _delegate.isMuted;
+  int get volume => _delegate.volume;
+  bool get isPlaying => _delegate.isPlaying;
+  bool get hasStream => _delegate.controller != null;
 
-  // ─── State ────────────────────────────────────────────────────────────────
-  VlcPlayerController? _controller;
-  String? _currentUrl;
-  String? _currentTitle;
-  String _currentContentType = 'live';
-  bool _isMuted = false;
-  int _volume = 80;
-
-  int _networkCaching = _defaultNetworkCaching;
-  int _liveCaching = _defaultLiveCaching;
-  int _fileCaching = _defaultFileCaching;
-
-  // ─── Public getters ───────────────────────────────────────────────────────
-
-  VlcPlayerController? get controller => _controller;
-  String? get currentUrl => _currentUrl;
-  String? get currentTitle => _currentTitle;
-  bool get isMuted => _isMuted;
-  int get volume => _volume;
-  int get networkCaching => _networkCaching;
-  int get liveCaching => _liveCaching;
-  int get fileCaching => _fileCaching;
-
-  bool get isPlaying {
-    final c = _controller;
-    if (c == null) return false;
-    return c.value.playingState == PlayingState.playing;
-  }
-
-  bool get hasStream => _currentUrl != null && _currentUrl!.isNotEmpty;
-
-  // ─── Initialisation ───────────────────────────────────────────────────────
-
-  Future<void> loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    _networkCaching =
-        prefs.getInt(_keyNetworkCaching) ?? _defaultNetworkCaching;
-    _liveCaching = prefs.getInt(_keyLiveCaching) ?? _defaultLiveCaching;
-    _fileCaching = prefs.getInt(_keyFileCaching) ?? _defaultFileCaching;
-  }
-
-  Future<void> saveCachingSettings({
-    int? networkCaching,
-    int? liveCaching,
-    int? fileCaching,
-  }) async {
-    final prefs = await SharedPreferences.getInstance();
-    if (networkCaching != null) {
-      _networkCaching = networkCaching;
-      await prefs.setInt(_keyNetworkCaching, networkCaching);
-    }
-    if (liveCaching != null) {
-      _liveCaching = liveCaching;
-      await prefs.setInt(_keyLiveCaching, liveCaching);
-    }
-    if (fileCaching != null) {
-      _fileCaching = fileCaching;
-      await prefs.setInt(_keyFileCaching, fileCaching);
-    }
-  }
-
-  // ─── Playback ─────────────────────────────────────────────────────────────
-
-  /// Creates (or recreates) a [VlcPlayerController] for [url].
-  ///
-  /// The previous controller is disposed before a new one is created.
-  /// Returns the new controller so callers can attach it to a [VlcPlayer]
-  /// widget.
-  ///
-  /// When [useMinimalOptions] is `true` the controller is created with no
-  /// custom LibVLC flags.  This is used by callers for a single retry when
-  /// the first attempt timed out without a concrete [errorDescription].
-  Future<VlcPlayerController> play(
+  Future<VideoController> play(
     String url,
     String title,
     String contentType, {
     bool useMinimalOptions = false,
-  }) async {
-    await _disposeController();
+  }) =>
+      _delegate.play(url, title, contentType);
 
-    _currentUrl = url;
-    _currentTitle = title;
-    _currentContentType = contentType;
+  Future<void> stop() => _delegate.stop();
+  Future<void> pause() => _delegate.pause();
+  Future<void> resume() => _delegate.resume();
+  Future<void> setVolume(int vol) => _delegate.setVolume(vol);
+  Future<void> toggleMute() => _delegate.toggleMute();
 
-    if (kDebugMode) {
-      debugPrint(
-        '[VlcPlayerService] Creating controller | '
-        'contentType=$contentType '
-        'scheme=${Uri.tryParse(url)?.scheme ?? "?"} '
-        'url=${_safeUrl(url)} '
-        'useMinimalOptions=$useMinimalOptions',
-      );
-    }
-
-    final cacheMs =
-        contentType == 'live' ? _liveCaching : _fileCaching;
-
-    // useMinimalOptions: no custom flags so LibVLC picks safe defaults.
-    // Used for the retry path when the first init attempt times out without
-    // a concrete errorDescription.
-    final options = useMinimalOptions
-        ? null
-        : VlcPlayerOptions(
-            advanced: VlcAdvancedOptions([
-              '--network-caching=$cacheMs',
-              '--live-caching=$_liveCaching',
-              '--file-caching=$_fileCaching',
-              '--no-video-title-show',
-              // NOTE: --aout=android_audiotrack, --rtsp-tcp and --http-continuous
-              // were removed because they can prevent LibVLC from completing
-              // initialization on certain Android devices/ROMs, resulting in a
-              // TimeoutException even though the stream itself is valid.
-              // LibVLC picks the correct audio output automatically; the other flags
-              // are only relevant to RTSP/raw-HTTP streams and are not needed for the
-              // HLS/TS streams used by Xtream-compatible IPTV providers.
-            ]),
-            http: VlcHttpOptions([
-              // Automatically reconnect on dropped HTTP connections.
-              VlcHttpOptions.httpReconnect(true),
-            ]),
-          );
-
-    _controller = VlcPlayerController.network(
-      url,
-      // Software decoding is more compatible across Android devices and ROMs,
-      // avoiding playback errors caused by hardware decoder incompatibilities.
-      hwAcc: HwAcc.disabled,
-      autoPlay: true, // flutter_vlc_player Android bug: isInitialized never fires with autoPlay: false
-      options: options,
-    );
-
-    if (kDebugMode) {
-      _controller!.addOnInitListener(() {
-        debugPrint(
-          '[VlcPlayerService] onInit fired | '
-          'playingState=${_controller?.value.playingState} '
-          'isInitialized=${_controller?.value.isInitialized}',
-        );
-      });
-
-      // Track previous state to log only meaningful transitions.
-      String? prevStateKey;
-      _controller!.addListener(() {
-        final v = _controller?.value;
-        if (v == null) return;
-        final key =
-            '${v.isInitialized}|${v.playingState}|${v.errorDescription}';
-        if (key == prevStateKey) return;
-        prevStateKey = key;
-        debugPrint(
-          '[VlcPlayerService] value changed | '
-          'isInitialized=${v.isInitialized} '
-          'playingState=${v.playingState} '
-          'errorDescription=${v.errorDescription ?? "(none)"}',
-        );
-      });
-    }
-
-    return _controller!;
-  }
-
-  Future<void> stop() async {
-    await _disposeController();
-  }
-
-  Future<void> pause() async {
-    final c = _controller;
-    if (c == null) return;
-    await c.pause();
-  }
-
-  Future<void> resume() async {
-    final c = _controller;
-    if (c == null) return;
-    await c.play();
-  }
-
-  Future<void> setVolume(int vol) async {
-    _volume = vol.clamp(0, 100);
-    final c = _controller;
-    if (c != null) {
-      await c.setVolume(_volume);
-    }
-  }
-
-  Future<void> toggleMute() async {
-    _isMuted = !_isMuted;
-    final c = _controller;
-    if (c != null) {
-      await c.setVolume(_isMuted ? 0 : _volume);
-    }
-  }
-
-  // ─── Internal ─────────────────────────────────────────────────────────────
-
-  Future<void> _disposeController() async {
-    final c = _controller;
-    _controller = null;
-    _currentUrl = null;
-    _currentTitle = null;
-    if (c != null) {
-      try {
-        await c.dispose();
-      } catch (_) {}
-    }
-  }
+  Future<void> loadSettings() async {}
+  Future<void> saveCachingSettings({
+    int? networkCaching,
+    int? liveCaching,
+    int? fileCaching,
+  }) async {}
 }
