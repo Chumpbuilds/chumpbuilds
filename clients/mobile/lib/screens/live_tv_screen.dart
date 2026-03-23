@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../screens/android_hls_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
@@ -79,6 +80,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
   @override
   void dispose() {
+    WakelockPlus.disable();
     _headerSearchCtrl.dispose();
     super.dispose();
   }
@@ -155,11 +157,23 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   }
 
   Future<void> _selectChannel(Map<String, dynamic> channel) async {
+    final tappedId = channel['stream_id']?.toString() ?? '';
+    final currentId = _selectedChannel?['stream_id']?.toString() ?? '';
+
+    // Second tap on the already-playing channel → go fullscreen.
+    if (tappedId.isNotEmpty && tappedId == currentId && _vlcStreamUrl.isNotEmpty) {
+      await _goFullscreen();
+      return;
+    }
+
     setState(() {
       _selectedChannel = channel;
       _epgData = null;
       _loadingEpg = true;
     });
+
+    // Auto-start playback immediately on first select.
+    _playChannel(channel);
 
     final streamId = channel['stream_id']?.toString() ?? '';
     if (streamId.isNotEmpty) {
@@ -250,6 +264,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       _vlcAutoPlay = true;
       _vlcPlayerKey++;
     });
+    WakelockPlus.enable();
   }
 
   /// Stops the embedded player and resets it to the idle (placeholder) state.
@@ -263,6 +278,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       _vlcAutoPlay = false;
       _vlcPlayerKey++;
     });
+    WakelockPlus.disable();
   }
 
   Future<void> _goFullscreen() async {
