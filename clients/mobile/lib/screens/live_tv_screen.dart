@@ -382,16 +382,16 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
             ),
       body: Row(
         children: [
-          // ── Panel 1 (35%): Categories → Channel list after selection ─────
+          // ── Panel 1 (30%): Categories → Channel list after selection ─────
           Expanded(
-            flex: 35,
+            flex: 30,
             child: _categorySelected
                 ? _buildChannelsPanel()
                 : _buildCategoriesPanel(),
           ),
-          // ── Panel 2 (65%): Portal logo → Player/EPG after selection ──────
+          // ── Panel 2 (70%): Portal logo → Player/EPG after selection ──────
           Expanded(
-            flex: 65,
+            flex: 70,
             child: _categorySelected ? _buildEpgPanel() : _buildLogoPanel(),
           ),
         ],
@@ -693,9 +693,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
         color: const Color(0xFF1E1E1E),
         child: Column(
           children: [
-            // ── Row 1 (60%): 30% logo placeholder | 70% player (idle) ──
+            // ── Row 1 (53%): 30% logo placeholder | 70% player (idle) ──
             Expanded(
-              flex: 60,
+              flex: 53,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -713,9 +713,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                 ],
               ),
             ),
-            // ── Row 2 (40%): prompt ──────────────────────────────────────
+            // ── Row 2 (47%): prompt ──────────────────────────────────────
             const Expanded(
-              flex: 40,
+              flex: 47,
               child: Center(
                 child: Text(
                   '📺  Select a channel and click Play to start streaming',
@@ -732,38 +732,59 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
     final ch = _selectedChannel!;
     final name = ch['name']?.toString() ?? '';
-    final iconUrl = ch['stream_icon']?.toString() ?? '';
     final epgListings = (_epgData?['epg_listings'] as List?) ?? [];
 
     return ColoredBox(
       color: const Color(0xFF1E1E1E),
       child: Column(
         children: [
-          // ── Row 1 (60%): 30% channel logo | 70% player ─────────────
+          // ── Row 1 (53%): 30% channel info | 70% player ─────────────
           Expanded(
-            flex: 60,
+            flex: 53,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 30% – channel logo
+                // 30% – channel name + current programme
                 Expanded(
                   flex: 30,
                   child: Container(
                     color: const Color(0xFF2D2D2D),
-                    child: iconUrl.isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: iconUrl,
-                            fit: BoxFit.contain,
-                            placeholder: (_, __) => const Center(
-                                child: Text('📺',
-                                    style: TextStyle(fontSize: 32))),
-                            errorWidget: (_, __, ___) => const Center(
-                                child: Text('📺',
-                                    style: TextStyle(fontSize: 32))),
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        if (_loadingEpg)
+                          const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 1.5, color: _accentColor),
                           )
-                        : const Center(
-                            child: Text('📺',
-                                style: TextStyle(fontSize: 32))),
+                        else
+                          Text(
+                            _currentProgrammeTitle(),
+                            style: const TextStyle(
+                              color: _accentColor,
+                              fontSize: 12,
+                            ),
+                            textAlign: TextAlign.center,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
                   ),
                 ),
                 // 70% – player
@@ -772,9 +793,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
             ),
           ),
 
-          // ── Row 2 (40%): EPG full width ──────────────────────────────
+          // ── Row 2 (47%): EPG full width ──────────────────────────────
           Expanded(
-            flex: 40,
+            flex: 47,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1000,5 +1021,23 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     } catch (_) {
       return raw; // fallback to raw if not valid base64
     }
+  }
+
+  /// Returns the title of the currently-playing EPG entry, or a fallback.
+  String _currentProgrammeTitle() {
+    if (_epgData == null) return 'No programme info';
+    final listings = (_epgData!['epg_listings'] as List?) ?? [];
+    for (final entry in listings) {
+      final p = entry as Map;
+      final isNow = p['now_playing'] == 1 ||
+          p['now_playing'] == true ||
+          p['now_playing']?.toString() == '1';
+      if (isNow) {
+        final raw = p['title']?.toString() ?? '';
+        final decoded = _decodeEpgTitle(raw);
+        return decoded.isNotEmpty ? decoded : 'No programme info';
+      }
+    }
+    return 'No programme info';
   }
 }
