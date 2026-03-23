@@ -84,6 +84,11 @@ class VideoPlayerService {
           'reconnect=1,reconnect_streamed=1,reconnect_delay_max=5',
         );
 
+        // Ensure ALL codecs are eligible for hardware decoding.
+        // The default hwdec-codecs list on Android only includes common codecs;
+        // 'all' ensures IPTV streams with unusual codecs also get HW decoded.
+        await nativePlayer.setProperty('hwdec-codecs', 'all');
+
         if (kDebugMode) {
           debugPrint('[VideoPlayerService] mpv properties set for $contentType');
         }
@@ -91,15 +96,19 @@ class VideoPlayerService {
     }
 
     // Create VideoController — this is where hwdec and vo are configured.
-    // On Android, media_kit's AndroidVideoController already defaults to:
-    //   vo=gpu, hwdec=auto-safe, hwdec-codecs=h264,hevc,mpeg4,...
-    // So we don't need to override those — they're already optimal.
-    // On other platforms (Windows/Linux/macOS/iOS), NativeVideoController
-    // defaults to vo=libmpv, hwdec=auto.
     final videoCtrl = VideoController(
       player,
       configuration: const VideoControllerConfiguration(
-        enableHardwareAcceleration: true, // explicit — ensures hwdec is enabled
+        enableHardwareAcceleration: true,
+        // Force full hardware decoding. The default 'auto-safe' is too
+        // conservative on Amlogic/ARM TV boxes — it falls back to software
+        // decode for many IPTV stream types (HEVC, interlaced H.264), which
+        // causes slow-motion playback on HD/FHD channels. 'auto' tries HW
+        // decode for everything and only falls back to software if HW
+        // actually fails, which is the correct behavior for set-top boxes.
+        // On mainstream Android phones (Qualcomm/MediaTek) this is equally
+        // safe — those SoCs handle all common codecs in hardware reliably.
+        hwdec: 'auto',
       ),
     );
 
