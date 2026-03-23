@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_vlc_player/flutter_vlc_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/external_player_service.dart';
 import '../services/vlc_player_service.dart';
@@ -59,6 +60,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    WakelockPlus.enable();
     _startPlayback();
   }
 
@@ -66,6 +68,7 @@ class _FullscreenPlayerScreenState extends State<FullscreenPlayerScreen> {
   void dispose() {
     _controller?.removeListener(_onControllerChanged);
     _service.stop();
+    WakelockPlus.disable();
     // Restore app-level orientation
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
