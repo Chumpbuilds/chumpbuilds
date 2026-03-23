@@ -35,7 +35,7 @@ class _SystemUiWrapperState extends State<SystemUiWrapper>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _hideSystemUI();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _hideSystemUI());
   }
 
   @override

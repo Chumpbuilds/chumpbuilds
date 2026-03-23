@@ -296,6 +296,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
         ),
       ),
     );
+    // Re-apply immersive mode after returning from fullscreen.
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
   Future<void> _openChannelExternal(Map<String, dynamic> channel) async {
@@ -984,8 +986,8 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                                   epgListings[index] as Map);
                               final title = _decodeEpgTitle(
                                   p['title']?.toString() ?? '');
-                              final start = p['start']?.toString() ?? '';
-                              final end = p['end']?.toString() ?? '';
+                              final start = _formatUnixTimestamp(p['start']?.toString() ?? '');
+                              final end = _formatUnixTimestamp(p['end']?.toString() ?? '');
                               final isNow = p['now_playing'] == 1 ||
                                   p['now_playing'] == true ||
                                   p['now_playing']?.toString() == '1';
@@ -1053,6 +1055,15 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /// Converts a Unix timestamp string to a formatted `HH:mm` string.
+  /// Returns an empty string if [raw] cannot be parsed.
+  String _formatUnixTimestamp(String raw) {
+    final ts = int.tryParse(raw);
+    if (ts == null) return '';
+    final dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
 
   /// EPG titles are sometimes base64-encoded.
   String _decodeEpgTitle(String raw) {
