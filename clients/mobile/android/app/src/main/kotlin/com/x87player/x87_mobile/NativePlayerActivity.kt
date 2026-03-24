@@ -41,7 +41,7 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_CONTENT_TYPE = "contentType"
 
-        private const val CONTROLS_HIDE_DELAY_MS = 3_000L
+        private const val CONTROLS_HIDE_DELAY_MS = 5_000L
     }
 
     private lateinit var player: ExoPlayer
@@ -213,9 +213,12 @@ class NativePlayerActivity : Activity() {
         controlsOverlay = buildControlsOverlay()
         frame.addView(controlsOverlay)
 
-        // Tap anywhere on the player to toggle controls
+        // Tap on the overlay to hide controls; tap on playerView to show them
+        controlsOverlay.setOnClickListener {
+            hideControls()
+        }
         playerView.setOnClickListener {
-            if (controlsVisible) hideControls() else showControls()
+            if (!controlsVisible) showControls()
         }
 
         return frame
