@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:better_player_plus/better_player_plus.dart';
 
 import '../screens/android_hls_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
@@ -7,9 +7,9 @@ import '../services/video_player_service.dart';
 
 /// Embedded video player widget (video area only, no control bar).
 ///
-/// Uses media_kit under the hood which supports hardware and software decoding
-/// with automatic fallback, working on Android phones, Android TV boxes
-/// (including Amlogic-based devices), iOS, and other platforms.
+/// Uses better_player_plus under the hood which wraps Android's native
+/// Media3/ExoPlayer pipeline (direct SurfaceView rendering) and AVFoundation
+/// on iOS — no libmpv middleman.
 ///
 /// Parameters:
 ///   [streamUrl]   – HLS/RTSP/HTTP stream URL to play.
@@ -43,8 +43,8 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   // ─── State ────────────────────────────────────────────────────────────────
 
-  /// media_kit VideoController returned by [VideoPlayerService.play].
-  VideoController? _videoController;
+  /// BetterPlayerController returned by [VideoPlayerService.play].
+  BetterPlayerController? _videoController;
 
   bool _isPlaying = false;
   bool _isMuted = false;
@@ -213,7 +213,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
     final ctrl = _videoController;
     if (ctrl != null) {
-      return Video(controller: ctrl);
+      return BetterPlayer(controller: ctrl);
     }
 
     return Center(

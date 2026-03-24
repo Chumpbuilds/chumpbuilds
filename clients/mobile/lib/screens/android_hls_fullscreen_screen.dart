@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:better_player_plus/better_player_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../services/external_player_service.dart';
@@ -9,9 +9,8 @@ import '../widgets/system_ui_wrapper.dart';
 
 /// Full-screen video playback screen.
 ///
-/// Uses media_kit which supports hardware and software decoding with automatic
-/// fallback, working on Android phones, Android TV boxes (including
-/// Amlogic-based devices), iOS, and other platforms.
+/// Uses better_player_plus which wraps Android's native Media3/ExoPlayer
+/// pipeline (direct SurfaceView rendering) on Android and AVFoundation on iOS.
 ///
 /// UX:
 /// - Fills the entire screen with the video player.
@@ -44,7 +43,7 @@ class _AndroidHlsFullscreenScreenState
 
   // ─── State ────────────────────────────────────────────────────────────────
   final _service = VideoPlayerService.instance;
-  VideoController? _controller;
+  BetterPlayerController? _controller;
   bool _isPlaying = false;
   bool _isMuted = false;
   double _volume = 80;
@@ -205,7 +204,7 @@ class _AndroidHlsFullscreenScreenState
 
     final ctrl = _controller;
     if (ctrl != null) {
-      return Video(controller: ctrl);
+      return BetterPlayer(controller: ctrl);
     }
 
     return const SizedBox.shrink();
