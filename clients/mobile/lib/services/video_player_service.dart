@@ -52,6 +52,8 @@ class VideoPlayerService {
     }
 
     // ── Buffering configuration tuned per content type ──
+    // In better_player_plus, bufferingConfiguration goes on the DataSource,
+    // NOT on BetterPlayerConfiguration.
     final bufferingConfig = contentType == 'live'
         ? const BetterPlayerBufferingConfiguration(
             minBufferMs: 5000,
@@ -73,7 +75,6 @@ class VideoPlayerService {
       controlsConfiguration: const BetterPlayerControlsConfiguration(
         showControls: false,
       ),
-      bufferingConfiguration: bufferingConfig,
     );
 
     // ── Data source: HLS vs other ──
@@ -84,6 +85,7 @@ class VideoPlayerService {
       headers: {'User-Agent': 'X87-IPTV-Player/1.0'},
       videoFormat:
           isHls ? BetterPlayerVideoFormat.hls : BetterPlayerVideoFormat.other,
+      bufferingConfiguration: bufferingConfig,
     );
 
     final ctrl = BetterPlayerController(configuration);
