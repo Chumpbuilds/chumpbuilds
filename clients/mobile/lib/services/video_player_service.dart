@@ -1,20 +1,29 @@
 import 'package:better_player_plus/better_player_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-/// Singleton service that manages a [BetterPlayerController] for video
-/// playback.
+/// Singleton service that manages video playback.
 ///
+/// ### Embedded playback
 /// Uses better_player_plus which wraps Android's native Media3/ExoPlayer
 /// pipeline (direct SurfaceView rendering) on Android and AVFoundation on iOS.
 /// This avoids the libmpv OpenGL texture bridge used by media_kit, which
 /// caused severe lag and poor performance on Fire Stick and Amlogic-based
 /// Android TV boxes.
 ///
+/// ### Fullscreen playback
+/// [playFullscreenNative] launches a fully-native Activity (Android) or
+/// AVPlayerViewController (iOS) via a platform channel.  This path gives
+/// zero-copy hardware compositor rendering — the same path XCIPTV uses —
+/// and is the primary playback path for TV boxes.
+///
 /// Volume is on a 0–100 scale (same as the previous service).
 class VideoPlayerService {
   VideoPlayerService._();
   static final VideoPlayerService instance = VideoPlayerService._();
+
+  static const _channel = MethodChannel('com.x87player/native_player');
 
   // ─── State ────────────────────────────────────────────────────────────────
 
@@ -30,9 +39,9 @@ class VideoPlayerService {
 
   bool get isPlaying => _controller?.isPlaying() ?? false;
 
-  // ─── Playback ─────────────────────────────────────────────────────────────
+  // ─── Embedded playback (better_player_plus) ───────────────────────────────
 
-  /// Initializes and starts playback of [url].
+  /// Initializes and starts **embedded** playback of [url].
   ///
   /// Any previous controller is disposed first. Returns a
   /// [BetterPlayerController] that can be passed to a [BetterPlayer] widget
@@ -101,6 +110,48 @@ class VideoPlayerService {
 
     return ctrl;
   }
+
+  // ─── Fullscreen native playback (platform channel) ────────────────────────
+
+  /// Launches the **native** fullscreen player for [url].
+  ///
+  /// On Android this starts [NativePlayerActivity] (ExoPlayer + SurfaceView,
+  /// zero-copy hardware compositor path). On iOS this presents a native
+  /// [AVPlayerViewController].
+  ///
+  /// Any active embedded [BetterPlayerController] is stopped first so the
+  /// native player has exclusive access to the audio/video hardware.
+  ///
+  /// Returns when the native player is dismissed.
+  Future<void> playFullscreenNative(
+    String url,
+    String title,
+    String contentType,
+  ) async {
+    // Stop embedded player before handing off to native.
+    await _disposeController();
+
+    if (kDebugMode) {
+      debugPrint(
+        '[VideoPlayerService] Launching native player | '
+        'contentType=$contentType '
+        'url=${_safeUrl(url)}',
+      );
+    }
+
+    try {
+      await _channel.invokeMethod<String>('launchPlayer', {
+        'url': url,
+        'title': title,
+        'contentType': contentType,
+      });
+    } on PlatformException catch (e) {
+      debugPrint('[VideoPlayerService] Native player error: $e');
+      rethrow;
+    }
+  }
+
+  // ─── Common controls ──────────────────────────────────────────────────────
 
   Future<void> stop() async {
     await _disposeController();
