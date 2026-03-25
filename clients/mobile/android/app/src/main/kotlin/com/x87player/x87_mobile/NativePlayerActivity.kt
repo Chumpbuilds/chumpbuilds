@@ -213,12 +213,16 @@ class NativePlayerActivity : Activity() {
         controlsOverlay = buildControlsOverlay()
         frame.addView(controlsOverlay)
 
-        // Tap on the overlay to hide controls; tap on playerView to show them
-        controlsOverlay.setOnClickListener {
-            hideControls()
-        }
-        playerView.setOnClickListener {
-            if (!controlsVisible) showControls()
+        // Tap anywhere on the frame to toggle controls visibility.
+        // We use onTouchListener on the frame so it works regardless of
+        // whether the overlay is VISIBLE or GONE — SurfaceView click
+        // listeners are unreliable.
+        frame.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                if (controlsVisible) hideControls() else showControls()
+            }
+            // Return false so child views (buttons) still receive their events.
+            false
         }
 
         return frame
