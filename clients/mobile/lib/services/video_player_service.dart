@@ -66,10 +66,10 @@ class VideoPlayerService {
     // NOT on BetterPlayerConfiguration.
     final bufferingConfig = contentType == 'live'
         ? const BetterPlayerBufferingConfiguration(
-            minBufferMs: 5000,
-            maxBufferMs: 30000,
-            bufferForPlaybackMs: 2500,
-            bufferForPlaybackAfterRebufferMs: 5000,
+            minBufferMs: 10000,
+            maxBufferMs: 60000,
+            bufferForPlaybackMs: 5000,
+            bufferForPlaybackAfterRebufferMs: 8000,
           )
         : const BetterPlayerBufferingConfiguration(
             minBufferMs: 15000,
