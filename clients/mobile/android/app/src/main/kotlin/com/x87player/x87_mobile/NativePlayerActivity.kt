@@ -149,11 +149,20 @@ class NativePlayerActivity : Activity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_DPAD_CENTER -> {
+                // On D-pad: first tap shows controls, second tap toggles play/pause
+                if (!controlsVisible) {
+                    showControls()
+                } else {
+                    togglePlayPause()
+                }
+                true
+            }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 togglePlayPause()
+                showControls()
                 true
             }
             KeyEvent.KEYCODE_BACK,
@@ -194,12 +203,18 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun togglePlayPause() {
-        if (player.isPlaying) {
-            player.pause()
-        } else {
-            player.play()
+        if (::player.isInitialized) {
+            if (player.isPlaying) {
+                player.pause()
+            } else {
+                player.play()
+            }
         }
-        showControls()
+        // Only reschedule the auto-hide timer — don't force-show controls if
+        // they're already hidden (e.g. user tapped the video area).
+        if (controlsVisible) {
+            scheduleHideControls()
+        }
     }
 
     private fun updatePlayPauseIcon(isPlaying: Boolean) {
@@ -226,21 +241,29 @@ class NativePlayerActivity : Activity() {
         }
         frame.addView(playerView)
 
-        // Overlay container — tap to toggle
+        // Invisible touch-catcher layer — sits between the PlayerView and the
+        // controls overlay. When controls are hidden this is the topmost
+        // clickable surface, so tapping it shows controls. When controls are
+        // visible, the overlay's own buttons sit above this layer and receive
+        // their clicks normally.
+        val touchCatcher = View(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT
+            )
+            isClickable = true
+            isFocusable = false
+            setOnClickListener {
+                // The touchCatcher is below the overlay in z-order; it only
+                // receives taps when the overlay is GONE (controls hidden).
+                showControls()
+            }
+        }
+        frame.addView(touchCatcher)
+
+        // Overlay container
         controlsOverlay = buildControlsOverlay()
         frame.addView(controlsOverlay)
-
-        // Tap anywhere on the frame to toggle controls visibility.
-        // We use onTouchListener on the frame so it works regardless of
-        // whether the overlay is VISIBLE or GONE — SurfaceView click
-        // listeners are unreliable.
-        frame.setOnTouchListener { _, event ->
-            if (event.action == android.view.MotionEvent.ACTION_UP) {
-                if (controlsVisible) hideControls() else showControls()
-            }
-            // Return false so child views (buttons) still receive their events.
-            false
-        }
 
         return frame
     }
@@ -289,13 +312,15 @@ class NativePlayerActivity : Activity() {
 
         overlay.addView(topBar)
 
-        // Spacer
+        // Spacer (clickable to dismiss controls)
         overlay.addView(android.view.View(this).apply {
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
             )
+            isClickable = true
+            setOnClickListener { hideControls() }
         })
 
         // Center play/pause
@@ -321,13 +346,15 @@ class NativePlayerActivity : Activity() {
         centerArea.addView(playPauseButton)
         overlay.addView(centerArea)
 
-        // Spacer
+        // Spacer (clickable to dismiss controls)
         overlay.addView(android.view.View(this).apply {
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
             )
+            isClickable = true
+            setOnClickListener { hideControls() }
         })
 
         return overlay
