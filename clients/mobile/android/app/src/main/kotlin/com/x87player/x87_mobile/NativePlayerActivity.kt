@@ -88,35 +88,50 @@ class NativePlayerActivity : Activity() {
         // Disabling it forces the standard software audio renderer path.
         val renderersFactory = DefaultRenderersFactory(this).apply {
             setEnableAudioTrackPlaybackParams(false)
+            // Allow fallback to alternative decoders when the primary one fails.
+            // Amlogic / Droidlogic devices often advertise hardware codec support
+            // but their firmware doesn't implement it correctly, causing silent
+            // decode failures or black-screen playback.
+            setEnableDecoderFallback(true)
+            // Prefer software extension renderers (e.g. libgav1, libvpx) over
+            // broken hardware decoders on problematic chipsets.
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
         }
 
-        player = ExoPlayer.Builder(this, renderersFactory).build().also { exo ->
-            playerView.player = exo
-            exo.setMediaItem(MediaItem.fromUri(url))
-            exo.prepare()
-            exo.playWhenReady = true
-            exo.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    if (state == Player.STATE_ENDED) {
-                        setResult(RESULT_OK)
+        try {
+            player = ExoPlayer.Builder(this, renderersFactory).build().also { exo ->
+                playerView.player = exo
+                exo.setMediaItem(MediaItem.fromUri(url))
+                exo.prepare()
+                exo.playWhenReady = true
+                exo.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(state: Int) {
+                        if (state == Player.STATE_ENDED) {
+                            setResult(RESULT_OK)
+                            finish()
+                        }
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        updatePlayPauseIcon(isPlaying)
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        Toast.makeText(
+                            this@NativePlayerActivity,
+                            "Playback error: ${error.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        setResult(RESULT_CANCELED)
                         finish()
                     }
-                }
-
-                override fun onIsPlayingChanged(isPlaying: Boolean) {
-                    updatePlayPauseIcon(isPlaying)
-                }
-
-                override fun onPlayerError(error: PlaybackException) {
-                    Toast.makeText(
-                        this@NativePlayerActivity,
-                        "Playback error: ${error.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
-                    setResult(RESULT_CANCELED)
-                    finish()
-                }
-            })
+                })
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to initialize player: ${e.message}", Toast.LENGTH_LONG).show()
+            setResult(RESULT_CANCELED)
+            finish()
+            return
         }
 
         scheduleHideControls()
@@ -124,7 +139,9 @@ class NativePlayerActivity : Activity() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(hideControlsRunnable)
-        player.release()
+        if (::player.isInitialized) {
+            player.release()
+        }
         super.onDestroy()
     }
 

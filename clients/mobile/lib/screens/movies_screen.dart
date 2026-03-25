@@ -934,21 +934,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
           const SizedBox(width: 4),
           SizedBox(
             height: 28,
-            child: OutlinedButton(
-              onPressed: () => _openMovieExternal(merged),
-              style: tvFocusOutlinedButtonStyle(OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Color(0xFF3D3D3D)),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-              child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
             child: ElevatedButton.icon(
               onPressed: _vlcStreamUrl.isNotEmpty ? _goFullscreen : null,
               icon: const Icon(Icons.fullscreen, size: 14),
@@ -960,6 +945,21 @@ class _MoviesScreenState extends State<MoviesScreen> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4)),
               )),
+            ),
+          ),
+          const SizedBox(width: 4),
+          SizedBox(
+            height: 28,
+            child: OutlinedButton(
+              onPressed: () => _openMovieExternal(merged),
+              style: tvFocusOutlinedButtonStyle(OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Color(0xFF3D3D3D)),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              )),
+              child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
             ),
           ),
         ],
