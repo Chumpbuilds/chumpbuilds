@@ -53,8 +53,8 @@ class VideoPlayerService {
     if (kDebugMode) {
       debugPrint(
         '[VideoPlayerService] Creating VLC player | '
-        'contentType=$contentType '
-        'url=${_safeUrl(url)}',
+        'contentType=[32m$contentType[0m '
+        'url=[32m${_safeUrl(url)}[0m',
       );
     }
 
@@ -83,7 +83,7 @@ class VideoPlayerService {
     _controller = ctrl;
 
     if (kDebugMode) {
-      debugPrint('[VideoPlayerService] VLC controller opened | url=${_safeUrl(url)}');
+      debugPrint('[VideoPlayerService] VLC controller opened | url=[32m${_safeUrl(url)}[0m');
     }
 
     return ctrl;
@@ -104,8 +104,8 @@ class VideoPlayerService {
     if (kDebugMode) {
       debugPrint(
         '[VideoPlayerService] playFullscreenNative called (no-op since VLC migration) | '
-        'contentType=$contentType '
-        'url=${_safeUrl(url)}',
+        'contentType=[32m$contentType[0m '
+        'url=[32m${_safeUrl(url)}[0m',
       );
     }
   }
@@ -143,7 +143,7 @@ class VideoPlayerService {
     _controller = null;
     if (c != null) {
       try {
-        await c.stopRenderer();
+        await c.stop();
         await c.dispose();
       } catch (_) {}
     }
@@ -154,7 +154,7 @@ class VideoPlayerService {
     try {
       final uri = Uri.parse(url);
       final port = uri.hasPort ? ':${uri.port}' : '';
-      return '${uri.scheme}://${uri.host}$port${uri.path}';
+      return '[32m${uri.scheme}://${uri.host}$port${uri.path}[0m';
     } catch (_) {
       return '(unparseable url)';
     }
