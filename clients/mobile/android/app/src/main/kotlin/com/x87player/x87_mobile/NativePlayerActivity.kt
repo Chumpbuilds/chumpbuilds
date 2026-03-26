@@ -1,3 +1,6 @@
+// NOTE: This Activity is no longer called since the VLC migration.
+// Fullscreen playback is now handled by the Flutter AndroidHlsFullscreenScreen
+// widget using flutter_vlc_player (LibVLC). Kept here for potential future use.
 package com.x87player.x87_mobile
 
 import android.app.Activity
