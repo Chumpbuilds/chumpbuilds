@@ -1,26 +1,25 @@
-import 'package:better_player_plus/better_player_plus.dart';
+import 'package:flutter_vlc_player/flutter_vlc_player.dart';
 
 import 'video_player_service.dart';
 
 /// Legacy service kept for API compatibility.
 ///
 /// All playback now goes through [VideoPlayerService] which uses
-/// better_player_plus under the hood (ExoPlayer/Media3 on Android,
-/// AVFoundation on iOS). This class delegates every call to
-/// [VideoPlayerService.instance].
+/// flutter_vlc_player (LibVLC) under the hood. This class delegates every
+/// call to [VideoPlayerService.instance].
 class VlcPlayerService {
   VlcPlayerService._();
   static final VlcPlayerService instance = VlcPlayerService._();
 
   final _delegate = VideoPlayerService.instance;
 
-  BetterPlayerController? get controller => _delegate.controller;
+  VlcPlayerController? get controller => _delegate.controller;
   bool get isMuted => _delegate.isMuted;
   int get volume => _delegate.volume;
   bool get isPlaying => _delegate.isPlaying;
   bool get hasStream => _delegate.controller != null;
 
-  Future<BetterPlayerController> play(
+  Future<VlcPlayerController> play(
     String url,
     String title,
     String contentType, {
@@ -41,3 +40,4 @@ class VlcPlayerService {
     int? fileCaching,
   }) async {}
 }
+
