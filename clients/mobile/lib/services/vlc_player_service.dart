@@ -1,11 +1,9 @@
-import 'package:flutter_vlc_player/flutter_vlc_player.dart';
-
 import 'video_player_service.dart';
 
 /// Legacy service kept for API compatibility.
 ///
-/// All playback now goes through [VideoPlayerService] which uses
-/// flutter_vlc_player (LibVLC) under the hood. This class delegates every
+/// All playback now routes through [VideoPlayerService] which launches
+/// [NativePlayerActivity] via platform channel. This class delegates every
 /// call to [VideoPlayerService.instance].
 class VlcPlayerService {
   VlcPlayerService._();
@@ -13,13 +11,14 @@ class VlcPlayerService {
 
   final _delegate = VideoPlayerService.instance;
 
-  VlcPlayerController? get controller => _delegate.controller;
   bool get isMuted => _delegate.isMuted;
   int get volume => _delegate.volume;
   bool get isPlaying => _delegate.isPlaying;
-  bool get hasStream => _delegate.controller != null;
+  /// True when the native player is active. In the native-player architecture
+  /// there is no persistent loaded-but-paused state, so this mirrors [isPlaying].
+  bool get hasStream => _delegate.isPlaying;
 
-  Future<VlcPlayerController> play(
+  Future<void> play(
     String url,
     String title,
     String contentType, {
@@ -40,4 +39,3 @@ class VlcPlayerService {
     int? fileCaching,
   }) async {}
 }
-
