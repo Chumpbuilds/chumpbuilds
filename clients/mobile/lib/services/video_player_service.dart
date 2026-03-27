@@ -66,12 +66,15 @@ class VideoPlayerService {
       '--network-caching=$networkCaching',
       '--http-user-agent=X87-IPTV-Player/1.0',
       '--no-audio-resampling',
-      '--codec=avcodec',
+      '--vout=android-display',
+      '--android-display-chroma=RV32',
+      '--no-drop-late-frames',
+      '--no-skip-frames',
     ];
 
     final ctrl = VlcPlayerController.network(
       url,
-      hwAcc: HwAcc.full,
+      hwAcc: HwAcc.auto,
       autoPlay: true,
       options: VlcPlayerOptions(
         advanced: VlcAdvancedOptions(vlcOptions),
