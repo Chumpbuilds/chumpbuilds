@@ -61,14 +61,17 @@ class _AndroidHlsFullscreenScreenState
 
     _vlcController = VlcPlayerController.network(
       widget.streamUrl,
-      hwAcc: HwAcc.full,
+      hwAcc: HwAcc.auto,
       autoPlay: true,
       options: VlcPlayerOptions(
         advanced: VlcAdvancedOptions([
           '--network-caching=$networkCaching',
           '--http-user-agent=X87-IPTV-Player/1.0',
           '--no-audio-resampling',
-          '--codec=avcodec',
+          '--vout=android-display',
+          '--android-display-chroma=RV32',
+          '--no-drop-late-frames',
+          '--no-skip-frames',
         ]),
       ),
     );
@@ -142,12 +145,9 @@ class _AndroidHlsFullscreenScreenState
   }
 
   Widget _buildControls() {
-    return AnimatedOpacity(
-      opacity: _showControls ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 300),
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
             colors: [
@@ -217,7 +217,6 @@ class _AndroidHlsFullscreenScreenState
             const SizedBox(height: 16),
           ],
         ),
-      ),
     );
   }
 }
