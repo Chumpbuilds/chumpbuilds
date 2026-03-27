@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
+import 'embedded_exo_player_widget.dart';
 
 /// Embedded video area widget.
 ///
@@ -41,6 +44,12 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   bool _isLoading = false;
   bool _hasError = false;
 
+  // Key used to force-recreate the embedded player when the URL changes.
+  Key _embeddedKey = UniqueKey();
+
+  bool get _useEmbedded =>
+      Platform.isAndroid && widget.streamUrl.isNotEmpty;
+
   String get _placeholder {
     switch (widget.contentType) {
       case 'movie':
@@ -55,7 +64,11 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   @override
   void initState() {
     super.initState();
-    if (widget.autoPlay && widget.streamUrl.isNotEmpty) {
+    // On Android, EmbeddedExoPlayerWidget handles autoPlay via creation params.
+    // The fullscreen _startPlayback path is only used on non-Android platforms.
+    if (!Platform.isAndroid &&
+        widget.autoPlay &&
+        widget.streamUrl.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _startPlayback();
       });
@@ -65,10 +78,23 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   @override
   void didUpdateWidget(VlcPlayerWidget old) {
     super.didUpdateWidget(old);
-    if (widget.streamUrl != old.streamUrl &&
-        widget.autoPlay &&
-        widget.streamUrl.isNotEmpty) {
-      _startPlayback();
+    if (widget.streamUrl != old.streamUrl) {
+      if (Platform.isAndroid) {
+        // Changing the key tears down the old AndroidView and creates a fresh one.
+        // Also handles the case where URL becomes empty (shows placeholder).
+        setState(() {
+          _hasError = false;
+          _isLoading = false;
+          _embeddedKey = UniqueKey();
+        });
+      } else if (widget.autoPlay && widget.streamUrl.isNotEmpty) {
+        _startPlayback();
+      } else if (widget.streamUrl.isEmpty) {
+        setState(() {
+          _hasError = false;
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -118,6 +144,55 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   }
 
   Widget _buildContent() {
+    // ── Android: render video inline via ExoPlayer PlatformView ──────────────
+    if (_useEmbedded) {
+      if (_hasError) {
+        return Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, color: _stopColor, size: 36),
+              const SizedBox(height: 8),
+              const Text(
+                'Playback failed. Try "Open in VLC".',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: _openExternal,
+                child: const Text(
+                  'Open in VLC',
+                  style: TextStyle(color: _sliderActive),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return EmbeddedExoPlayerWidget(
+        key: _embeddedKey,
+        url: widget.streamUrl,
+        title: widget.title,
+        contentType: widget.contentType,
+        autoPlay: widget.autoPlay,
+        onStateChanged: ({
+          required bool isPlaying,
+          required bool isBuffering,
+          required bool hasError,
+          String? errorMessage,
+        }) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = isBuffering;
+            _hasError = hasError;
+          });
+        },
+      );
+    }
+
+    // ── Non-Android / placeholder path ────────────────────────────────────────
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: _sliderActive),
@@ -169,7 +244,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
           const SizedBox.expand(),
           // Play button
           Container(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Colors.black54,
               shape: BoxShape.circle,
             ),

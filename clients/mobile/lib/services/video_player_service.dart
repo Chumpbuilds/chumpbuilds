@@ -67,6 +67,22 @@ class VideoPlayerService {
   ) =>
       play(url, title, contentType);
 
+  // ─── Embedded player state tracking ──────────────────────────────────────
+
+  /// Records that an embedded [EmbeddedExoPlayerWidget] has started playing.
+  /// Actual playback is managed by the PlatformView widget directly — this
+  /// method only updates the service's [isPlaying] flag so other parts of the
+  /// app can observe it (e.g., for UI state tracking).
+  void playEmbedded() {
+    _isPlaying = true;
+  }
+
+  /// Records that an embedded [EmbeddedExoPlayerWidget] has stopped.
+  /// Actual teardown is handled by the PlatformView widget's dispose lifecycle.
+  void stopEmbedded() {
+    _isPlaying = false;
+  }
+
   // ─── Common controls ──────────────────────────────────────────────────────
 
   /// Resets the local [isPlaying] flag. The native activity manages its own
