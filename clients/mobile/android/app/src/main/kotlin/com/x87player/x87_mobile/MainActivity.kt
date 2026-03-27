@@ -39,6 +39,13 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+
+        // ── Embedded inline player (AndroidView / PlatformView) ───────────────
+        flutterEngine.platformViewsController.registry
+            .registerViewFactory(
+                "com.x87player/exo_player_view",
+                ExoPlayerPlatformViewFactory(flutterEngine.dartExecutor.binaryMessenger)
+            )
     }
 
     @Deprecated("Deprecated in Java")
