@@ -1,6 +1,12 @@
-// NOTE: This Activity is no longer called since the VLC migration.
-// Fullscreen playback is now handled by the Flutter AndroidHlsFullscreenScreen
-// widget using flutter_vlc_player (LibVLC). Kept here for potential future use.
+/**
+ * Primary fullscreen video player Activity.
+ *
+ * Uses ExoPlayer (Media3) with a SurfaceView for zero-copy hardware compositor
+ * rendering — the same path used by XCIPTV and other high-performance IPTV
+ * players. Device type is detected at runtime so that phones receive the full
+ * feature set (tunneling, audio offload) while TV boxes / Amlogic / Fire Stick
+ * devices get a conservative configuration that avoids broken firmware paths.
+ */
 package com.x87player.x87_mobile
 
 import android.app.Activity
@@ -16,27 +22,13 @@ import android.widget.Toast
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 
-/**
- * Native Android fullscreen video player Activity.
- *
- * Uses ExoPlayer (Media3) with a SurfaceView for zero-copy hardware compositor
- * rendering — the same path used by XCIPTV and other high-performance IPTV
- * players. This avoids the Flutter texture bridge which copies every video
- * frame through the rendering pipeline and causes lag on Fire Stick and
- * Amlogic-based Android TV boxes.
- *
- * Extras:
- *   EXTRA_URL         – stream URL (required)
- *   EXTRA_TITLE       – human-readable title for the overlay
- *   EXTRA_CONTENT_TYPE – 'live', 'movie', or 'series'
- *
- * Returns [Activity.RESULT_OK] when playback finishes normally,
- * or [Activity.RESULT_CANCELED] if the activity is dismissed early.
- */
 class NativePlayerActivity : Activity() {
 
     companion object {
@@ -45,6 +37,9 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_CONTENT_TYPE = "contentType"
 
         private const val CONTROLS_HIDE_DELAY_MS = 5_000L
+        private const val HTTP_CONNECT_TIMEOUT_MS = 15_000
+        private const val HTTP_READ_TIMEOUT_MS = 15_000
+        private const val USER_AGENT = "X87-IPTV-Player/1.0"
     }
 
     private lateinit var player: ExoPlayer
@@ -85,24 +80,51 @@ class NativePlayerActivity : Activity() {
 
         titleTextView.text = title
 
-        // Build ExoPlayer with audio tunneling disabled.
-        // Amlogic / Fire Stick devices advertise tunneled audio but their
-        // firmware doesn't implement it correctly, causing silent playback.
-        // Disabling it forces the standard software audio renderer path.
+        val isTvDevice = isTvOrAmlogicDevice()
+        android.util.Log.i("NativePlayerActivity",
+            "Device config: isTv=$isTvDevice manufacturer=${android.os.Build.MANUFACTURER} " +
+            "model=${android.os.Build.MODEL} hardware=${android.os.Build.HARDWARE}")
+
         val renderersFactory = DefaultRenderersFactory(this).apply {
-            setEnableAudioTrackPlaybackParams(false)
-            // Allow fallback to alternative decoders when the primary one fails.
-            // Amlogic / Droidlogic devices often advertise hardware codec support
-            // but their firmware doesn't implement it correctly, causing silent
-            // decode failures or black-screen playback.
+            // Use extension decoders if available, but always fall back to hardware.
+            // EXTENSION_RENDERER_MODE_ON = use if available, fall back to platform decoders.
+            // This works on ALL devices — phones use hardware, TV boxes can use software fallback.
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+
+            // Always enable decoder fallback — if primary decoder fails, try alternatives.
+            // Critical for Amlogic boxes that advertise codecs they can't actually decode.
             setEnableDecoderFallback(true)
-            // Prefer software extension renderers (e.g. libgav1, libvpx) over
-            // broken hardware decoders on problematic chipsets.
-            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+
+            if (isTvDevice) {
+                // TV / Fire Stick / Amlogic: disable audio tunneling and offload.
+                // These devices advertise tunneled audio support but their firmware
+                // doesn't implement it correctly, causing silent playback.
+                setEnableAudioTrackPlaybackParams(false)
+            } else {
+                // Phones: enable all features — modern phones handle them fine.
+                setEnableAudioTrackPlaybackParams(true)
+            }
         }
 
+        val trackSelector = DefaultTrackSelector(this).apply {
+            parameters = buildUponParameters()
+                .setTunnelingEnabled(!isTvDevice) // Disable tunneling on TV/Amlogic/Fire Stick
+                .build()
+        }
+
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+            .setUserAgent(USER_AGENT)
+            .setConnectTimeoutMs(HTTP_CONNECT_TIMEOUT_MS)
+            .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
+            .setAllowCrossProtocolRedirects(true)
+
+        val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
+
         try {
-            player = ExoPlayer.Builder(this, renderersFactory).build().also { exo ->
+            player = ExoPlayer.Builder(this, renderersFactory)
+                .setTrackSelector(trackSelector)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build().also { exo ->
                 playerView.player = exo
                 exo.setMediaItem(MediaItem.fromUri(url))
                 exo.prepare()
@@ -361,6 +383,29 @@ class NativePlayerActivity : Activity() {
         })
 
         return overlay
+    }
+
+    // ── Device detection ──────────────────────────────────────────────────────
+
+    private fun isTvOrAmlogicDevice(): Boolean {
+        val uiModeManager = getSystemService(android.app.UiModeManager::class.java)
+        if (uiModeManager?.currentModeType == android.content.res.Configuration.UI_MODE_TYPE_TELEVISION) {
+            return true
+        }
+        // Detect Amlogic chipsets (common in cheap Android TV boxes)
+        val hardware = android.os.Build.HARDWARE.lowercase()
+        val board = android.os.Build.BOARD.lowercase()
+        val manufacturer = android.os.Build.MANUFACTURER.lowercase()
+        val model = android.os.Build.MODEL.lowercase()
+        if (hardware.contains("amlogic") || board.contains("amlogic") ||
+            hardware.contains("meson") || board.contains("meson")) {
+            return true
+        }
+        // Detect Fire TV devices
+        if (manufacturer == "amazon" && model.contains("fire")) {
+            return true
+        }
+        return false
     }
 
     private fun dpToPx(dp: Int): Int {
