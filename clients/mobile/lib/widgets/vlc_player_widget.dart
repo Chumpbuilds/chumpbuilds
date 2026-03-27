@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_vlc_player/flutter_vlc_player.dart';
 
-import '../screens/android_hls_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
 
-/// Embedded video player widget (video area only, no control bar).
+/// Embedded video area widget.
 ///
-/// Uses flutter_vlc_player (LibVLC) under the hood — the same engine as the
-/// external "Play in VLC" option that already works reliably on Android TV
-/// boxes, Fire Stick, and Amlogic-based devices.
+/// Does **not** render video frames in Flutter. Instead it shows a 16:9 black
+/// placeholder with a play button that launches [NativePlayerActivity] via
+/// [VideoPlayerService.play]. This bypasses Flutter's PlatformView texture
+/// bridge entirely, which is the only reliable path on Android 14+ devices.
 ///
 /// Parameters:
 ///   [streamUrl]   – HLS/RTSP/HTTP stream URL to play.
 ///   [title]       – Human-readable title shown in UI.
 ///   [contentType] – 'live', 'movie', or 'series'.
+///   [autoPlay]    – When true and [streamUrl] is non-empty, launches the
+///                   native player automatically on first mount.
 class VlcPlayerWidget extends StatefulWidget {
   const VlcPlayerWidget({
     super.key,
@@ -27,9 +28,6 @@ class VlcPlayerWidget extends StatefulWidget {
   final String streamUrl;
   final String title;
   final String contentType;
-
-  /// When [true] and [streamUrl] is non-empty, playback starts automatically
-  /// when the widget is first mounted.  Defaults to [false].
   final bool autoPlay;
 
   @override
@@ -37,18 +35,9 @@ class VlcPlayerWidget extends StatefulWidget {
 }
 
 class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
-  // ─── Theme ────────────────────────────────────────────────────────────────
-  static const Color _stopColor = Color(0xFFE74C3C);
   static const Color _sliderActive = Color(0xFF3498DB);
+  static const Color _stopColor = Color(0xFFE74C3C);
 
-  // ─── State ────────────────────────────────────────────────────────────────
-
-  /// VlcPlayerController returned by [VideoPlayerService.play].
-  VlcPlayerController? _videoController;
-
-  bool _isPlaying = false;
-  bool _isMuted = false;
-  double _volume = 80;
   bool _isLoading = false;
   bool _hasError = false;
 
@@ -67,7 +56,6 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   void initState() {
     super.initState();
     if (widget.autoPlay && widget.streamUrl.isNotEmpty) {
-      // Defer to next frame so the widget tree is fully built
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _startPlayback();
       });
@@ -75,12 +63,14 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   }
 
   @override
-  void dispose() {
-    VideoPlayerService.instance.stop();
-    super.dispose();
+  void didUpdateWidget(VlcPlayerWidget old) {
+    super.didUpdateWidget(old);
+    if (widget.streamUrl != old.streamUrl &&
+        widget.autoPlay &&
+        widget.streamUrl.isNotEmpty) {
+      _startPlayback();
+    }
   }
-
-  // ─── Playback ─────────────────────────────────────────────────────────────
 
   Future<void> _startPlayback() async {
     if (widget.streamUrl.isEmpty) return;
@@ -90,41 +80,21 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     });
 
     try {
-      final ctrl = await VideoPlayerService.instance.play(
+      await VideoPlayerService.instance.play(
         widget.streamUrl,
         widget.title,
         widget.contentType,
       );
-
-      if (!mounted) return;
-      setState(() {
-        _videoController = ctrl;
-        _isPlaying = true;
-        _isLoading = false;
-      });
     } catch (e) {
       debugPrint('[VlcPlayerWidget] Playback error: $e');
-      await VideoPlayerService.instance.stop();
       if (!mounted) return;
-      setState(() {
-        _videoController = null;
-        _isLoading = false;
-        _hasError = true;
-      });
+      setState(() => _hasError = true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _stopPlayback() async {
-    await VideoPlayerService.instance.stop();
-    if (!mounted) return;
-    setState(() {
-      _videoController = null;
-      _isPlaying = false;
-    });
-  }
-
   Future<void> _openExternal() async {
-    await _stopPlayback();
     final url = widget.streamUrl;
     if (url.isEmpty) return;
 
@@ -136,58 +106,18 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
     }
   }
 
-  Future<void> _goFullscreen() async {
-    if (_videoController == null) return;
-    await VideoPlayerService.instance.stop();
-    if (!mounted) return;
-    setState(() {
-      _videoController = null;
-      _isPlaying = false;
-    });
-
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AndroidHlsFullscreenScreen(
-          streamUrl: widget.streamUrl,
-          title: widget.title,
-          contentType: widget.contentType,
-        ),
-      ),
-    );
-    if (mounted && widget.streamUrl.isNotEmpty) {
-      await _startPlayback();
-    }
-  }
-
-  Future<void> _setVolume(double v) async {
-    setState(() => _volume = v);
-    await VideoPlayerService.instance.setVolume(v.toInt());
-  }
-
-  Future<void> _toggleMute() async {
-    await VideoPlayerService.instance.toggleMute();
-    if (!mounted) return;
-    setState(() => _isMuted = VideoPlayerService.instance.isMuted);
-  }
-
-  // ─── Build ────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
-    return _buildVideoArea();
-  }
-
-  Widget _buildVideoArea() {
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: Container(
         color: Colors.black,
-        child: _buildVideoContent(),
+        child: _buildContent(),
       ),
     );
   }
 
-  Widget _buildVideoContent() {
+  Widget _buildContent() {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: _sliderActive),
@@ -206,27 +136,67 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
               style: TextStyle(color: Colors.white70, fontSize: 12),
               textAlign: TextAlign.center,
             ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: _openExternal,
+              child: const Text(
+                'Open in VLC',
+                style: TextStyle(color: _sliderActive),
+              ),
+            ),
           ],
         ),
       );
     }
 
-    final ctrl = _videoController;
-    if (ctrl != null) {
-      return VlcPlayer(
-        controller: ctrl,
-        aspectRatio: 16 / 9,
-        placeholder: const Center(
-          child: CircularProgressIndicator(color: _sliderActive),
+    if (widget.streamUrl.isEmpty) {
+      return Center(
+        child: Text(
+          _placeholder,
+          style: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
+          textAlign: TextAlign.center,
         ),
       );
     }
 
-    return Center(
-      child: Text(
-        _placeholder,
-        style: const TextStyle(color: Color(0xFF95A5A6), fontSize: 13),
-        textAlign: TextAlign.center,
+    // Show play button overlay on black background.
+    return GestureDetector(
+      onTap: _startPlayback,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Black background fills the area
+          const SizedBox.expand(),
+          // Play button
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              shape: BoxShape.circle,
+            ),
+            padding: const EdgeInsets.all(16),
+            child: const Icon(
+              Icons.play_circle_filled,
+              color: Colors.white,
+              size: 56,
+            ),
+          ),
+          // Channel title
+          Positioned(
+            bottom: 16,
+            left: 16,
+            right: 16,
+            child: Text(
+              widget.title,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                shadows: [Shadow(blurRadius: 4, color: Colors.black87)],
+              ),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
