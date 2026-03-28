@@ -6,8 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/license_screen.dart';
+import 'screens/loading_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/license_service.dart';
+import 'services/xtream_cache_service.dart';
 import 'services/xtream_service.dart';
 
 void main() async {
@@ -29,8 +31,15 @@ void main() async {
   if (isValid) {
     // 2. Licence is valid — attempt silent IPTV auto-login with saved creds.
     final autoLoggedIn = await _tryAutoLogin();
-    startScreen =
-        autoLoggedIn ? const HomeScreen() : const LoginScreen();
+    if (autoLoggedIn) {
+      // Check if the core content cache has at least 20 hours remaining.
+      final cacheFresh = await XtreamCacheService().isCacheFresh(
+        minRemainingHours: 20,
+      );
+      startScreen = cacheFresh ? const HomeScreen() : const LoadingScreen();
+    } else {
+      startScreen = const LoginScreen();
+    }
   } else {
     // 3. No valid licence — show the activation screen.
     startScreen = const LicenseScreen();

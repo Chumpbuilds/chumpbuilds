@@ -167,6 +167,48 @@ class XtreamService {
   /// Clears all cached API data — useful for pull-to-refresh or manual refresh.
   Future<void> clearCache() => _cache.clear();
 
+  /// Prefetch all core content data (categories + full lists) and cache it.
+  ///
+  /// [onProgress] is called with (completedSteps, totalSteps, currentLabel)
+  /// for UI updates.  Errors in individual steps are swallowed so that a
+  /// partial prefetch still navigates forward.
+  Future<void> prefetchAll({
+    void Function(int completed, int total, String label)? onProgress,
+  }) async {
+    if (!isAuthenticated) return;
+
+    final steps = <MapEntry<String, Future<void> Function()>>[
+      MapEntry('Live TV Categories', () async {
+        await getLiveCategories();
+      }),
+      MapEntry('Live TV Channels', () async {
+        await getLiveStreams(null);
+      }),
+      MapEntry('Movie Categories', () async {
+        await getVodCategories();
+      }),
+      MapEntry('Movies', () async {
+        await getVodStreams(null);
+      }),
+      MapEntry('Series Categories', () async {
+        await getSeriesCategories();
+      }),
+      MapEntry('Series', () async {
+        await getSeries(null);
+      }),
+    ];
+
+    for (int i = 0; i < steps.length; i++) {
+      onProgress?.call(i, steps.length, steps[i].key);
+      try {
+        await steps[i].value();
+      } catch (e) {
+        debugPrint('[XtreamAPI] prefetchAll step "${steps[i].key}" error: $e');
+      }
+    }
+    onProgress?.call(steps.length, steps.length, 'Complete');
+  }
+
   // ─── Data retrieval stubs (to be implemented) ─────────────────────────────
 
   Future<List<dynamic>> getLiveCategories() async {
