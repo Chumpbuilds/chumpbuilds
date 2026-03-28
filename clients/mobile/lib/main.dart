@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,8 +27,26 @@ void main() async {
   // Hide system bars globally on startup.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
+  // Read cached branding from SharedPreferences (fast disk read, no network).
+  // This ensures the bootstrap screen shows the portal-configured name and
+  // logo before any network call is made.
+  String cachedAppName = 'X87 Player';
+  String cachedLogoUrl = '';
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('user_settings');
+    if (raw != null && raw.isNotEmpty) {
+      final settings = jsonDecode(raw) as Map<String, dynamic>;
+      cachedAppName = settings['app_name'] as String? ?? 'X87 Player';
+      cachedLogoUrl = settings['logo_url'] as String? ?? '';
+    }
+  } catch (_) {
+    // Silently fall back to defaults — branding is cosmetic and must never
+    // prevent the app from launching.
+  }
+
   // Show the app immediately — async init runs inside _BootstrapScreen.
-  runApp(const X87App());
+  runApp(X87App(appName: cachedAppName, logoUrl: cachedLogoUrl));
 }
 
 /// Attempt to auto-login using the last-used cloud profile's saved credentials.
@@ -84,7 +103,18 @@ Future<bool> _tryAutoLogin() async {
 /// app's dark theme. [home] defaults to [_BootstrapScreen], which performs
 /// all async initialization and navigates to the correct screen when done.
 class X87App extends StatelessWidget {
-  const X87App({super.key, this.home});
+  const X87App({
+    super.key,
+    this.appName = 'X87 Player',
+    this.logoUrl = '',
+    this.home,
+  });
+
+  /// Portal-configured app name read from cached SharedPreferences.
+  final String appName;
+
+  /// Portal-configured logo URL read from cached SharedPreferences.
+  final String logoUrl;
 
   /// Override the initial screen. Defaults to [_BootstrapScreen].
   final Widget? home;
@@ -103,7 +133,7 @@ class X87App extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF1E1E1E),
       ),
-      home: home ?? const _BootstrapScreen(),
+      home: home ?? _BootstrapScreen(appName: appName, logoUrl: logoUrl),
     );
   }
 }
@@ -111,9 +141,16 @@ class X87App extends StatelessWidget {
 /// Splash / bootstrap screen shown immediately on launch while async
 /// initialization (license validation, auto-login, cache check) runs.
 ///
-/// Visual style matches [LoadingScreen] so the transition feels seamless.
+/// Displays the portal-configured app name and logo so the user sees branded
+/// content instantly rather than a blank white screen.
 class _BootstrapScreen extends StatefulWidget {
-  const _BootstrapScreen();
+  const _BootstrapScreen({required this.appName, required this.logoUrl});
+
+  /// Portal-configured app name (e.g. "My IPTV App").
+  final String appName;
+
+  /// Portal-configured logo URL. If empty, a default icon is shown instead.
+  final String logoUrl;
 
   @override
   State<_BootstrapScreen> createState() => _BootstrapScreenState();
@@ -181,31 +218,34 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // App icon / logo — matches LoadingScreen style.
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: _primaryColor,
+                // Show portal logo if available, otherwise fall back to the
+                // default teal TV icon.
+                if (widget.logoUrl.isNotEmpty)
+                  ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Icon(
-                    Icons.tv,
-                    size: 48,
-                    color: Colors.white,
-                  ),
-                ),
+                    child: CachedNetworkImage(
+                      imageUrl: widget.logoUrl,
+                      width: 80,
+                      height: 80,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => _defaultIcon(),
+                      errorWidget: (_, __, ___) => _defaultIcon(),
+                    ),
+                  )
+                else
+                  _defaultIcon(),
                 const SizedBox(height: 20),
 
-                // App name.
-                const Text(
-                  'X87 Player',
-                  style: TextStyle(
+                // Portal app name with "Welcome to" prefix.
+                Text(
+                  'Welcome to ${widget.appName}',
+                  style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                     letterSpacing: 0.5,
                   ),
+                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 40),
 
@@ -215,6 +255,22 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _defaultIcon() {
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        color: _primaryColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Icon(
+        Icons.tv,
+        size: 48,
+        color: Colors.white,
       ),
     );
   }
