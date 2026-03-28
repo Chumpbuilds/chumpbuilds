@@ -114,6 +114,34 @@ class XtreamCacheService {
     await _saveToDisk();
   }
 
+  /// Returns true if the core content cache (categories + streams for all 3
+  /// types) has at least [minRemainingHours] hours of life remaining.
+  ///
+  /// Checks keys: live_categories, live_streams_all, vod_categories,
+  /// vod_streams_all, series_categories, series_all
+  Future<bool> isCacheFresh({int minRemainingHours = 20}) async {
+    await _ensureLoaded();
+    const coreKeys = [
+      'live_categories',
+      'live_streams_all',
+      'vod_categories',
+      'vod_streams_all',
+      'series_categories',
+      'series_all',
+    ];
+    final now = DateTime.now();
+    for (final key in coreKeys) {
+      final entry = _cache[key];
+      if (entry == null || entry.isExpired) return false;
+      final remaining = entry.expiresAt.difference(now);
+      if (remaining.inHours < minRemainingHours) return false;
+    }
+    return true;
+  }
+
+  /// Returns the number of currently cached (non-expired) entries.
+  int get entryCount => _cache.values.where((e) => !e.isExpired).length;
+
   /// Removes all expired entries from the in-memory cache and persists the
   /// result to disk.
   Future<void> cleanupExpired() async {

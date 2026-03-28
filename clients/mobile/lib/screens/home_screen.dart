@@ -6,12 +6,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/license_service.dart';
+import '../services/xtream_cache_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/tv_text_field.dart';
 import '../widgets/system_ui_wrapper.dart';
 import 'favorites_screen.dart';
 import 'license_screen.dart';
 import 'live_tv_screen.dart';
+import 'loading_screen.dart';
 import 'login_screen.dart';
 import 'movies_screen.dart';
 import 'search_screen.dart';
@@ -582,7 +584,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
       if (!mounted) return;
       Navigator.of(context).pop();
       Navigator.of(widget.parentContext).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const LoadingScreen()),
       );
     } else {
       _showStatus(
@@ -911,6 +913,57 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                 ),
                 icon: const Icon(Icons.swap_horiz),
                 label: const Text('Switch Profile'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: _borderColor),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Clear Cached Data
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await XtreamCacheService().clear();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Cache cleared'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('Clear Cached Data'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: _borderColor),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Refresh Data
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await XtreamCacheService().clear();
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                          builder: (_) => const LoadingScreen()),
+                      (route) => false,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text('Refresh Data'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: const BorderSide(color: _borderColor),

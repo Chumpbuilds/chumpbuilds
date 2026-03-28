@@ -8,7 +8,7 @@ import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/tv_text_field.dart';
 import '../widgets/system_ui_wrapper.dart';
-import 'home_screen.dart';
+import 'loading_screen.dart';
 
 /// IPTV Login screen — mirrors the Windows client's `ModernLoginDialog`.
 ///
@@ -154,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
+        MaterialPageRoute(builder: (_) => const LoadingScreen()),
       );
     } else {
       _showStatus(
