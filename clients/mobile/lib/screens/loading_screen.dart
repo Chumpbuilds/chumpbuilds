@@ -23,7 +23,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
   static const Color _descColor = Color(0xFFB0B0B0);
 
   int _completed = 0;
-  int _total = 0;
+  int _total = 7;
   String _currentLabel = 'Preparing…';
   bool _done = false;
 
