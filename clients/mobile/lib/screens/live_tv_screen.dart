@@ -1,11 +1,10 @@
-import 'dart:convert';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../screens/android_hls_fullscreen_screen.dart';
+import '../services/epg_service.dart';
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/license_service.dart';
@@ -48,7 +47,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   String? _selectedCategoryId;
   String? _selectedCategoryName;
   Map<String, dynamic>? _selectedChannel;
-  Map<String, dynamic>? _epgData;
+  List<Map<String, dynamic>>? _epgData;
 
   bool _loadingCategories = true;
   bool _loadingChannels = false;
@@ -167,27 +166,18 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       return;
     }
 
+    // Look up EPG from the local XMLTV cache — instant, no API call.
+    final epgChannelId = channel['epg_channel_id']?.toString() ?? '';
+    final listings = EpgService().getEpgForChannel(epgChannelId);
+
     setState(() {
       _selectedChannel = channel;
-      _epgData = null;
-      _loadingEpg = true;
+      _epgData = listings;
+      _loadingEpg = false;
     });
 
     // Auto-start playback immediately on first select.
     _playChannel(channel);
-
-    final streamId = channel['stream_id']?.toString() ?? '';
-    if (streamId.isNotEmpty) {
-      final epg = await _xtream.getShortEpg(streamId);
-      if (!mounted) return;
-      setState(() {
-        _epgData = epg;
-        _loadingEpg = false;
-      });
-    } else {
-      if (!mounted) return;
-      setState(() => _loadingEpg = false);
-    }
   }
 
   // ─── Favourites ───────────────────────────────────────────────────────────
@@ -738,7 +728,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
 
     final ch = _selectedChannel!;
     final name = ch['name']?.toString() ?? '';
-    final epgListings = (_epgData?['epg_listings'] as List?) ?? [];
+    final epgListings = _epgData ?? [];
 
     return ColoredBox(
       color: const Color(0xFF1E1E1E),
@@ -984,9 +974,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                         : Builder(builder: (context) {
                             final upcomingListings = epgListings.where((e) {
                               final m = e as Map;
-                              return m['now_playing'] != 1 &&
-                                  m['now_playing'] != true &&
-                                  m['now_playing']?.toString() != '1';
+                              return m['is_current'] != true;
                             }).toList();
                             return ListView.builder(
                               padding:
@@ -995,10 +983,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                               itemBuilder: (context, index) {
                                 final p = Map<String, dynamic>.from(
                                     upcomingListings[index] as Map);
-                                final title = _decodeEpgTitle(
-                                    p['title']?.toString() ?? '');
+                                final title = p['title']?.toString() ?? '';
                                 final start = _formatEpgTime(p['start']?.toString());
-                                final end = _formatEpgTime(p['end']?.toString());
+                                final stop = _formatEpgTime(p['stop']?.toString());
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 2),
                                   padding: const EdgeInsets.symmetric(
@@ -1013,7 +1000,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                                     children: [
                                       if (start.isNotEmpty) ...[
                                         Text(
-                                          '$start–$end',
+                                          '$start–$stop',
                                           style: const TextStyle(
                                               color: _secondaryTextColor,
                                               fontSize: 10),
@@ -1099,155 +1086,32 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     return '';
   }
 
-  /// Parses an EPG time field and returns a DateTime (local), or null if unparseable.
-  /// Used internally for timestamp-based "now playing" detection.
-  DateTime? _parseEpgDateTime(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-
-    // 1. Pure integer → Unix seconds
-    final ts = int.tryParse(raw.trim());
-    if (ts != null && ts > 0) {
-      return DateTime.fromMillisecondsSinceEpoch(ts * 1000);
-    }
-
-    // 2. "YYYY-MM-DD HH:mm:ss"
-    try {
-      return DateTime.parse(raw.trim()).toLocal();
-    } catch (_) {}
-
-    // 3. XMLTV compact: "YYYYMMDDHHmmss[ +HHMM]"
-    final compact = raw.trim();
-    if (compact.length >= 14 && RegExp(r'^\d{14}').hasMatch(compact)) {
-      try {
-        final year   = int.parse(compact.substring(0, 4));
-        final month  = int.parse(compact.substring(4, 6));
-        final day    = int.parse(compact.substring(6, 8));
-        final hour   = int.parse(compact.substring(8, 10));
-        final minute = int.parse(compact.substring(10, 12));
-        final second = int.parse(compact.substring(12, 14));
-        final rest   = compact.substring(14).trim();
-        if (rest.isNotEmpty && (rest.startsWith('+') || rest.startsWith('-')) && rest.length >= 5) {
-          final sign       = rest[0] == '+' ? 1 : -1;
-          final offH       = int.tryParse(rest.substring(1, 3)) ?? 0;
-          final offM       = int.tryParse(rest.substring(3, 5)) ?? 0;
-          final offsetMins = sign * (offH * 60 + offM);
-          return DateTime.utc(year, month, day, hour, minute, second)
-              .subtract(Duration(minutes: offsetMins))
-              .toLocal();
-        } else {
-          return DateTime.utc(year, month, day, hour, minute, second).toLocal();
-        }
-      } catch (_) {}
-    }
-
-    return null;
-  }
-
-  /// EPG titles are sometimes base64-encoded.
-  String _decodeEpgTitle(String raw) {
-    if (raw.isEmpty) return raw;
-    try {
-      final decoded = utf8.decode(base64.decode(raw));
-      return decoded;
-    } catch (_) {
-      return raw; // fallback to raw if not valid base64
-    }
-  }
-
-  /// Returns the title of the currently-playing EPG entry, or a fallback.
-  /// Returns the title of the currently-playing EPG entry, or a fallback.
-  /// First checks the `now_playing` flag; if not set by the provider,
-  /// falls back to time-based detection using `start`/`end` timestamps.
-  String _currentProgrammeTitle() {
-    if (_epgData == null) return 'No programme info';
-    final listings = (_epgData!['epg_listings'] as List?) ?? [];
-    if (listings.isEmpty) return 'No programme info';
-
-    // Pass 1: trust the provider's now_playing flag.
-    for (final entry in listings) {
-      final p = entry as Map;
-      final isNow = p['now_playing'] == 1 ||
-          p['now_playing'] == true ||
-          p['now_playing']?.toString() == '1';
-      if (isNow) {
-        final raw = p['title']?.toString() ?? '';
-        final decoded = _decodeEpgTitle(raw);
-        return decoded.isNotEmpty ? decoded : 'No programme info';
-      }
-    }
-
-    // Pass 2: no now_playing flag set — use start/end timestamps.
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000; // Unix seconds
-    for (final entry in listings) {
-      final p = entry as Map;
-      final startRaw = p['start'];
-      final endRaw = p['end'];
-      if (startRaw == null || endRaw == null) continue;
-      final start = int.tryParse(startRaw.toString());
-      final end = int.tryParse(endRaw.toString());
-      if (start == null || end == null) continue;
-      if (now >= start && now < end) {
-        final raw = p['title']?.toString() ?? '';
-        final decoded = _decodeEpgTitle(raw);
-        return decoded.isNotEmpty ? decoded : 'No programme info';
-      }
-    }
-
-    // Pass 3: fall back to first entry if nothing matched (e.g. EPG is future-only).
-    final first = listings.first as Map;
-    final raw = first['title']?.toString() ?? '';
-    final decoded = _decodeEpgTitle(raw);
-    return decoded.isNotEmpty ? decoded : 'No programme info';
-  }
-
   /// Returns a record with the title and formatted time (HH:mm – HH:mm) of the
-  /// currently-playing EPG entry. Uses the same three-pass detection logic as
-  /// [_currentProgrammeTitle].
+  /// currently-playing EPG entry.
   ({String title, String time}) _currentProgrammeInfo() {
     const fallback = (title: 'No programme info', time: '');
-    if (_epgData == null) return fallback;
-    final listings = (_epgData!['epg_listings'] as List?) ?? [];
-    if (listings.isEmpty) return fallback;
+    final listings = _epgData;
+    if (listings == null || listings.isEmpty) return fallback;
 
-    Map? match;
-
-    // Pass 1: now_playing flag.
-    for (final entry in listings) {
-      final p = entry as Map;
-      final isNow = p['now_playing'] == 1 ||
-          p['now_playing'] == true ||
-          p['now_playing']?.toString() == '1';
-      if (isNow) { match = p; break; }
+    // Pass 1: is_current flag.
+    Map<String, dynamic>? match;
+    for (final p in listings) {
+      if (p['is_current'] == true) { match = p; break; }
     }
 
-    // Pass 2: timestamp-based.
-    if (match == null) {
-      final now = DateTime.now();
-      for (final entry in listings) {
-        final p = entry as Map;
-        final start = _parseEpgDateTime(p['start']?.toString());
-        final end   = _parseEpgDateTime(p['end']?.toString());
-        if (start != null && end != null && now.isAfter(start) && !now.isAfter(end)) {
-          match = p; break;
-        }
-      }
-    }
+    // Pass 2: first entry fallback.
+    match ??= listings.first;
 
-    // Pass 3: first entry fallback.
-    match ??= listings.first as Map;
+    final title = match['title']?.toString() ?? '';
 
-    final raw     = match['title']?.toString() ?? '';
-    final decoded = _decodeEpgTitle(raw);
-    final title   = decoded.isNotEmpty ? decoded : 'No programme info';
-
-    // Format start/end timestamps as HH:mm – HH:mm.
+    // Format start/stop timestamps as HH:mm – HH:mm.
     String time = '';
     final startStr = _formatEpgTime(match['start']?.toString());
-    final endStr   = _formatEpgTime(match['end']?.toString());
-    if (startStr.isNotEmpty && endStr.isNotEmpty) {
-      time = '$startStr – $endStr';
+    final stopStr  = _formatEpgTime(match['stop']?.toString());
+    if (startStr.isNotEmpty && stopStr.isNotEmpty) {
+      time = '$startStr – $stopStr';
     }
 
-    return (title: title, time: time);
+    return (title: title.isNotEmpty ? title : 'No programme info', time: time);
   }
 }

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'epg_service.dart';
 import 'xtream_cache_service.dart';
 
 /// Singleton service that mirrors the logic in `clients/windows/auth/xtreme_codes.py`.
@@ -197,6 +197,9 @@ class XtreamService {
       MapEntry('Series', () async {
         await getSeries(null);
       }),
+      MapEntry('EPG Guide', () async {
+        await EpgService().downloadAndCacheEpg(baseUrl!, username!, password!);
+      }),
     ];
 
     for (int i = 0; i < steps.length; i++) {
@@ -208,52 +211,7 @@ class XtreamService {
       }
     }
 
-    // Step 7: Prefetch EPG for all live channels in batches.
-    int finalCompleted = steps.length;
-    int finalTotal = steps.length;
-    try {
-      final cached = await _cache.get('live_streams_all');
-      final channels = cached is List ? cached : <dynamic>[];
-      final channelIds = channels
-          .whereType<Map>()
-          .map((ch) => ch['stream_id']?.toString())
-          .whereType<String>()
-          .toList();
-
-      if (channelIds.isNotEmpty) {
-        const batchSize = 8;
-        final baseSteps = steps.length;
-        finalTotal = baseSteps + channelIds.length;
-
-        for (int i = 0; i < channelIds.length; i += batchSize) {
-          final end = min(i + batchSize, channelIds.length);
-          final batch = channelIds.sublist(i, end);
-          await Future.wait(
-            batch.map((id) async {
-              try {
-                await getShortEpg(id);
-              } catch (e) {
-                debugPrint('[XtreamAPI] EPG fetch error for stream $id: $e');
-              }
-            }),
-          );
-          finalCompleted = baseSteps + end;
-          onProgress?.call(
-            finalCompleted,
-            finalTotal,
-            'EPG ($end/${channelIds.length})',
-          );
-        }
-
-        await _cache.recordEpgPrefetchComplete();
-        debugPrint(
-            '[XtreamAPI] EPG prefetch complete for ${channelIds.length} channels');
-      }
-    } catch (e) {
-      debugPrint('[XtreamAPI] prefetchAll EPG step error: $e');
-    }
-
-    onProgress?.call(finalTotal, finalTotal, 'Complete');
+    onProgress?.call(steps.length, steps.length, 'Complete');
   }
 
   // ─── Data retrieval stubs (to be implemented) ─────────────────────────────

@@ -8,6 +8,7 @@ import 'screens/home_screen.dart';
 import 'screens/license_screen.dart';
 import 'screens/loading_screen.dart';
 import 'screens/login_screen.dart';
+import 'services/epg_service.dart';
 import 'services/license_service.dart';
 import 'services/xtream_cache_service.dart';
 import 'services/xtream_service.dart';
@@ -36,7 +37,13 @@ void main() async {
       final cacheFresh = await XtreamCacheService().isCacheFresh(
         minRemainingHours: 20,
       );
-      startScreen = cacheFresh ? const HomeScreen() : const LoadingScreen();
+      if (cacheFresh) {
+        // Load EPG data from cache so it's available without re-downloading.
+        await EpgService().loadFromCache();
+        startScreen = const HomeScreen();
+      } else {
+        startScreen = const LoadingScreen();
+      }
     } else {
       startScreen = const LoginScreen();
     }
