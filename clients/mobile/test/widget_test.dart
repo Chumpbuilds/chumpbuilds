@@ -10,8 +10,17 @@ void main() {
     // before any async init starts, so branding is visible right away.
     await tester.pumpWidget(const X87App());
 
-    expect(find.text('X87 Player'), findsOneWidget);
+    expect(find.text('Welcome to X87 Player'), findsOneWidget);
     expect(find.byIcon(Icons.tv), findsOneWidget);
+  });
+
+  testWidgets('X87App bootstrap screen shows portal app name',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const X87App(appName: 'My IPTV App'),
+    );
+
+    expect(find.text('Welcome to My IPTV App'), findsOneWidget);
   });
 
   testWidgets('X87App applies dark theme with correct background colour',
@@ -32,4 +41,3 @@ void main() {
     expect(find.text('Custom Home'), findsOneWidget);
   });
 }
-
