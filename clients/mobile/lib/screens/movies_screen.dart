@@ -282,6 +282,10 @@ class _MoviesScreenState extends State<MoviesScreen> {
     if (streamId.isEmpty) return;
     final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
     if (url.isEmpty) return;
+
+    // Stop the embedded player before launching VLC to avoid dual playback.
+    _stopEmbeddedPlayback();
+
     final launched = await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -676,6 +680,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
       title: _vlcTitle,
       contentType: 'movie',
       autoPlay: _vlcAutoPlay,
+      onStopRequested: _stopEmbeddedPlayback,
     );
 
     if (_selectedMovie == null) {

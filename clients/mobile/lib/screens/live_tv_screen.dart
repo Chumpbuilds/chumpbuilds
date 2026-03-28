@@ -306,6 +306,9 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
     final url = _xtream.getStreamUrl(streamId, 'live');
     if (url.isEmpty) return;
 
+    // Stop the embedded player before launching VLC to avoid dual playback.
+    _stopEmbeddedPlayback();
+
     final launched = await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
       _showUrlDialog(url);
@@ -688,6 +691,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       title: _vlcTitle,
       contentType: 'live',
       autoPlay: _vlcAutoPlay,
+      onStopRequested: _stopEmbeddedPlayback,
     );
 
     if (_selectedChannel == null) {

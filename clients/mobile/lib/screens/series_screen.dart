@@ -323,8 +323,13 @@ class _SeriesScreenState extends State<SeriesScreen> {
   /// Opens the currently loaded stream URL in an external player (VLC).
   Future<void> _openCurrentStreamExternal() async {
     if (_vlcStreamUrl.isEmpty) return;
+    final url = _vlcStreamUrl;
+
+    // Stop the embedded player before launching VLC to avoid dual playback.
+    _stopEmbeddedPlayback();
+
     final launched =
-        await ExternalPlayerService.instance.openInVlc(_vlcStreamUrl);
+        await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -339,6 +344,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
     final ext = episode['container_extension']?.toString() ?? 'mp4';
     final url = _xtream.getStreamUrl(episodeId, 'series', extension: ext);
     if (url.isEmpty) return;
+
+    // Stop the embedded player before launching VLC to avoid dual playback.
+    _stopEmbeddedPlayback();
+
     final launched = await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -785,6 +794,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
       title: _vlcTitle,
       contentType: 'series',
       autoPlay: _vlcAutoPlay,
+      onStopRequested: _stopEmbeddedPlayback,
     );
 
     if (_selectedSeries == null) {
