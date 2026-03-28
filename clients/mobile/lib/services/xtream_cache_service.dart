@@ -51,6 +51,7 @@ class XtreamCacheService {
 
   static const int _ttlHours = 24;
   static const String _prefKey = 'xtream_api_cache';
+  static const String _epgPrefetchTsKey = 'epg_prefetch_timestamp';
 
   final Map<String, _CacheEntry> _cache = {};
   bool _loaded = false;
@@ -103,6 +104,7 @@ class XtreamCacheService {
   }
 
   /// Clears a single [key], or the entire cache when [key] is omitted.
+  /// When clearing all entries, also removes the EPG prefetch timestamp.
   Future<void> clear([String? key]) async {
     if (key != null) {
       _cache.remove(key);
@@ -110,15 +112,23 @@ class XtreamCacheService {
     } else {
       _cache.clear();
       debugPrint('[XtreamCache] Cleared all entries');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_epgPrefetchTsKey);
+      } catch (e) {
+        debugPrint('[XtreamCache] Could not remove EPG prefetch timestamp: $e');
+      }
     }
     await _saveToDisk();
   }
 
   /// Returns true if the core content cache (categories + streams for all 3
-  /// types) has at least [minRemainingHours] hours of life remaining.
+  /// types) AND the EPG prefetch have at least [minRemainingHours] hours of
+  /// life remaining.
   ///
   /// Checks keys: live_categories, live_streams_all, vod_categories,
-  /// vod_streams_all, series_categories, series_all
+  /// vod_streams_all, series_categories, series_all, and the EPG prefetch
+  /// timestamp stored in SharedPreferences.
   Future<bool> isCacheFresh({int minRemainingHours = 20}) async {
     await _ensureLoaded();
     const coreKeys = [
@@ -136,7 +146,35 @@ class XtreamCacheService {
       final remaining = entry.expiresAt.difference(now);
       if (remaining.inHours < minRemainingHours) return false;
     }
+
+    // Also verify that the EPG prefetch has run recently enough.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final tsStr = prefs.getString(_epgPrefetchTsKey);
+      if (tsStr == null) return false;
+      final ts = DateTime.tryParse(tsStr);
+      if (ts == null) return false;
+      final remaining = ts.add(const Duration(hours: _ttlHours)).difference(now);
+      if (remaining.inHours < minRemainingHours) return false;
+    } catch (e) {
+      debugPrint('[XtreamCache] Could not read EPG prefetch timestamp: $e');
+      return false;
+    }
+
     return true;
+  }
+
+  /// Records that a full EPG prefetch just completed, storing the current
+  /// timestamp in SharedPreferences so [isCacheFresh] can verify it.
+  Future<void> recordEpgPrefetchComplete() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+          _epgPrefetchTsKey, DateTime.now().toIso8601String());
+      debugPrint('[XtreamCache] EPG prefetch timestamp recorded');
+    } catch (e) {
+      debugPrint('[XtreamCache] Could not record EPG prefetch timestamp: $e');
+    }
   }
 
   /// Returns the number of currently cached (non-expired) entries.

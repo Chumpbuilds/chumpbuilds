@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -206,7 +207,53 @@ class XtreamService {
         debugPrint('[XtreamAPI] prefetchAll step "${steps[i].key}" error: $e');
       }
     }
-    onProgress?.call(steps.length, steps.length, 'Complete');
+
+    // Step 7: Prefetch EPG for all live channels in batches.
+    int finalCompleted = steps.length;
+    int finalTotal = steps.length;
+    try {
+      final cached = await _cache.get('live_streams_all');
+      final channels = cached is List ? cached : <dynamic>[];
+      final channelIds = channels
+          .whereType<Map>()
+          .map((ch) => ch['stream_id']?.toString())
+          .whereType<String>()
+          .toList();
+
+      if (channelIds.isNotEmpty) {
+        const batchSize = 8;
+        final baseSteps = steps.length;
+        finalTotal = baseSteps + channelIds.length;
+
+        for (int i = 0; i < channelIds.length; i += batchSize) {
+          final end = min(i + batchSize, channelIds.length);
+          final batch = channelIds.sublist(i, end);
+          await Future.wait(
+            batch.map((id) async {
+              try {
+                await getShortEpg(id);
+              } catch (e) {
+                debugPrint('[XtreamAPI] EPG fetch error for stream $id: $e');
+              }
+            }),
+          );
+          finalCompleted = baseSteps + end;
+          onProgress?.call(
+            finalCompleted,
+            finalTotal,
+            'EPG ($end/${channelIds.length})',
+          );
+        }
+
+        await _cache.recordEpgPrefetchComplete();
+        debugPrint(
+            '[XtreamAPI] EPG prefetch complete for ${channelIds.length} channels');
+      }
+    } catch (e) {
+      debugPrint('[XtreamAPI] prefetchAll EPG step error: $e');
+    }
+
+    onProgress?.call(finalTotal, finalTotal, 'Complete');
   }
 
   // ─── Data retrieval stubs (to be implemented) ─────────────────────────────
