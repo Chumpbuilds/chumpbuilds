@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'xtream_cache_service.dart';
+
 /// Singleton service that mirrors the logic in `clients/windows/auth/xtreme_codes.py`.
 ///
 /// Handles Xtream Codes API authentication and data retrieval.
@@ -29,6 +31,8 @@ class XtreamService {
   String? profileName;
   Map<String, dynamic>? userInfo;
   Map<String, dynamic>? serverInfo;
+
+  final _cache = XtreamCacheService();
 
   // ─── Public getters ───────────────────────────────────────────────────────
 
@@ -156,50 +160,110 @@ class XtreamService {
     profileName = null;
     userInfo = null;
     serverInfo = null;
+    _cache.clear();
     debugPrint('[XtreamAPI] Logged out');
   }
 
+  /// Clears all cached API data — useful for pull-to-refresh or manual refresh.
+  Future<void> clearCache() => _cache.clear();
+
   // ─── Data retrieval stubs (to be implemented) ─────────────────────────────
 
-  Future<List<dynamic>> getLiveCategories() async =>
-      _makeApiRequest('get_live_categories');
+  Future<List<dynamic>> getLiveCategories() async {
+    const cacheKey = 'live_categories';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return cached as List<dynamic>;
+    final result = await _makeApiRequest('get_live_categories');
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
-  Future<List<dynamic>> getLiveStreams(String? categoryId) async =>
-      _makeApiRequest('get_live_streams',
-          extraParams: categoryId != null ? {'category_id': categoryId} : null);
+  Future<List<dynamic>> getLiveStreams(String? categoryId) async {
+    final cacheKey = 'live_streams_${categoryId ?? 'all'}';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return cached as List<dynamic>;
+    final result = await _makeApiRequest('get_live_streams',
+        extraParams: categoryId != null ? {'category_id': categoryId} : null);
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
-  Future<List<dynamic>> getVodCategories() async =>
-      _makeApiRequest('get_vod_categories');
+  Future<List<dynamic>> getVodCategories() async {
+    const cacheKey = 'vod_categories';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return cached as List<dynamic>;
+    final result = await _makeApiRequest('get_vod_categories');
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
-  Future<List<dynamic>> getVodStreams(String? categoryId) async =>
-      _makeApiRequest('get_vod_streams',
-          extraParams: categoryId != null ? {'category_id': categoryId} : null);
+  Future<List<dynamic>> getVodStreams(String? categoryId) async {
+    final cacheKey = 'vod_streams_${categoryId ?? 'all'}';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return cached as List<dynamic>;
+    final result = await _makeApiRequest('get_vod_streams',
+        extraParams: categoryId != null ? {'category_id': categoryId} : null);
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
-  Future<List<dynamic>> getSeriesCategories() async =>
-      _makeApiRequest('get_series_categories');
+  Future<List<dynamic>> getSeriesCategories() async {
+    const cacheKey = 'series_categories';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return cached as List<dynamic>;
+    final result = await _makeApiRequest('get_series_categories');
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
-  Future<List<dynamic>> getSeries(String? categoryId) async =>
-      _makeApiRequest('get_series',
-          extraParams: categoryId != null ? {'category_id': categoryId} : null);
+  Future<List<dynamic>> getSeries(String? categoryId) async {
+    final cacheKey = 'series_${categoryId ?? 'all'}';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return cached as List<dynamic>;
+    final result = await _makeApiRequest('get_series',
+        extraParams: categoryId != null ? {'category_id': categoryId} : null);
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
   /// Fetch detailed info for a VOD item (plot, cast, director, etc.).
   ///
   /// Returns a Map with `info` and `movie_data` keys, or an empty map on error.
-  Future<Map<String, dynamic>> getVodInfo(String vodId) async =>
-      _makeApiRequestMap('get_vod_info', extraParams: {'vod_id': vodId});
+  Future<Map<String, dynamic>> getVodInfo(String vodId) async {
+    final cacheKey = 'vod_info_$vodId';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return Map<String, dynamic>.from(cached as Map);
+    final result =
+        await _makeApiRequestMap('get_vod_info', extraParams: {'vod_id': vodId});
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
   /// Fetch detailed info for a series (info, seasons, episodes).
   ///
   /// Returns a Map with `info`, `seasons`, and `episodes` keys, or empty map.
-  Future<Map<String, dynamic>> getSeriesInfo(String seriesId) async =>
-      _makeApiRequestMap('get_series_info',
-          extraParams: {'series_id': seriesId});
+  Future<Map<String, dynamic>> getSeriesInfo(String seriesId) async {
+    final cacheKey = 'series_info_$seriesId';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return Map<String, dynamic>.from(cached as Map);
+    final result = await _makeApiRequestMap('get_series_info',
+        extraParams: {'series_id': seriesId});
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
   /// Fetch short EPG data for a live stream.
   ///
   /// Returns a Map (usually with `epg_listings` key), or empty map on error.
-  Future<Map<String, dynamic>> getShortEpg(String streamId) async =>
-      _makeApiRequestMap('get_short_epg', extraParams: {'stream_id': streamId});
+  Future<Map<String, dynamic>> getShortEpg(String streamId) async {
+    final cacheKey = 'epg_$streamId';
+    final cached = await _cache.get(cacheKey);
+    if (cached != null) return Map<String, dynamic>.from(cached as Map);
+    final result = await _makeApiRequestMap('get_short_epg',
+        extraParams: {'stream_id': streamId});
+    if (result.isNotEmpty) await _cache.set(cacheKey, result);
+    return result;
+  }
 
   /// Build a playback URL for the given stream.
   ///
