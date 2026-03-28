@@ -26,12 +26,18 @@ class VlcPlayerWidget extends StatefulWidget {
     required this.title,
     required this.contentType,
     this.autoPlay = false,
+    this.onStopRequested,
   });
 
   final String streamUrl;
   final String title;
   final String contentType;
   final bool autoPlay;
+
+  /// Called when the widget needs to stop the embedded player, e.g. before
+  /// launching an external player. The parent screen should clear the stream
+  /// URL so that the embedded ExoPlayer is fully torn down.
+  final VoidCallback? onStopRequested;
 
   @override
   State<VlcPlayerWidget> createState() => _VlcPlayerWidgetState();
@@ -123,6 +129,10 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   Future<void> _openExternal() async {
     final url = widget.streamUrl;
     if (url.isEmpty) return;
+
+    // Stop the embedded ExoPlayer before launching the external player to
+    // avoid two streams playing simultaneously.
+    widget.onStopRequested?.call();
 
     final launched = await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
