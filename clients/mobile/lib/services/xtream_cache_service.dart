@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'epg_service.dart';
+
 /// A single cache entry holding the cached data, its creation timestamp,
 /// and the expiry time.
 class _CacheEntry {
@@ -119,7 +121,9 @@ class XtreamCacheService {
   /// of life remaining.
   ///
   /// Checks keys: live_categories, live_streams_all, vod_categories,
-  /// vod_streams_all, series_categories, series_all, and xmltv_epg.
+  /// vod_streams_all, series_categories, series_all.  EPG freshness is tracked
+  /// separately by [EpgService] via the `epg_last_downloaded` SharedPreferences
+  /// key (to avoid storing large EPG blobs through the platform channel).
   Future<bool> isCacheFresh({int minRemainingHours = 20}) async {
     await _ensureLoaded();
     const coreKeys = [
@@ -129,7 +133,6 @@ class XtreamCacheService {
       'vod_streams_all',
       'series_categories',
       'series_all',
-      'xmltv_epg',
     ];
     final now = DateTime.now();
     for (final key in coreKeys) {
@@ -139,16 +142,19 @@ class XtreamCacheService {
       if (remaining.inHours < minRemainingHours) return false;
     }
 
-    return true;
-  }
+    // Check EPG freshness via the lightweight timestamp written by EpgService.
+    // This avoids storing the ~96 MB parsed EPG blob in SharedPreferences.
+    const epgTtlHours = 24;
+    final prefs = await SharedPreferences.getInstance();
+    final epgTsStr = prefs.getString(EpgService.epgTimestampKey);
+    if (epgTsStr == null) return false;
+    final epgTs = DateTime.tryParse(epgTsStr);
+    if (epgTs == null) return false;
+    final epgExpiresAt = epgTs.add(const Duration(hours: epgTtlHours));
+    final epgRemaining = epgExpiresAt.difference(now);
+    if (epgRemaining.inHours < minRemainingHours) return false;
 
-  /// Records that a full EPG prefetch just completed.
-  ///
-  /// Kept for backward compatibility; the primary freshness signal is now
-  /// the `xmltv_epg` cache entry written by [EpgService].
-  @Deprecated('Use EpgService.downloadAndCacheEpg() which writes xmltv_epg directly')
-  Future<void> recordEpgPrefetchComplete() async {
-    // No-op: freshness is now determined by the xmltv_epg cache key.
+    return true;
   }
 
   /// Returns the number of currently cached (non-expired) entries.

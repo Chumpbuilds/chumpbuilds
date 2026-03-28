@@ -1,10 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:xml/xml.dart';
-
-import 'xtream_cache_service.dart';
 
 /// Parses an XMLTV timestamp string ("YYYYMMDDHHmmss +HHMM") into a UTC
 /// [DateTime]. Returns `null` if the string cannot be parsed.
@@ -82,6 +83,10 @@ Map<String, List<Map<String, dynamic>>> _parseXmltvIsolate(List<int> bytes) {
 /// Singleton service that downloads the full XMLTV EPG file from the Xtream
 /// Codes server, parses it, and provides fast in-memory lookups.
 ///
+/// The raw XMLTV XML is saved to a file on disk so that large EPG data never
+/// passes through SharedPreferences / the Flutter platform channel (which has
+/// a hard memory limit that causes OutOfMemoryError with ~96 MB payloads).
+///
 /// Usage:
 /// ```dart
 /// // During startup prefetch:
@@ -96,7 +101,12 @@ class EpgService {
   static final EpgService _instance = EpgService._internal();
   factory EpgService() => _instance;
 
-  static const String _cacheKey = 'xmltv_epg';
+  /// SharedPreferences key for the ISO-8601 download timestamp.
+  /// Also read by [XtreamCacheService.isCacheFresh] to verify EPG freshness.
+  static const String epgTimestampKey = 'epg_last_downloaded';
+
+  static const String _epgFileName = 'xmltv_epg.xml';
+  static const int _ttlHours = 24;
   static const Map<String, String> _headers = {
     'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
@@ -106,8 +116,6 @@ class EpgService {
     'Connection':      'keep-alive',
   };
 
-  final _cache = XtreamCacheService();
-
   /// In-memory EPG data keyed by `epg_channel_id`.
   ///
   /// Values are lists of programme maps with `title`, `description`, `start`,
@@ -115,28 +123,48 @@ class EpgService {
   /// [getEpgForChannel].
   Map<String, List<Map<String, dynamic>>>? _epgData;
 
+  // ─── Private helpers ───────────────────────────────────────────────────────
+
+  /// Returns the on-disk XMLTV cache file using the app documents directory.
+  Future<File> _getEpgFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_epgFileName');
+  }
+
   // ─── Public API ────────────────────────────────────────────────────────────
 
+  /// Returns true if the EPG file was downloaded recently enough that
+  /// [minRemainingHours] hours are still remaining on its 24-hour TTL.
+  Future<bool> isEpgFresh({int minRemainingHours = 20}) async {
+    final prefs = await SharedPreferences.getInstance();
+    final tsStr = prefs.getString(epgTimestampKey);
+    if (tsStr == null) return false;
+    final ts = DateTime.tryParse(tsStr);
+    if (ts == null) return false;
+    final expiresAt = ts.add(const Duration(hours: _ttlHours));
+    final remaining = expiresAt.difference(DateTime.now());
+    return remaining.inHours >= minRemainingHours;
+  }
+
   /// Downloads the full XMLTV EPG file from
-  /// `{baseUrl}/xmltv.php?username=…&password=…`, parses it in a background
-  /// isolate, and caches the result in [XtreamCacheService] under the key
-  /// `xmltv_epg`.
+  /// `{baseUrl}/xmltv.php?username=…&password=…`, saves the raw bytes to disk,
+  /// parses the result in a background isolate, and keeps it in memory.
   ///
-  /// If a fresh cached copy already exists it is loaded without re-downloading.
-  /// Errors are swallowed so a failure never blocks navigation.
+  /// If a fresh on-disk copy already exists it is loaded without
+  /// re-downloading. Errors are swallowed so a failure never blocks navigation.
   Future<void> downloadAndCacheEpg(
     String baseUrl,
     String username,
     String password,
   ) async {
-    // Try to load from existing cache first.
-    final cached = await _cache.get(_cacheKey);
-    if (cached != null) {
-      _epgData = _deserialize(cached);
-      if (_epgData != null) {
-        debugPrint('[EpgService] Loaded EPG from cache (${_epgData!.length} channels)');
-        return;
-      }
+    // If data is already in memory and still fresh, nothing to do.
+    final fresh = await isEpgFresh();
+    if (_epgData != null && fresh) return;
+
+    // If the on-disk file is still fresh, parse it instead of re-downloading.
+    if (fresh) {
+      await loadFromCache();
+      if (_epgData != null) return;
     }
 
     // Download the XMLTV file.
@@ -152,35 +180,49 @@ class EpgService {
         return;
       }
 
-      final sizeMb = (response.bodyBytes.length / 1024 / 1024).toStringAsFixed(1);
+      final bytes = response.bodyBytes;
+      final sizeMb = (bytes.length / 1024 / 1024).toStringAsFixed(1);
       debugPrint('[EpgService] Parsing XMLTV ($sizeMb MB) in isolate…');
 
       // Parse in a background isolate to avoid blocking the UI thread.
-      // Pass raw bytes so UTF-8 decoding happens inside the isolate.
-      final epgData = await compute(_parseXmltvIsolate, response.bodyBytes);
+      final epgData = await compute(_parseXmltvIsolate, bytes);
 
       _epgData = epgData;
       debugPrint('[EpgService] Parsed EPG for ${epgData.length} channels');
 
-      // Best-effort persist to cache (may fail silently for very large files).
-      await _cache.set(_cacheKey, epgData);
+      // Save raw bytes to disk — avoids SharedPreferences size limits entirely.
+      final file = await _getEpgFile();
+      await file.writeAsBytes(bytes, flush: true);
+
+      // Store only the download timestamp in SharedPreferences (a few bytes).
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(epgTimestampKey, DateTime.now().toIso8601String());
+      debugPrint('[EpgService] EPG saved to disk and timestamp recorded');
     } catch (e) {
       debugPrint('[EpgService] Error downloading/parsing XMLTV: $e');
     }
   }
 
-  /// Loads EPG data from [XtreamCacheService] into memory without
+  /// Loads EPG data from the on-disk XMLTV file into memory without
   /// re-downloading. Call this at app startup when the cache is already fresh
   /// (i.e., the loading screen is skipped).
   ///
   /// Returns immediately if data is already in memory.
   Future<void> loadFromCache() async {
     if (_epgData != null) return;
-    final cached = await _cache.get(_cacheKey);
-    if (cached == null) return;
-    _epgData = _deserialize(cached);
-    if (_epgData != null) {
-      debugPrint('[EpgService] Loaded EPG from cache (${_epgData!.length} channels)');
+    try {
+      final file = await _getEpgFile();
+      if (!await file.exists()) return;
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return;
+      debugPrint('[EpgService] Re-parsing XMLTV from disk in isolate…');
+      final epgData = await compute(_parseXmltvIsolate, bytes);
+      if (epgData.isNotEmpty) {
+        _epgData = epgData;
+        debugPrint('[EpgService] Loaded EPG from disk (${_epgData!.length} channels)');
+      }
+    } catch (e) {
+      debugPrint('[EpgService] Error loading from disk: $e');
     }
   }
 
@@ -219,26 +261,5 @@ class EpgService {
       if (p['is_current'] == true) return p;
     }
     return null;
-  }
-
-  // ─── Private helpers ───────────────────────────────────────────────────────
-
-  /// Deserializes cache data (returned as generic [Map]/[List] by the cache
-  /// service) into the typed EPG map. Returns `null` on any error.
-  Map<String, List<Map<String, dynamic>>>? _deserialize(dynamic cached) {
-    try {
-      final map = cached as Map;
-      return map.map(
-        (k, v) => MapEntry(
-          k.toString(),
-          (v as List)
-              .map((e) => Map<String, dynamic>.from(e as Map))
-              .toList(),
-        ),
-      );
-    } catch (e) {
-      debugPrint('[EpgService] Deserialize error: $e');
-      return null;
-    }
   }
 }
