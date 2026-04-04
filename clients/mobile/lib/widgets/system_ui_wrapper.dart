@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// A wrapper widget that keeps the system status and navigation bars hidden
-/// (using [SystemUiMode.immersiveSticky]) and temporarily shows them when the
+/// (using [SystemUiMode.immersive]) and temporarily shows them when the
 /// user touches the top ~40 logical pixels of the screen.
 ///
 /// Usage: wrap every screen's root widget with [SystemUiWrapper].
@@ -28,6 +28,13 @@ class _SystemUiWrapperState extends State<SystemUiWrapper>
   /// Taps with a `dy` at or below this threshold (in logical pixels) are
   /// treated as top-edge taps and temporarily reveal the system UI.
   static const double _topEdgeTapThreshold = 40.0;
+
+  static const SystemUiOverlayStyle _overlayStyle = SystemUiOverlayStyle(
+    statusBarColor: Colors.black,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.black,
+    systemNavigationBarIconBrightness: Brightness.light,
+  );
 
   Timer? _hideTimer;
 
@@ -54,11 +61,8 @@ class _SystemUiWrapperState extends State<SystemUiWrapper>
   }
 
   void _hideSystemUI() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      statusBarColor: Colors.black,
-      systemNavigationBarColor: Colors.black,
-    ));
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    SystemChrome.setSystemUIOverlayStyle(_overlayStyle);
   }
 
   void _onTapDown(TapDownDetails details) {
@@ -67,6 +71,9 @@ class _SystemUiWrapperState extends State<SystemUiWrapper>
 
     // Cancel any running hide timer.
     _hideTimer?.cancel();
+
+    // Apply overlay style before showing so the bars appear with solid black.
+    SystemChrome.setSystemUIOverlayStyle(_overlayStyle);
 
     // Show all system overlays temporarily.
     SystemChrome.setEnabledSystemUIMode(
