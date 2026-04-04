@@ -246,11 +246,38 @@ class _MoviesScreenState extends State<MoviesScreen> {
       ),
       body: _categorySelected
           ? _buildMovieGrid()
-          : _buildCategoriesPanel(),
+          : Row(
+              children: [
+                Expanded(flex: 40, child: _buildCategoriesPanel()),
+                Expanded(flex: 60, child: _buildPlaceholderPanel()),
+              ],
+            ),
     ));
   }
 
   // ─── Panel 1 – Categories ─────────────────────────────────────────────────
+
+  Widget _buildPlaceholderPanel() {
+    return const ColoredBox(
+      color: _bgColor,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.movie_outlined, size: 64, color: _secondaryTextColor),
+            SizedBox(height: 16),
+            Text(
+              'Please select a category to proceed',
+              style: TextStyle(
+                color: _secondaryTextColor,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildCategoriesPanel() {
     return Container(
