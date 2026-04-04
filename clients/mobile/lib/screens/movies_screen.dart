@@ -8,7 +8,6 @@ import '../services/favorites_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
-import '../widgets/vlc_player_widget.dart';
 import '../widgets/system_ui_wrapper.dart';
 
 /// Movies / VOD screen — categories → movie list → movie detail + play.
@@ -55,12 +54,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
   /// showing the categories (35%) + portal logo (65%) layout.  After a
   /// category tap it becomes true, switching to movies list (35%) + detail/player (65%).
   bool _categorySelected = false;
-
-  // ─── VLC embedded player state ────────────────────────────────────────────
-  String _vlcStreamUrl = '';
-  String _vlcTitle = '';
-  int _vlcPlayerKey = 0;
-  bool _vlcAutoPlay = false;
 
   final _headerSearchCtrl = TextEditingController();
 
@@ -150,23 +143,13 @@ class _MoviesScreenState extends State<MoviesScreen> {
   }
 
   Future<void> _selectMovie(Map<String, dynamic> movie) async {
-    final tappedId = movie['stream_id']?.toString() ?? '';
-    final currentId = _selectedMovie?['stream_id']?.toString() ?? '';
-
-    // Second tap on the already-playing movie → go fullscreen.
-    if (tappedId.isNotEmpty && tappedId == currentId && _vlcStreamUrl.isNotEmpty) {
-      await _goFullscreen();
-      return;
-    }
-
     setState(() {
       _selectedMovie = movie;
       _vodInfo = null;
       _loadingDetail = true;
     });
 
-    // Auto-start playback immediately on first select — mirrors live TV behaviour.
-    _playMovie(movie);
+    // No auto-play — user will tap Play button
 
     final vodId = movie['stream_id']?.toString() ?? '';
     if (vodId.isNotEmpty) {
@@ -249,37 +232,11 @@ class _MoviesScreenState extends State<MoviesScreen> {
     final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
     if (url.isEmpty) return;
     final name = movie['name']?.toString() ?? '';
-    setState(() {
-      _vlcStreamUrl = url;
-      _vlcTitle = name;
-      _vlcAutoPlay = true;
-      _vlcPlayerKey++;
-    });
-  }
-
-  /// Stops the embedded player and resets it to the idle (placeholder) state.
-  ///
-  /// Incrementing [_vlcPlayerKey] disposes the active [VlcPlayerWidget], whose
-  /// [dispose] stops whichever service (VLC or ExoPlayer) is currently active.
-  void _stopEmbeddedPlayback() {
-    setState(() {
-      _vlcStreamUrl = '';
-      _vlcTitle = '';
-      _vlcAutoPlay = false;
-      _vlcPlayerKey++;
-    });
-  }
-
-  Future<void> _goFullscreen() async {
-    if (_vlcStreamUrl.isEmpty) return;
-    final url = _vlcStreamUrl;
-    final title = _vlcTitle;
-    _stopEmbeddedPlayback();
-    await Navigator.of(context).push(
+    Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AndroidHlsFullscreenScreen(
           streamUrl: url,
-          title: title,
+          title: name,
           contentType: 'movie',
         ),
       ),
@@ -291,10 +248,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
     if (streamId.isEmpty) return;
     final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
     if (url.isEmpty) return;
-
-    // Stop the embedded player before launching VLC to avoid dual playback.
-    _stopEmbeddedPlayback();
-
     final launched = await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -565,10 +518,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
                       _selectedCategoryName = null;
                       _selectedMovie = null;
                       _vodInfo = null;
-                      _vlcStreamUrl = '';
-                      _vlcTitle = '';
-                      _vlcAutoPlay = false;
-                      _vlcPlayerKey++;
                     });
                   },
                 ),
@@ -683,22 +632,12 @@ class _MoviesScreenState extends State<MoviesScreen> {
   // ─── Panel 2 (after selection) – Movie Detail ────────────────────────────
 
   Widget _buildDetailPanel() {
-    final playerWidget = VlcPlayerWidget(
-      key: ValueKey(_vlcPlayerKey),
-      streamUrl: _vlcStreamUrl,
-      title: _vlcTitle,
-      contentType: 'movie',
-      autoPlay: _vlcAutoPlay,
-      onStopRequested: _stopEmbeddedPlayback,
-      onFullscreenRequested: _goFullscreen,
-    );
-
     if (_selectedMovie == null) {
       return ColoredBox(
         color: _bgColor,
         child: Column(
           children: [
-            // ── Row 1 (60%): 30% artwork placeholder | 70% player (idle) ──
+            // ── Row 1 (60%): 30% artwork placeholder | 70% play area ──
             Expanded(
               flex: 60,
               child: Row(
@@ -713,7 +652,19 @@ class _MoviesScreenState extends State<MoviesScreen> {
                       ),
                     ),
                   ),
-                  Expanded(flex: 70, child: playerWidget),
+                  Expanded(
+                    flex: 70,
+                    child: Container(
+                      color: Colors.black,
+                      child: const Center(
+                        child: Text(
+                          'Select a movie to play',
+                          style: TextStyle(color: Colors.white54, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -758,6 +709,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
         movie['rating']?.toString() ?? '');
     final movieId = movie['stream_id']?.toString() ?? '';
     final isFav = _favMovieIds.contains(movieId);
+    final merged = {...movie, ...movieData};
 
     return ColoredBox(
       color: _bgColor,
@@ -766,7 +718,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
               child: CircularProgressIndicator(color: _primaryColor))
           : Column(
               children: [
-                // ── Row 1 (60%): 30% poster | 70% player ──────────────────
+                // ── Row 1 (60%): 30% poster | 70% play buttons ────────────
                 Expanded(
                   flex: 60,
                   child: Row(
@@ -793,8 +745,67 @@ class _MoviesScreenState extends State<MoviesScreen> {
                                       style: TextStyle(fontSize: 32))),
                         ),
                       ),
-                      // 70% – player
-                      Expanded(flex: 70, child: playerWidget),
+                      // 70% – play buttons area
+                      Expanded(
+                        flex: 70,
+                        child: Container(
+                          color: Colors.black,
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                SizedBox(
+                                  width: 220,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _playMovie(merged),
+                                    icon: const Icon(Icons.play_arrow),
+                                    label: const Text('Play'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _accentColor,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: 220,
+                                  child: OutlinedButton.icon(
+                                    onPressed: () =>
+                                        _openMovieExternal(merged),
+                                    icon: const Icon(Icons.open_in_new),
+                                    label: const Text('Play in VLC'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.white,
+                                      side: const BorderSide(
+                                          color: Color(0xFF3D3D3D)),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 12),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -802,91 +813,80 @@ class _MoviesScreenState extends State<MoviesScreen> {
                 // ── Row 2 (40%): metadata/details full width ───────────────
                 Expanded(
                   flex: 40,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Compact player controls (Play / Stop / VLC)
-                      _buildPlayerControls(movie, movieData),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Title
+                        Text(
+                          name,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
 
-                      // Scrollable movie info
-                      Expanded(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Title
-                              Text(
-                                name,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-
-                              // Quick-info line
-                              Center(
-                                child: Text(
-                                  [
-                                    if (year != null) year,
-                                    if (rating != null) '⭐ $rating',
-                                    if (genre != null) genre,
-                                  ].join('   '),
-                                  style: const TextStyle(
-                                      color: _secondaryTextColor, fontSize: 11),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-
-                              const Divider(color: Color(0xFF3D3D3D)),
-                              const SizedBox(height: 6),
-
-                              // Plot
-                              if (plot != null) ...[
-                                Text(plot,
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 13,
-                                        height: 1.5)),
-                                const SizedBox(height: 12),
-                              ],
-
-                              // Extra info
-                              if (director != null)
-                                _infoField('Director', director),
-                              if (cast != null) _infoField('Cast', cast),
-                              const SizedBox(height: 8),
-
-                              // Favourite toggle
-                              OutlinedButton.icon(
-                                onPressed: () => _toggleMovieFav(movie),
-                                icon: Icon(
-                                  isFav ? Icons.star : Icons.star_border,
-                                  color: const Color(0xFFFFD700),
-                                ),
-                                label: Text(
-                                  isFav
-                                      ? 'Remove from Favourites'
-                                      : 'Add to Favourites',
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  side: const BorderSide(
-                                      color: Color(0xFF3D3D3D)),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 12),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(4)),
-                                ),
-                              ),
-                            ],
+                        // Quick-info line
+                        Center(
+                          child: Text(
+                            [
+                              if (year != null) year,
+                              if (rating != null) '⭐ $rating',
+                              if (genre != null) genre,
+                            ].join('   '),
+                            style: const TextStyle(
+                                color: _secondaryTextColor, fontSize: 11),
+                            textAlign: TextAlign.center,
                           ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 8),
+
+                        const Divider(color: Color(0xFF3D3D3D)),
+                        const SizedBox(height: 6),
+
+                        // Plot
+                        if (plot != null) ...[
+                          Text(plot,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13,
+                                  height: 1.5)),
+                          const SizedBox(height: 12),
+                        ],
+
+                        // Extra info
+                        if (director != null)
+                          _infoField('Director', director),
+                        if (cast != null) _infoField('Cast', cast),
+                        const SizedBox(height: 8),
+
+                        // Favourite toggle
+                        OutlinedButton.icon(
+                          onPressed: () => _toggleMovieFav(movie),
+                          icon: Icon(
+                            isFav ? Icons.star : Icons.star_border,
+                            color: const Color(0xFFFFD700),
+                          ),
+                          label: Text(
+                            isFav
+                                ? 'Remove from Favourites'
+                                : 'Add to Favourites',
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(
+                                color: Color(0xFF3D3D3D)),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4)),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -895,92 +895,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  /// Compact control row immediately below the player – mirrors the live TV
-  /// screen layout: `[movie name] [Play ▶] [Stop ■] [↗ VLC]`.
-  Widget _buildPlayerControls(
-    Map<String, dynamic> movie,
-    Map<String, dynamic> movieData,
-  ) {
-    final merged = {...movie, ...movieData};
-    final name = movie['name']?.toString() ?? '';
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              onPressed: () => _playMovie(merged),
-              icon: const Icon(Icons.play_arrow, size: 14),
-              label: const Text('Play', style: TextStyle(fontSize: 11)),
-              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF27AE60),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              onPressed: _stopEmbeddedPlayback,
-              icon: const Icon(Icons.stop, size: 14),
-              label: const Text('Stop', style: TextStyle(fontSize: 11)),
-              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              onPressed: _vlcStreamUrl.isNotEmpty ? _goFullscreen : null,
-              icon: const Icon(Icons.fullscreen, size: 14),
-              label: const Text('Fullscreen', style: TextStyle(fontSize: 11)),
-              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8E44AD),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
-            child: OutlinedButton(
-              onPressed: () => _openMovieExternal(merged),
-              style: tvFocusOutlinedButtonStyle(OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Color(0xFF3D3D3D)),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-              child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _infoField(String label, String value) {
     return Padding(
