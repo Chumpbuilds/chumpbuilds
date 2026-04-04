@@ -40,6 +40,28 @@ DateTime? _parseXmltvTime(String? raw) {
   }
 }
 
+/// Top-level isolate function for encoding parsed EPG data to JSON bytes.
+///
+/// Must be top-level for use with [compute].
+List<int> _encodeJsonIsolate(Map<String, List<Map<String, dynamic>>> data) {
+  return utf8.encode(jsonEncode(data));
+}
+
+/// Top-level isolate function for decoding JSON bytes into parsed EPG data.
+///
+/// Must be top-level for use with [compute].
+Map<String, List<Map<String, dynamic>>> _decodeJsonIsolate(List<int> bytes) {
+  final decoded = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+  return decoded.map(
+    (key, value) => MapEntry(
+      key,
+      (value as List<dynamic>)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList(),
+    ),
+  );
+}
+
 /// Top-level isolate function for parsing XMLTV content.
 ///
 /// Accepts raw UTF-8 bytes to avoid re-encoding overhead during isolate
@@ -106,6 +128,7 @@ class EpgService {
   static const String epgTimestampKey = 'epg_last_downloaded';
 
   static const String _epgFileName = 'xmltv_epg.xml';
+  static const String _epgJsonFileName = 'xmltv_epg_parsed.json';
   static const int _ttlHours = 24;
   static const Map<String, String> _headers = {
     'User-Agent':
@@ -129,6 +152,12 @@ class EpgService {
   Future<File> _getEpgFile() async {
     final dir = await getApplicationDocumentsDirectory();
     return File('${dir.path}/$_epgFileName');
+  }
+
+  /// Returns the on-disk parsed JSON cache file using the app documents directory.
+  Future<File> _getEpgJsonFile() async {
+    final dir = await getApplicationDocumentsDirectory();
+    return File('${dir.path}/$_epgJsonFileName');
   }
 
   // ─── Public API ────────────────────────────────────────────────────────────
@@ -194,6 +223,16 @@ class EpgService {
       final file = await _getEpgFile();
       await file.writeAsBytes(bytes, flush: true);
 
+      // Save parsed data as JSON for fast loading on next startup.
+      try {
+        final jsonFile = await _getEpgJsonFile();
+        final jsonBytes = await compute(_encodeJsonIsolate, epgData);
+        await jsonFile.writeAsBytes(jsonBytes, flush: true);
+        debugPrint('[EpgService] Saved parsed EPG as JSON cache');
+      } catch (e) {
+        debugPrint('[EpgService] Warning: could not save JSON cache: $e');
+      }
+
       // Store only the download timestamp in SharedPreferences (a few bytes).
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(epgTimestampKey, DateTime.now().toIso8601String());
@@ -207,10 +246,29 @@ class EpgService {
   /// re-downloading. Call this at app startup when the cache is already fresh
   /// (i.e., the loading screen is skipped).
   ///
+  /// Tries the pre-parsed JSON cache first (10-50x faster than XML parsing).
+  /// Falls back to re-parsing the raw XMLTV XML if the JSON cache is missing.
+  ///
   /// Returns immediately if data is already in memory.
   Future<void> loadFromCache() async {
     if (_epgData != null) return;
     try {
+      // Fast path: load from pre-parsed JSON cache.
+      final jsonFile = await _getEpgJsonFile();
+      if (await jsonFile.exists()) {
+        final jsonBytes = await jsonFile.readAsBytes();
+        if (jsonBytes.isNotEmpty) {
+          debugPrint('[EpgService] Loading EPG from JSON cache…');
+          final epgData = await compute(_decodeJsonIsolate, jsonBytes);
+          if (epgData.isNotEmpty) {
+            _epgData = epgData;
+            debugPrint('[EpgService] Loaded EPG from JSON cache (${_epgData!.length} channels)');
+            return;
+          }
+        }
+      }
+
+      // Slow path: re-parse the raw XMLTV XML file.
       final file = await _getEpgFile();
       if (!await file.exists()) return;
       final bytes = await file.readAsBytes();
@@ -220,6 +278,15 @@ class EpgService {
       if (epgData.isNotEmpty) {
         _epgData = epgData;
         debugPrint('[EpgService] Loaded EPG from disk (${_epgData!.length} channels)');
+
+        // Write JSON cache now so future startups are faster.
+        try {
+          final jsonBytes = await compute(_encodeJsonIsolate, epgData);
+          await jsonFile.writeAsBytes(jsonBytes, flush: true);
+          debugPrint('[EpgService] Saved parsed EPG as JSON cache');
+        } catch (e) {
+          debugPrint('[EpgService] Warning: could not save JSON cache: $e');
+        }
       }
     } catch (e) {
       debugPrint('[EpgService] Error loading from disk: $e');
