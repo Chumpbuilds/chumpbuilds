@@ -54,7 +54,6 @@ class NativePlayerActivity : Activity() {
     private lateinit var controlsOverlay: View
     private lateinit var titleTextView: TextView
     private lateinit var playPauseIcon: android.widget.ImageView
-    private lateinit var resizeModeLabel: TextView
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var controlsVisible = true
@@ -81,7 +80,6 @@ class NativePlayerActivity : Activity() {
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         currentResizeMode = prefs.getInt(PREF_RESIZE_MODE, AspectRatioFrameLayout.RESIZE_MODE_FIT)
         playerView.resizeMode = currentResizeMode
-        resizeModeLabel.text = RESIZE_MODES.firstOrNull { it.first == currentResizeMode }?.second ?: "Fit"
 
         val url = intent.getStringExtra(EXTRA_URL) ?: run {
             Toast.makeText(this, "No stream URL provided", Toast.LENGTH_SHORT).show()
@@ -314,29 +312,26 @@ class NativePlayerActivity : Activity() {
         val btnSize = dpToPx(36)
 
         // Resize mode button
-        resizeModeLabel = TextView(this).apply {
-            text = "Fit"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 12f
-            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+        val resizeModeButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_crop)
+            setColorFilter(android.graphics.Color.WHITE)
             background = makeFocusDrawable()
             layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
-            gravity = android.view.Gravity.CENTER
+            contentDescription = "Resize mode"
             setOnClickListener {
-                cycleResizeMode(this)
+                cycleResizeMode()
                 scheduleHideControls()
             }
             isClickable = true
             isFocusable = true
-            isFocusableInTouchMode = true
         }
-        bottomBar.addView(resizeModeLabel)
+        bottomBar.addView(resizeModeButton)
 
         // Settings (audio/video tracks) button
         val settingsButton = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_preferences)
+            setImageResource(android.R.drawable.ic_menu_manage)
             background = makeFocusDrawable()
             setColorFilter(android.graphics.Color.WHITE)
             layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
@@ -348,21 +343,17 @@ class NativePlayerActivity : Activity() {
                 scheduleHideControls()
             }
             isFocusable = true
-            isFocusableInTouchMode = true
         }
         bottomBar.addView(settingsButton)
 
         // Subtitles (CC) button
-        val ccButton = TextView(this).apply {
-            text = "CC"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 14f
-            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+        val ccButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_btn_speak_now)
+            setColorFilter(android.graphics.Color.WHITE)
             background = makeFocusDrawable()
             layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
-            gravity = android.view.Gravity.CENTER
             contentDescription = "Subtitles"
             setOnClickListener {
                 showSubtitlesDialog()
@@ -370,7 +361,6 @@ class NativePlayerActivity : Activity() {
             }
             isClickable = true
             isFocusable = true
-            isFocusableInTouchMode = true
         }
         bottomBar.addView(ccButton)
 
@@ -393,7 +383,7 @@ class NativePlayerActivity : Activity() {
         return result
     }
 
-    private fun cycleResizeMode(label: TextView) {
+    private fun cycleResizeMode() {
         val currentIndex = RESIZE_MODES.indexOfFirst { it.first == currentResizeMode }
         val next = RESIZE_MODES[(currentIndex + 1) % RESIZE_MODES.size]
         currentResizeMode = next.first
@@ -402,7 +392,6 @@ class NativePlayerActivity : Activity() {
             .edit()
             .putInt(PREF_RESIZE_MODE, currentResizeMode)
             .apply()
-        label.text = next.second
         Toast.makeText(this, next.second, Toast.LENGTH_SHORT).show()
     }
 
