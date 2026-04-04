@@ -26,6 +26,12 @@ void main() async {
   // Hide system bars globally on startup.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
+  // Ensure the status bar overlays content transparently when briefly visible.
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+  ));
+
   // Read cached branding from SharedPreferences (fast disk read, no network).
   // This ensures the bootstrap screen shows the portal-configured name and
   // logo before any network call is made.
@@ -284,9 +290,8 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
     return SystemUiWrapper(
       child: Scaffold(
         backgroundColor: _bgColor,
-        body: SafeArea(
-          bottom: false,
-          child: Center(
+        resizeToAvoidBottomInset: false,
+        body: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Padding(
@@ -385,7 +390,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
                 ),
               ),
             ),
-          ),
         ),
       ),
     );
