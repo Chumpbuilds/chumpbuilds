@@ -1,5 +1,7 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/system_ui_wrapper.dart';
 import 'home_screen.dart';
@@ -61,9 +63,28 @@ class _LoadingScreenState extends State<LoadingScreen> {
     );
   }
 
+  Widget _defaultIcon() {
+    return Container(
+      width: 80,
+      height: 80,
+      decoration: BoxDecoration(
+        color: _primaryColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Icon(
+        Icons.tv,
+        size: 48,
+        color: Colors.white,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final progress = _total > 0 ? _completed / _total : 0.0;
+    final customizations = LicenseService().getAppCustomizations();
+    final logoUrl = customizations['logo_url'] as String? ?? '';
+    final appName = customizations['app_name'] as String? ?? 'X87 Player';
 
     return SystemUiWrapper(
       child: Scaffold(
@@ -78,25 +99,26 @@ class _LoadingScreenState extends State<LoadingScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // App icon / logo
-                    Container(
-                      width: 80,
-                      height: 80,
-                      decoration: BoxDecoration(
-                        color: _primaryColor,
+                    if (logoUrl.isNotEmpty)
+                      ClipRRect(
                         borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Icon(
-                        Icons.tv,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                    ),
+                        child: CachedNetworkImage(
+                          imageUrl: logoUrl,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _defaultIcon(),
+                          errorWidget: (_, __, ___) => _defaultIcon(),
+                        ),
+                      )
+                    else
+                      _defaultIcon(),
                     const SizedBox(height: 20),
 
                     // App name
-                    const Text(
-                      'X87 Player',
-                      style: TextStyle(
+                    Text(
+                      appName,
+                      style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
