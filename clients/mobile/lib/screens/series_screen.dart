@@ -795,6 +795,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
       contentType: 'series',
       autoPlay: _vlcAutoPlay,
       onStopRequested: _stopEmbeddedPlayback,
+      onFullscreenRequested: _goFullscreen,
     );
 
     if (_selectedSeries == null) {

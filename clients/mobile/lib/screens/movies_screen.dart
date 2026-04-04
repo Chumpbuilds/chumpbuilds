@@ -681,6 +681,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
       contentType: 'movie',
       autoPlay: _vlcAutoPlay,
       onStopRequested: _stopEmbeddedPlayback,
+      onFullscreenRequested: _goFullscreen,
     );
 
     if (_selectedMovie == null) {

@@ -27,6 +27,7 @@ class VlcPlayerWidget extends StatefulWidget {
     required this.contentType,
     this.autoPlay = false,
     this.onStopRequested,
+    this.onFullscreenRequested,
   });
 
   final String streamUrl;
@@ -38,6 +39,11 @@ class VlcPlayerWidget extends StatefulWidget {
   /// launching an external player. The parent screen should clear the stream
   /// URL so that the embedded ExoPlayer is fully torn down.
   final VoidCallback? onStopRequested;
+
+  /// Called when the user taps the embedded player area to request fullscreen.
+  /// The parent screen should stop embedded playback and launch the fullscreen
+  /// player (e.g. via [AndroidHlsFullscreenScreen]).
+  final VoidCallback? onFullscreenRequested;
 
   @override
   State<VlcPlayerWidget> createState() => _VlcPlayerWidgetState();
@@ -181,24 +187,31 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         );
       }
 
-      return EmbeddedExoPlayerWidget(
-        key: _embeddedKey,
-        url: widget.streamUrl,
-        title: widget.title,
-        contentType: widget.contentType,
-        autoPlay: widget.autoPlay,
-        onStateChanged: ({
-          required bool isPlaying,
-          required bool isBuffering,
-          required bool hasError,
-          String? errorMessage,
-        }) {
-          if (!mounted) return;
-          setState(() {
-            _isLoading = isBuffering;
-            _hasError = hasError;
-          });
+      return GestureDetector(
+        onTap: () {
+          if (widget.streamUrl.isNotEmpty) {
+            widget.onFullscreenRequested?.call();
+          }
         },
+        child: EmbeddedExoPlayerWidget(
+          key: _embeddedKey,
+          url: widget.streamUrl,
+          title: widget.title,
+          contentType: widget.contentType,
+          autoPlay: widget.autoPlay,
+          onStateChanged: ({
+            required bool isPlaying,
+            required bool isBuffering,
+            required bool hasError,
+            String? errorMessage,
+          }) {
+            if (!mounted) return;
+            setState(() {
+              _isLoading = isBuffering;
+              _hasError = hasError;
+            });
+          },
+        ),
       );
     }
 
