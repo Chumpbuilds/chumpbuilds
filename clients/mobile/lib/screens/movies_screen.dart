@@ -1,16 +1,14 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-import '../screens/android_hls_fullscreen_screen.dart';
-import '../services/external_player_service.dart';
+import '../screens/movie_detail_screen.dart';
 import '../services/favorites_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/system_ui_wrapper.dart';
 
-/// Movies / VOD screen — categories → movie list → movie detail + play.
+/// Movies / VOD screen — categories → movie poster grid → movie detail + play.
 ///
 /// Ported from `clients/windows/ui/movies/movies_view.py`.
 class MoviesScreen extends StatefulWidget {
@@ -26,7 +24,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
   // ─── Theme constants ──────────────────────────────────────────────────────
   static const Color _bgColor = Color(0xFF1E1E1E);
   static const Color _surfaceColor = Color(0xFF2D2D2D);
-  static const Color _primaryColor = Color(0xFF0D7377);
   static const Color _accentColor = Color(0xFF3498DB);
   static const Color _secondaryTextColor = Color(0xFF95A5A6);
 
@@ -42,17 +39,14 @@ class _MoviesScreenState extends State<MoviesScreen> {
 
   String? _selectedCategoryId;
   String? _selectedCategoryName;
-  Map<String, dynamic>? _selectedMovie;
-  Map<String, dynamic>? _vodInfo;
 
   bool _loadingCategories = true;
   bool _loadingMovies = false;
-  bool _loadingDetail = false;
   bool _searchVisible = false;
 
   /// Whether the user has selected a category.  On first open this is false,
   /// showing the categories (35%) + portal logo (65%) layout.  After a
-  /// category tap it becomes true, switching to movies list (35%) + detail/player (65%).
+  /// category tap it becomes true, switching to full-width movie poster grid.
   bool _categorySelected = false;
 
   final _headerSearchCtrl = TextEditingController();
@@ -113,7 +107,15 @@ class _MoviesScreenState extends State<MoviesScreen> {
         await _selectCategory(matchingCat);
       }
       if (mounted) {
-        _selectMovie(widget.initialMovie!);
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MovieDetailScreen(
+              movie: widget.initialMovie!,
+              xtream: _xtream,
+            ),
+          ),
+        );
+        _loadFavoriteIds();
       }
     }
   }
@@ -124,8 +126,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
       _categorySelected = true;
       _selectedCategoryId = catId;
       _selectedCategoryName = cat['category_name']?.toString();
-      _selectedMovie = null;
-      _vodInfo = null;
       _loadingMovies = true;
     });
 
@@ -142,44 +142,16 @@ class _MoviesScreenState extends State<MoviesScreen> {
     _filterMovies();
   }
 
-  Future<void> _selectMovie(Map<String, dynamic> movie) async {
-    setState(() {
-      _selectedMovie = movie;
-      _vodInfo = null;
-      _loadingDetail = true;
-    });
-
-    // No auto-play — user will tap Play button
-
-    final vodId = movie['stream_id']?.toString() ?? '';
-    if (vodId.isNotEmpty) {
-      final info = await _xtream.getVodInfo(vodId);
-      if (!mounted) return;
-      setState(() {
-        _vodInfo = info;
-        _loadingDetail = false;
-      });
-    } else {
-      if (!mounted) return;
-      setState(() => _loadingDetail = false);
-    }
-  }
-
   // ─── Favourites ───────────────────────────────────────────────────────────
 
   Future<void> _loadFavoriteIds() async {
     final favs = await _favService.getFavorites(FavoriteType.movie);
+    if (!mounted) return;
     setState(() {
       _favMovieIds
         ..clear()
         ..addAll(favs.map((f) => f['stream_id']?.toString() ?? ''));
     });
-  }
-
-  Future<void> _toggleMovieFav(Map<String, dynamic> movie) async {
-    final id = movie['stream_id']?.toString() ?? '';
-    await _favService.toggleFavorite(FavoriteType.movie, id, movie);
-    await _loadFavoriteIds();
   }
 
   // ─── Filtering ────────────────────────────────────────────────────────────
@@ -222,57 +194,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
             .toList();
       });
     }
-  }
-
-  // ─── Playback ─────────────────────────────────────────────────────────────
-
-  void _playMovie(Map<String, dynamic> movie) {
-    final streamId = movie['stream_id']?.toString() ?? '';
-    if (streamId.isEmpty) return;
-    final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
-    if (url.isEmpty) return;
-    final name = movie['name']?.toString() ?? '';
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AndroidHlsFullscreenScreen(
-          streamUrl: url,
-          title: name,
-          contentType: 'movie',
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openMovieExternal(Map<String, dynamic> movie) async {
-    final streamId = movie['stream_id']?.toString() ?? '';
-    if (streamId.isEmpty) return;
-    final url = _xtream.getStreamUrl(streamId, 'movie', streamData: movie);
-    if (url.isEmpty) return;
-    final launched = await ExternalPlayerService.instance.openInVlc(url);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to open video in external player.')),
-      );
-    }
-  }
-
-  void _showUrlDialog(String url) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: _surfaceColor,
-        title: const Text('Stream URL', style: TextStyle(color: Colors.white)),
-        content: SelectableText(url,
-            style: const TextStyle(color: _secondaryTextColor, fontSize: 12)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child:
-                const Text('Close', style: TextStyle(color: _primaryColor)),
-          ),
-        ],
-      ),
-    );
   }
 
   // ─── Build ────────────────────────────────────────────────────────────────
@@ -324,22 +245,14 @@ class _MoviesScreenState extends State<MoviesScreen> {
           ),
         ],
       ),
-      body: Row(
-        children: [
-          // ── Panel 1 (35%): Categories → Movies list after selection ──────
-          Expanded(
-            flex: 35,
-            child: _categorySelected
-                ? _buildMoviesPanel()
-                : _buildCategoriesPanel(),
-          ),
-          // ── Panel 2 (65%): Portal logo → Movie detail/player after selection
-          Expanded(
-            flex: 65,
-            child: _categorySelected ? _buildDetailPanel() : _buildLogoPanel(),
-          ),
-        ],
-      ),
+      body: _categorySelected
+          ? _buildMovieGrid()
+          : Row(
+              children: [
+                Expanded(flex: 35, child: _buildCategoriesPanel()),
+                Expanded(flex: 65, child: _buildLogoPanel()),
+              ],
+            ),
     ));
   }
 
@@ -489,438 +402,147 @@ class _MoviesScreenState extends State<MoviesScreen> {
     );
   }
 
-  // ─── Panel 1 (after selection) – Movies ──────────────────────────────────
+  // ─── Full-width movie poster grid (after category selection) ──────────────
 
-  Widget _buildMoviesPanel() {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        border: Border(right: BorderSide(color: Color(0xFF3A3A3A))),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // Header with back button and category name
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 8, 8, 4),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, size: 16,
-                      color: _accentColor),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  tooltip: 'Back to categories',
-                  onPressed: () {
-                    setState(() {
-                      _categorySelected = false;
-                      _selectedCategoryId = null;
-                      _selectedCategoryName = null;
-                      _selectedMovie = null;
-                      _vodInfo = null;
-                    });
-                  },
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Text(
-                    _selectedCategoryName ?? 'Movies',
-                    style: const TextStyle(
-                      color: _accentColor,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Loading bar
-          if (_loadingMovies)
-            const LinearProgressIndicator(
-              color: _accentColor,
-              backgroundColor: Color(0xFF2D2D2D),
-            ),
-          // List
-          if (!_loadingMovies && _filteredMovies.isEmpty)
-            const Expanded(
-                child: Center(
-                    child: Text('No movies found',
-                        style: TextStyle(
-                            color: _secondaryTextColor, fontSize: 12))))
-          else
-            Expanded(
-              child: ListView.builder(
-                itemCount: _filteredMovies.length,
-                itemBuilder: (_, i) {
-                  final movie = _filteredMovies[i];
-                  final streamId = movie['stream_id']?.toString() ?? '';
-                  final posterUrl = movie['stream_icon']?.toString() ?? '';
-                  final selected =
-                      _selectedMovie != null &&
-                      _selectedMovie!['stream_id']?.toString() == streamId;
-                  final isFav = _favMovieIds.contains(streamId);
-                  return FocusListItem(
-                    autofocus: i == 0,
-                    onTap: () => _selectMovie(movie),
-                    child: Container(
-                      color: selected
-                          ? const Color(0xFF2C3E50)
-                          : Colors.transparent,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 4),
-                      child: Row(
-                        children: [
-                          // Poster thumbnail
-                          SizedBox(
-                            width: 40,
-                            height: 40,
-                            child: posterUrl.isNotEmpty
-                                ? CachedNetworkImage(
-                                    imageUrl: posterUrl,
-                                    placeholder: (_, __) => const Text('🎬',
-                                        style: TextStyle(fontSize: 20)),
-                                    errorWidget: (_, __, ___) => const Text(
-                                        '🎬',
-                                        style: TextStyle(fontSize: 20)),
-                                    fit: BoxFit.contain,
-                                  )
-                                : const Text('🎬',
-                                    style: TextStyle(fontSize: 20)),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              movie['name']?.toString() ?? '',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          // Favourite star
-                          GestureDetector(
-                            onTap: () => _toggleMovieFav(movie),
-                            child: Icon(
-                              isFav ? Icons.star : Icons.star_border,
-                              color: const Color(0xFFFFD700),
-                              size: 18,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
+  Widget _buildMovieGrid() {
+    return Column(
+      children: [
+        // Header bar with back button + category name
+        Container(
+          color: const Color(0xFF1A1A1A),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, size: 18, color: _accentColor),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                tooltip: 'Back to categories',
+                onPressed: () {
+                  setState(() {
+                    _categorySelected = false;
+                    _selectedCategoryId = null;
+                    _selectedCategoryName = null;
+                  });
                 },
               ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _selectedCategoryName ?? 'Movies',
+                  style: const TextStyle(
+                    color: _accentColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Text(
+                '${_filteredMovies.length} movies',
+                style: const TextStyle(color: _secondaryTextColor, fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+        // Loading indicator
+        if (_loadingMovies)
+          const LinearProgressIndicator(color: _accentColor, backgroundColor: Color(0xFF2D2D2D)),
+        // Grid
+        if (!_loadingMovies && _filteredMovies.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Text('No movies found', style: TextStyle(color: _secondaryTextColor, fontSize: 13)),
             ),
-          // Footer count
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Text(
-              '${_filteredMovies.length} movies',
-              style: const TextStyle(
-                  color: _secondaryTextColor, fontSize: 11),
-              textAlign: TextAlign.center,
+          )
+        else
+          Expanded(
+            child: GridView.builder(
+              padding: const EdgeInsets.all(8),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 4,
+                crossAxisSpacing: 8,
+                mainAxisSpacing: 8,
+                childAspectRatio: 0.55,
+              ),
+              itemCount: _filteredMovies.length,
+              itemBuilder: (_, i) => _buildMovieTile(_filteredMovies[i]),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
-  // ─── Panel 2 (after selection) – Movie Detail ────────────────────────────
+  Widget _buildMovieTile(Map<String, dynamic> movie) {
+    final name = movie['name']?.toString() ?? '';
+    final posterUrl = movie['stream_icon']?.toString() ?? '';
+    final isFav = _favMovieIds.contains(movie['stream_id']?.toString() ?? '');
 
-  Widget _buildDetailPanel() {
-    if (_selectedMovie == null) {
-      return ColoredBox(
-        color: _bgColor,
+    return GestureDetector(
+      onTap: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => MovieDetailScreen(movie: movie, xtream: _xtream),
+          ),
+        );
+        // Refresh favorites when returning from detail screen
+        _loadFavoriteIds();
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: _surfaceColor,
+          borderRadius: BorderRadius.circular(8),
+        ),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // ── Row 1 (60%): 30% artwork placeholder | 70% play area ──
+            // Poster image
             Expanded(
-              flex: 60,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Expanded(
-                    flex: 30,
-                    child: Container(
-                      color: const Color(0xFF2D2D2D),
-                      child: const Center(
-                        child: Text('🎬', style: TextStyle(fontSize: 32)),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 70,
-                    child: Container(
-                      color: Colors.black,
-                      child: const Center(
-                        child: Text(
-                          'Select a movie to play',
-                          style: TextStyle(color: Colors.white54, fontSize: 14),
-                          textAlign: TextAlign.center,
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                child: posterUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: posterUrl,
+                        fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          color: const Color(0xFF3A3A3A),
+                          child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 32)),
                         ),
+                        errorWidget: (_, __, ___) => Container(
+                          color: const Color(0xFF3A3A3A),
+                          child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 32)),
+                        ),
+                      )
+                    : Container(
+                        color: const Color(0xFF3A3A3A),
+                        child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 32)),
                       ),
+              ),
+            ),
+            // Title + optional fav indicator
+            Padding(
+              padding: const EdgeInsets.all(6),
+              child: Row(
+                children: [
+                  if (isFav)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 4),
+                      child: Icon(Icons.star, color: Color(0xFFf39c12), size: 12),
+                    ),
+                  Expanded(
+                    child: Text(
+                      name,
+                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
               ),
             ),
-            // ── Row 2 (40%): prompt ──────────────────────────────────────
-            const Expanded(
-              flex: 40,
-              child: Center(
-                child: Text(
-                  '🎬  Select a movie to see details',
-                  style: TextStyle(color: _secondaryTextColor, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
           ],
         ),
-      );
-    }
-
-    final movie = _selectedMovie!;
-    final name = movie['name']?.toString() ?? '';
-    final posterUrl = movie['stream_icon']?.toString() ?? '';
-    final info =
-        _vodInfo != null && _vodInfo!['info'] is Map
-            ? Map<String, dynamic>.from(_vodInfo!['info'] as Map)
-            : <String, dynamic>{};
-    final movieData =
-        _vodInfo != null && _vodInfo!['movie_data'] is Map
-            ? Map<String, dynamic>.from(_vodInfo!['movie_data'] as Map)
-            : <String, dynamic>{};
-
-    final plot = _notNa(info['plot']?.toString() ??
-        info['description']?.toString() ?? '');
-    final director = _notNa(info['director']?.toString() ?? '');
-    final cast = _notNa(info['cast']?.toString() ?? info['actors']?.toString() ?? '');
-    final genre = _notNa(info['genre']?.toString() ?? '');
-    final year = _notNa(
-        info['releasedate']?.toString() ??
-            info['release_date']?.toString() ??
-            movie['year']?.toString() ?? '');
-    final rating = _notNa(info['rating']?.toString() ??
-        movie['rating']?.toString() ?? '');
-    final movieId = movie['stream_id']?.toString() ?? '';
-    final isFav = _favMovieIds.contains(movieId);
-    final merged = {...movie, ...movieData};
-
-    return ColoredBox(
-      color: _bgColor,
-      child: _loadingDetail
-          ? const Center(
-              child: CircularProgressIndicator(color: _primaryColor))
-          : Column(
-              children: [
-                // ── Row 1 (60%): 30% poster | 70% play buttons ────────────
-                Expanded(
-                  flex: 60,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // 30% – movie poster/artwork
-                      Expanded(
-                        flex: 30,
-                        child: Container(
-                          color: const Color(0xFF2D2D2D),
-                          child: posterUrl.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: posterUrl,
-                                  fit: BoxFit.contain,
-                                  placeholder: (_, __) => const Center(
-                                      child: Text('🎬',
-                                          style: TextStyle(fontSize: 32))),
-                                  errorWidget: (_, __, ___) => const Center(
-                                      child: Text('🎬',
-                                          style: TextStyle(fontSize: 32))),
-                                )
-                              : const Center(
-                                  child: Text('🎬',
-                                      style: TextStyle(fontSize: 32))),
-                        ),
-                      ),
-                      // 70% – play buttons area
-                      Expanded(
-                        flex: 70,
-                        child: Container(
-                          color: Colors.black,
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  name,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                                const SizedBox(height: 24),
-                                SizedBox(
-                                  width: 220,
-                                  child: ElevatedButton.icon(
-                                    onPressed: () => _playMovie(merged),
-                                    icon: const Icon(Icons.play_arrow),
-                                    label: const Text('Play'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: _accentColor,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8)),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: 220,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () =>
-                                        _openMovieExternal(merged),
-                                    icon: const Icon(Icons.open_in_new),
-                                    label: const Text('Play in VLC'),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: Colors.white,
-                                      side: const BorderSide(
-                                          color: Color(0xFF3D3D3D)),
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 12),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(8)),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // ── Row 2 (40%): metadata/details full width ───────────────
-                Expanded(
-                  flex: 40,
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Title
-                        Text(
-                          name,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 4),
-
-                        // Quick-info line
-                        Center(
-                          child: Text(
-                            [
-                              if (year != null) year,
-                              if (rating != null) '⭐ $rating',
-                              if (genre != null) genre,
-                            ].join('   '),
-                            style: const TextStyle(
-                                color: _secondaryTextColor, fontSize: 11),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        const Divider(color: Color(0xFF3D3D3D)),
-                        const SizedBox(height: 6),
-
-                        // Plot
-                        if (plot != null) ...[
-                          Text(plot,
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 13,
-                                  height: 1.5)),
-                          const SizedBox(height: 12),
-                        ],
-
-                        // Extra info
-                        if (director != null)
-                          _infoField('Director', director),
-                        if (cast != null) _infoField('Cast', cast),
-                        const SizedBox(height: 8),
-
-                        // Favourite toggle
-                        OutlinedButton.icon(
-                          onPressed: () => _toggleMovieFav(movie),
-                          icon: Icon(
-                            isFav ? Icons.star : Icons.star_border,
-                            color: const Color(0xFFFFD700),
-                          ),
-                          label: Text(
-                            isFav
-                                ? 'Remove from Favourites'
-                                : 'Add to Favourites',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(
-                                color: Color(0xFF3D3D3D)),
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 12),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-    );
-  }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  Widget _infoField(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(label,
-                style: const TextStyle(
-                    color: _secondaryTextColor, fontSize: 13)),
-          ),
-          Expanded(
-            child: Text(value,
-                style: const TextStyle(color: Colors.white, fontSize: 13)),
-          ),
-        ],
       ),
     );
-  }
-
-  /// Returns null if value is null, empty, or 'N/A' (case-insensitive).
-  String? _notNa(String? value) {
-    if (value == null || value.isEmpty) return null;
-    if (value.trim().toUpperCase() == 'N/A') return null;
-    return value;
   }
 }
