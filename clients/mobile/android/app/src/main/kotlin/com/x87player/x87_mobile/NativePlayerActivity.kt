@@ -38,6 +38,15 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_CONTENT_TYPE = "contentType"
 
         private const val CONTROLS_HIDE_DELAY_MS = 2_000L
+        private const val PREFS_NAME = "player_prefs"
+        private const val PREF_RESIZE_MODE = "resize_mode"
+        private val RESIZE_MODES = listOf(
+            AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
+            AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH to "Width",
+            AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT to "Height",
+            AspectRatioFrameLayout.RESIZE_MODE_FILL to "Fill",
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom",
+        )
     }
 
     private lateinit var player: ExoPlayer
@@ -68,6 +77,11 @@ class NativePlayerActivity : Activity() {
         )
 
         setContentView(buildContentView())
+
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        currentResizeMode = prefs.getInt(PREF_RESIZE_MODE, AspectRatioFrameLayout.RESIZE_MODE_FIT)
+        playerView.resizeMode = currentResizeMode
+        resizeModeLabel.text = RESIZE_MODES.firstOrNull { it.first == currentResizeMode }?.second ?: "Fit"
 
         val url = intent.getStringExtra(EXTRA_URL) ?: run {
             Toast.makeText(this, "No stream URL provided", Toast.LENGTH_SHORT).show()
@@ -376,17 +390,14 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun cycleResizeMode(label: TextView) {
-        val modes = listOf(
-            AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
-            AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH to "Width",
-            AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT to "Height",
-            AspectRatioFrameLayout.RESIZE_MODE_FILL to "Fill",
-            AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom",
-        )
-        val currentIndex = modes.indexOfFirst { it.first == currentResizeMode }
-        val next = modes[(currentIndex + 1) % modes.size]
+        val currentIndex = RESIZE_MODES.indexOfFirst { it.first == currentResizeMode }
+        val next = RESIZE_MODES[(currentIndex + 1) % RESIZE_MODES.size]
         currentResizeMode = next.first
         playerView.resizeMode = currentResizeMode
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putInt(PREF_RESIZE_MODE, currentResizeMode)
+            .apply()
         label.text = next.second
         Toast.makeText(this, next.second, Toast.LENGTH_SHORT).show()
     }
