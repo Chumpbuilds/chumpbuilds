@@ -186,8 +186,15 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 2. Licence is valid — attempt silent IPTV auto-login with saved creds.
-      final autoLoggedIn = await _tryAutoLogin();
+      // 2. Licence is valid — run auto-login, cache freshness check, and EPG
+      // disk load concurrently; they are all independent of each other.
+      final results = await Future.wait<dynamic>([
+        _tryAutoLogin(),
+        XtreamCacheService().isCacheFresh(minRemainingHours: 20),
+        EpgService().loadFromCache(),
+      ]);
+      final autoLoggedIn = results[0] as bool;
+      final cacheFresh = results[1] as bool;
 
       if (!autoLoggedIn) {
         if (!mounted) return;
@@ -197,14 +204,9 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 3. Check if the core content cache has at least 20 hours remaining.
-      final cacheFresh = await XtreamCacheService().isCacheFresh(
-        minRemainingHours: 20,
-      );
-
+      // 3. Cache freshness check — EPG is already loaded from the parallel
+      // call above, so navigate directly if cache is still fresh.
       if (cacheFresh) {
-        // Load EPG from disk, then navigate directly to HomeScreen.
-        await EpgService().loadFromCache();
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
