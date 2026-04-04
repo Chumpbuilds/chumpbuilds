@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../screens/movie_detail_screen.dart';
 import '../services/favorites_service.dart';
-import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/system_ui_wrapper.dart';
@@ -247,12 +246,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
       ),
       body: _categorySelected
           ? _buildMovieGrid()
-          : Row(
-              children: [
-                Expanded(flex: 35, child: _buildCategoriesPanel()),
-                Expanded(flex: 65, child: _buildLogoPanel()),
-              ],
-            ),
+          : _buildCategoriesPanel(),
     ));
   }
 
@@ -344,60 +338,6 @@ class _MoviesScreenState extends State<MoviesScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  // ─── Panel 2 – Portal logo (initial state) ───────────────────────────────
-
-  Widget _buildLogoPanel() {
-    final customizations = LicenseService().getAppCustomizations();
-    final logoUrl = customizations['logo_url'] as String? ?? '';
-    final appName = customizations['app_name'] as String? ?? 'X87 Player';
-
-    return ColoredBox(
-      color: _bgColor,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (logoUrl.isNotEmpty)
-              CachedNetworkImage(
-                imageUrl: logoUrl,
-                width: 160,
-                height: 160,
-                placeholder: (_, __) => const SizedBox(
-                  width: 160,
-                  height: 160,
-                  child: Center(
-                    child: CircularProgressIndicator(color: _accentColor),
-                  ),
-                ),
-                errorWidget: (_, __, ___) => const Icon(
-                  Icons.movie,
-                  size: 80,
-                  color: _accentColor,
-                ),
-                fit: BoxFit.contain,
-              )
-            else
-              const Icon(Icons.movie, size: 80, color: _accentColor),
-            const SizedBox(height: 16),
-            Text(
-              appName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Select a category to browse movies',
-              style: TextStyle(color: _secondaryTextColor, fontSize: 12),
-            ),
-          ],
-        ),
       ),
     );
   }
