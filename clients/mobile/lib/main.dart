@@ -28,8 +28,8 @@ void main() async {
 
   // Ensure the status bar overlays content transparently when briefly visible.
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
+    statusBarColor: Colors.black,
+    systemNavigationBarColor: Colors.black,
   ));
 
   // Read cached branding from SharedPreferences (fast disk read, no network).
