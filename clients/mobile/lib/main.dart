@@ -174,16 +174,11 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
   Future<void> _init() async {
     try {
-      // Start a minimum 3-second timer running in parallel with init work so
-      // the user sees the branded welcome screen for at least 3 seconds.
-      final minWait = Future<void>.delayed(const Duration(seconds: 3));
-
       // 1. Silently validate any stored licence.
       final isValid = await LicenseService().validateLicense();
 
       if (!isValid) {
-        // No valid licence — wait for the minimum welcome time, then activate.
-        await minWait;
+        // No valid licence — navigate immediately.
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const LicenseScreen()),
@@ -195,7 +190,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       final autoLoggedIn = await _tryAutoLogin();
 
       if (!autoLoggedIn) {
-        await minWait;
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
@@ -209,8 +203,8 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       );
 
       if (cacheFresh) {
-        // Load EPG from disk while waiting for the minimum welcome time.
-        await Future.wait([minWait, EpgService().loadFromCache()]);
+        // Load EPG from disk, then navigate directly to HomeScreen.
+        await EpgService().loadFromCache();
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
@@ -218,9 +212,8 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 4. Cache is stale — wait for min welcome time, then show progress bar
-      // and run a 4-step prefetch inline (no separate LoadingScreen needed).
-      await minWait;
+      // 4. Cache is stale — show progress bar and run a 4-step prefetch inline
+      // (no separate LoadingScreen needed).
       if (!mounted) return;
       setState(() {
         _showProgress = true;
