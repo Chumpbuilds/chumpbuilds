@@ -10,6 +10,7 @@
 package com.x87player.x87_mobile
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -19,10 +20,14 @@ import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 
 class NativePlayerActivity : Activity() {
@@ -44,6 +49,7 @@ class NativePlayerActivity : Activity() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var controlsVisible = true
+    private var currentResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
 
     private val hideControlsRunnable = Runnable { hideControls() }
 
@@ -290,6 +296,52 @@ class NativePlayerActivity : Activity() {
         }
         topBar.addView(titleTextView)
 
+        // Subtitles (CC) button
+        val ccButton = TextView(this).apply {
+            text = "CC"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 14f
+            setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4))
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            contentDescription = "Subtitles"
+            setOnClickListener {
+                showSubtitlesDialog()
+                scheduleHideControls()
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        topBar.addView(ccButton)
+
+        // Settings (audio/video tracks) button
+        val settingsButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_preferences)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setColorFilter(android.graphics.Color.WHITE)
+            contentDescription = "Settings"
+            setOnClickListener {
+                showSettingsDialog()
+                scheduleHideControls()
+            }
+        }
+        topBar.addView(settingsButton)
+
+        // Resize mode button
+        val resizeModeLabel = TextView(this).apply {
+            text = "Fit"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 12f
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setOnClickListener {
+                cycleResizeMode(this)
+                scheduleHideControls()
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        topBar.addView(resizeModeLabel)
+
         overlay.addView(topBar)
 
         // Spacer (clickable to dismiss controls)
@@ -338,6 +390,138 @@ class NativePlayerActivity : Activity() {
         })
 
         return overlay
+    }
+
+    // ── Track / resize helpers ────────────────────────────────────────────────
+
+    private fun getTracksOfType(type: Int): List<Pair<Tracks.Group, Int>> {
+        val result = mutableListOf<Pair<Tracks.Group, Int>>()
+        for (group in player.currentTracks.groups) {
+            if (group.type == type) {
+                for (i in 0 until group.length) {
+                    if (group.isTrackSupported(i)) {
+                        result.add(group to i)
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private fun cycleResizeMode(label: TextView) {
+        val modes = listOf(
+            AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
+            AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH to "Width",
+            AspectRatioFrameLayout.RESIZE_MODE_FIXED_HEIGHT to "Height",
+            AspectRatioFrameLayout.RESIZE_MODE_FILL to "Fill",
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM to "Zoom",
+        )
+        val currentIndex = modes.indexOfFirst { it.first == currentResizeMode }
+        val next = modes[(currentIndex + 1) % modes.size]
+        currentResizeMode = next.first
+        playerView.resizeMode = currentResizeMode
+        label.text = next.second
+        Toast.makeText(this, next.second, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun showSubtitlesDialog() {
+        val tracks = getTracksOfType(C.TRACK_TYPE_TEXT)
+        if (tracks.isEmpty()) {
+            Toast.makeText(this, "No subtitles available", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val labels = mutableListOf("Off")
+        for ((group, index) in tracks) {
+            val format = group.getTrackFormat(index)
+            val label = format.label
+                ?: format.language
+                ?: "Track ${labels.size}"
+            labels.add(label)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Subtitles")
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                        .build()
+                } else {
+                    val (group, index) = tracks[which - 1]
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
+                        .build()
+                }
+            }
+            .show()
+    }
+
+    private fun showSettingsDialog() {
+        val videoTracks = getTracksOfType(C.TRACK_TYPE_VIDEO)
+        val audioTracks = getTracksOfType(C.TRACK_TYPE_AUDIO)
+
+        val items = mutableListOf<String>()
+        val actions = mutableListOf<() -> Unit>()
+
+        items.add("── Video ──")
+        actions.add({})
+        if (videoTracks.isEmpty()) {
+            items.add("  (none)")
+            actions.add({})
+        } else {
+            for ((group, index) in videoTracks) {
+                val format = group.getTrackFormat(index)
+                val res = "${format.width}x${format.height}"
+                val bitrate = if (format.bitrate > 0) " @ ${format.bitrate / 1000}kbps" else ""
+                items.add("  $res$bitrate")
+                actions.add {
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
+                        .build()
+                }
+            }
+        }
+
+        items.add("── Audio ──")
+        actions.add({})
+        if (audioTracks.isEmpty()) {
+            items.add("  (none)")
+            actions.add({})
+        } else {
+            for ((group, index) in audioTracks) {
+                val format = group.getTrackFormat(index)
+                val lang = format.label ?: format.language ?: "Unknown"
+                val codec = format.codecs ?: "Unknown"
+                val channels = when (format.channelCount) {
+                    1 -> "Mono"
+                    2 -> "Stereo"
+                    6 -> "5.1"
+                    8 -> "7.1"
+                    else -> if (format.channelCount > 0) "${format.channelCount}ch" else "Unknown"
+                }
+                items.add("  $lang - $codec - $channels")
+                actions.add {
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
+                        .build()
+                }
+            }
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Settings")
+            .setItems(items.toTypedArray()) { _, which ->
+                // Header items (Video/Audio section labels) have no-op actions;
+                // only track items perform a selection.
+                actions[which].invoke()
+            }
+            .show()
     }
 
     // ── Device detection ──────────────────────────────────────────────────────

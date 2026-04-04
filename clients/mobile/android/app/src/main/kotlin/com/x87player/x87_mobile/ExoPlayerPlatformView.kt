@@ -5,6 +5,7 @@ import android.view.View
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
@@ -129,6 +130,11 @@ class ExoPlayerPlatformView(
             }
             "toggleMute" -> {
                 player.volume = if (player.volume > 0f) 0f else 1f
+                result.success(null)
+            }
+            "setResizeMode" -> {
+                val mode = call.argument<Int>("mode") ?: AspectRatioFrameLayout.RESIZE_MODE_FIT
+                playerView.resizeMode = mode
                 result.success(null)
             }
             "dispose" -> {

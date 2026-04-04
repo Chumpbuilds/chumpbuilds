@@ -117,6 +117,11 @@ class _EmbeddedExoPlayerWidgetState extends State<EmbeddedExoPlayerWidget> {
   Future<void> toggleMute() =>
       _channel?.invokeMethod<void>('toggleMute') ?? Future.value();
 
+  /// Sets the resize mode of the player view.
+  /// [mode] values: 0=fit, 1=fixedWidth, 2=fixedHeight, 3=fill, 4=zoom.
+  Future<void> setResizeMode(int mode) =>
+      _channel?.invokeMethod<void>('setResizeMode', {'mode': mode}) ?? Future.value();
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
