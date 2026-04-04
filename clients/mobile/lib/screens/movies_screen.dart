@@ -458,11 +458,11 @@ class _MoviesScreenState extends State<MoviesScreen> {
         else
           Expanded(
             child: GridView.builder(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(6),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
+                crossAxisCount: 5,
+                crossAxisSpacing: 6,
+                mainAxisSpacing: 6,
                 childAspectRatio: 0.55,
               ),
               itemCount: _filteredMovies.length,
@@ -491,7 +491,7 @@ class _MoviesScreenState extends State<MoviesScreen> {
       child: Container(
         decoration: BoxDecoration(
           color: _surfaceColor,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -499,40 +499,40 @@ class _MoviesScreenState extends State<MoviesScreen> {
             // Poster image
             Expanded(
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
                 child: posterUrl.isNotEmpty
                     ? CachedNetworkImage(
                         imageUrl: posterUrl,
                         fit: BoxFit.cover,
                         placeholder: (_, __) => Container(
                           color: const Color(0xFF3A3A3A),
-                          child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 32)),
+                          child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 24)),
                         ),
                         errorWidget: (_, __, ___) => Container(
                           color: const Color(0xFF3A3A3A),
-                          child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 32)),
+                          child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 24)),
                         ),
                       )
                     : Container(
                         color: const Color(0xFF3A3A3A),
-                        child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 32)),
+                        child: const Center(child: Icon(Icons.movie, color: _secondaryTextColor, size: 24)),
                       ),
               ),
             ),
             // Title + optional fav indicator
             Padding(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(4),
               child: Row(
                 children: [
                   if (isFav)
                     const Padding(
                       padding: EdgeInsets.only(right: 4),
-                      child: Icon(Icons.star, color: Color(0xFFf39c12), size: 12),
+                      child: Icon(Icons.star, color: Color(0xFFf39c12), size: 10),
                     ),
                   Expanded(
                     child: Text(
                       name,
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                      style: const TextStyle(color: Colors.white, fontSize: 9),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
