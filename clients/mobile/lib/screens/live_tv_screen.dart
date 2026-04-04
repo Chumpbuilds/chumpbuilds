@@ -682,6 +682,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       contentType: 'live',
       autoPlay: _vlcAutoPlay,
       onStopRequested: _stopEmbeddedPlayback,
+      onFullscreenRequested: _goFullscreen,
     );
 
     if (_selectedChannel == null) {

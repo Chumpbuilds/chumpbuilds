@@ -37,15 +37,15 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_CONTENT_TYPE = "contentType"
 
-        private const val CONTROLS_HIDE_DELAY_MS = 5_000L
+        private const val CONTROLS_HIDE_DELAY_MS = 2_000L
     }
 
     private lateinit var player: ExoPlayer
     private lateinit var playerView: PlayerView
     private lateinit var controlsOverlay: View
     private lateinit var titleTextView: TextView
-    private lateinit var playPauseButton: ImageButton
-    private lateinit var backButton: ImageButton
+    private lateinit var playPauseIcon: android.widget.ImageView
+    private lateinit var resizeModeLabel: TextView
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var controlsVisible = true
@@ -204,7 +204,7 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun updatePlayPauseIcon(isPlaying: Boolean) {
-        playPauseButton.setImageResource(
+        playPauseIcon.setImageResource(
             if (isPlaying) android.R.drawable.ic_media_pause
             else android.R.drawable.ic_media_play
         )
@@ -255,37 +255,38 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun buildControlsOverlay(): View {
-        val overlay = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        // Top bar: back button + title
-        val topBar = android.widget.LinearLayout(this).apply {
+        // Bottom bar: play/pause icon + title + resize/settings/CC buttons
+        val bottomBar = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             setBackgroundColor(0xCC000000.toInt())
-            val pad = dpToPx(8)
-            setPadding(pad, pad, pad, pad)
-        }
-
-        backButton = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_media_previous)
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            setColorFilter(android.graphics.Color.WHITE)
-            setOnClickListener {
-                setResult(RESULT_CANCELED)
-                finish()
+            val hPad = dpToPx(12)
+            val vPad = dpToPx(10)
+            setPadding(hPad, vPad, hPad, vPad)
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.BOTTOM
             }
         }
-        topBar.addView(backButton)
 
+        // Play/pause indicator icon (small, left side)
+        playPauseIcon = android.widget.ImageView(this).apply {
+            setImageResource(android.R.drawable.ic_media_pause)
+            setColorFilter(android.graphics.Color.WHITE)
+            val size = dpToPx(16)
+            layoutParams = android.widget.LinearLayout.LayoutParams(size, size).apply {
+                marginEnd = dpToPx(8)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+        }
+        bottomBar.addView(playPauseIcon)
+
+        // Title (fills remaining space)
         titleTextView = TextView(this).apply {
             setTextColor(android.graphics.Color.WHITE)
-            textSize = 16f
-            setPadding(dpToPx(8), 0, 0, 0)
+            textSize = 14f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             layoutParams = android.widget.LinearLayout.LayoutParams(
@@ -294,15 +295,57 @@ class NativePlayerActivity : Activity() {
                 1f
             )
         }
-        topBar.addView(titleTextView)
+        bottomBar.addView(titleTextView)
+
+        val btnSize = dpToPx(36)
+
+        // Resize mode button
+        resizeModeLabel = TextView(this).apply {
+            text = "Fit"
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 12f
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            gravity = android.view.Gravity.CENTER
+            setOnClickListener {
+                cycleResizeMode(this)
+                scheduleHideControls()
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        bottomBar.addView(resizeModeLabel)
+
+        // Settings (audio/video tracks) button
+        val settingsButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_menu_preferences)
+            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setColorFilter(android.graphics.Color.WHITE)
+            layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            contentDescription = "Settings"
+            setOnClickListener {
+                showSettingsDialog()
+                scheduleHideControls()
+            }
+        }
+        bottomBar.addView(settingsButton)
 
         // Subtitles (CC) button
         val ccButton = TextView(this).apply {
             text = "CC"
             setTextColor(android.graphics.Color.WHITE)
             textSize = 14f
-            setPadding(dpToPx(8), dpToPx(4), dpToPx(8), dpToPx(4))
+            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            gravity = android.view.Gravity.CENTER
             contentDescription = "Subtitles"
             setOnClickListener {
                 showSubtitlesDialog()
@@ -311,85 +354,9 @@ class NativePlayerActivity : Activity() {
             isClickable = true
             isFocusable = true
         }
-        topBar.addView(ccButton)
+        bottomBar.addView(ccButton)
 
-        // Settings (audio/video tracks) button
-        val settingsButton = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_preferences)
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            setColorFilter(android.graphics.Color.WHITE)
-            contentDescription = "Settings"
-            setOnClickListener {
-                showSettingsDialog()
-                scheduleHideControls()
-            }
-        }
-        topBar.addView(settingsButton)
-
-        // Resize mode button
-        val resizeModeLabel = TextView(this).apply {
-            text = "Fit"
-            setTextColor(android.graphics.Color.WHITE)
-            textSize = 12f
-            setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
-            setOnClickListener {
-                cycleResizeMode(this)
-                scheduleHideControls()
-            }
-            isClickable = true
-            isFocusable = true
-        }
-        topBar.addView(resizeModeLabel)
-
-        overlay.addView(topBar)
-
-        // Spacer (clickable to dismiss controls)
-        overlay.addView(android.view.View(this).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-            isClickable = true
-            setOnClickListener { hideControls() }
-        })
-
-        // Center play/pause
-        val centerArea = android.widget.FrameLayout(this).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        playPauseButton = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_media_pause)
-            setBackgroundColor(0x88000000.toInt())
-            setColorFilter(android.graphics.Color.WHITE)
-            val size = dpToPx(64)
-            layoutParams = android.widget.FrameLayout.LayoutParams(size, size).apply {
-                gravity = android.view.Gravity.CENTER
-            }
-            setOnClickListener { togglePlayPause() }
-            isFocusable = true
-            isFocusableInTouchMode = true
-        }
-        centerArea.addView(playPauseButton)
-        overlay.addView(centerArea)
-
-        // Spacer (clickable to dismiss controls)
-        overlay.addView(android.view.View(this).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
-            isClickable = true
-            setOnClickListener { hideControls() }
-        })
-
-        return overlay
+        return bottomBar
     }
 
     // ── Track / resize helpers ────────────────────────────────────────────────
