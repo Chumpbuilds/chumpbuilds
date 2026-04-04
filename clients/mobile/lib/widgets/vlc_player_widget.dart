@@ -150,11 +150,13 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: Container(
-        color: Colors.black,
-        child: _buildContent(),
+    return ExcludeFocus(
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: Container(
+          color: Colors.black,
+          child: _buildContent(),
+        ),
       ),
     );
   }
