@@ -2,6 +2,9 @@ package com.x87player.x87_mobile
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Color
+import android.os.Bundle
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,6 +17,45 @@ class MainActivity : FlutterActivity() {
     }
 
     private var pendingResult: MethodChannel.Result? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        applyOpaqueSystemBars()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-apply after resume since Flutter may reset flags
+        applyOpaqueSystemBars()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            // Re-apply when window regains focus (after notification shade dismissed)
+            applyOpaqueSystemBars()
+        }
+    }
+
+    /**
+     * Forces the status bar and navigation bar backgrounds to solid black
+     * by working at the native Window level, overriding Flutter's edge-to-edge
+     * flags that cause SUPPRESS_SCRIM.
+     */
+    private fun applyOpaqueSystemBars() {
+        val window = window ?: return
+
+        // Clear translucent flags that force transparency
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+        window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+
+        // Ensure the window draws system bar backgrounds
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+
+        // Set opaque black colors at the native window level
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
