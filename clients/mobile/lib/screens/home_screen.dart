@@ -204,6 +204,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
+        bottom: false,
         child: Column(
           children: [
             // ── Top bar: user info (left) + icon buttons (right) ──────────
@@ -861,6 +862,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
         ),
       ),
       body: SafeArea(
+        bottom: false,
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(

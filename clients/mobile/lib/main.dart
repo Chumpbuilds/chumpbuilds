@@ -285,6 +285,7 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       child: Scaffold(
         backgroundColor: _bgColor,
         body: SafeArea(
+          bottom: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),

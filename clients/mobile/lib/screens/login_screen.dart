@@ -179,6 +179,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
       body: SafeArea(
+        bottom: false,
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
