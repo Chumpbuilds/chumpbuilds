@@ -241,7 +241,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
           ),
         ],
       ),
-      body: _categorySelected
+      body: (_categorySelected || _headerSearchCtrl.text.isNotEmpty)
           ? _buildSeriesGrid()
           : _buildCategoriesPanel(),
     ));
@@ -340,9 +340,10 @@ class _SeriesScreenState extends State<SeriesScreen> {
   // ─── Full-width series poster grid (after category selection) ─────────────
 
   Widget _buildSeriesGrid() {
+    final isSearchMode = _headerSearchCtrl.text.isNotEmpty && !_categorySelected;
     return Column(
       children: [
-        // Header bar with back button + category name
+        // Header bar with back button + category name / search label
         Container(
           color: const Color(0xFF1A1A1A),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -352,7 +353,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                 icon: const Icon(Icons.arrow_back, size: 18, color: _accentColor),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
-                tooltip: 'Back to categories',
+                tooltip: isSearchMode ? 'Back' : 'Back to categories',
                 onPressed: () {
                   setState(() {
                     _categorySelected = false;
@@ -364,7 +365,9 @@ class _SeriesScreenState extends State<SeriesScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _selectedCategoryName ?? 'Series',
+                  isSearchMode
+                      ? 'Search Results'
+                      : (_selectedCategoryName ?? 'Series'),
                   style: const TextStyle(
                     color: _accentColor,
                     fontSize: 14,

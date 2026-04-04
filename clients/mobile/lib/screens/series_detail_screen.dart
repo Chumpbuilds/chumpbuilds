@@ -224,6 +224,23 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         '';
 
     final hasEpisode = ep != null;
+
+    // Build episode title label ("S1 E3: Episode Title")
+    final epNum = ep?['episode_num']?.toString() ?? '';
+    final epTitle = ep?['title']?.toString() ?? '';
+    final seasonNum = _selectedSeason?.toString() ?? '';
+    final epLabelPrefix = (seasonNum.isNotEmpty && epNum.isNotEmpty)
+        ? 'S$seasonNum E$epNum'
+        : (epNum.isNotEmpty ? 'Ep $epNum' : '');
+    final episodeLabel = [
+      if (epLabelPrefix.isNotEmpty) epLabelPrefix,
+      if (epTitle.isNotEmpty) epTitle,
+    ].join(': ');
+
+    // Episode-specific meta fields
+    final epAirDate = epInfo['air_date']?.toString() ?? '';
+    final epDurationRaw = epInfo['duration']?.toString() ?? epInfo['duration_secs']?.toString() ?? '';
+    final epRating = epInfo['rating']?.toString() ?? '';
     final canPlay = hasEpisode && (ep['id']?.toString() ?? '').isNotEmpty;
 
     return SystemUiWrapper(
@@ -306,7 +323,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Meta chips (genre, rating, year)
+                                // Series-level meta chips (genre, rating, year)
                                 Wrap(
                                   spacing: 12,
                                   runSpacing: 4,
@@ -319,8 +336,48 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                       _metaChip(Icons.calendar_today, year),
                                   ],
                                 ),
-                                if (plot.isNotEmpty) ...[
-                                  const SizedBox(height: 12),
+                                const SizedBox(height: 12),
+
+                                // Episode info (when selected) or series plot
+                                if (hasEpisode) ...[
+                                  if (episodeLabel.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: Text(
+                                        episodeLabel,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  if (epAirDate.isNotEmpty || epDurationRaw.isNotEmpty || epRating.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: Wrap(
+                                        spacing: 12,
+                                        runSpacing: 4,
+                                        children: [
+                                          if (epAirDate.isNotEmpty)
+                                            _metaChip(Icons.event, epAirDate),
+                                          if (epDurationRaw.isNotEmpty)
+                                            _metaChip(Icons.timer, epDurationRaw),
+                                          if (epRating.isNotEmpty)
+                                            _metaChip(Icons.star_half, epRating),
+                                        ],
+                                      ),
+                                    ),
+                                  Text(
+                                    epPlot.isNotEmpty ? epPlot : plot,
+                                    style: const TextStyle(
+                                      color: _secondaryTextColor,
+                                      fontSize: 12,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                ] else if (plot.isNotEmpty)
                                   Text(
                                     plot,
                                     style: const TextStyle(
@@ -329,7 +386,6 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                       height: 1.5,
                                     ),
                                   ),
-                                ],
                                 const SizedBox(height: 16),
 
                                 // ── Season dropdown ──
@@ -415,23 +471,6 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                                     ),
                                   ),
                                   const SizedBox(height: 12),
-                                ],
-
-                                // ── Episode description ──
-                                if (hasEpisode && epPlot.isNotEmpty) ...[
-                                  const Text(
-                                    'Episode synopsis',
-                                    style: TextStyle(color: _secondaryTextColor, fontSize: 11),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    epPlot,
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 12,
-                                      height: 1.5,
-                                    ),
-                                  ),
                                 ],
                               ],
                             ),
