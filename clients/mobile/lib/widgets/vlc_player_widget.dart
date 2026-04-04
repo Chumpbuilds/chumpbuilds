@@ -187,31 +187,29 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
         );
       }
 
-      return GestureDetector(
-        onTap: () {
+      return EmbeddedExoPlayerWidget(
+        key: _embeddedKey,
+        url: widget.streamUrl,
+        title: widget.title,
+        contentType: widget.contentType,
+        autoPlay: widget.autoPlay,
+        onTapped: () {
           if (widget.streamUrl.isNotEmpty) {
             widget.onFullscreenRequested?.call();
           }
         },
-        child: EmbeddedExoPlayerWidget(
-          key: _embeddedKey,
-          url: widget.streamUrl,
-          title: widget.title,
-          contentType: widget.contentType,
-          autoPlay: widget.autoPlay,
-          onStateChanged: ({
-            required bool isPlaying,
-            required bool isBuffering,
-            required bool hasError,
-            String? errorMessage,
-          }) {
-            if (!mounted) return;
-            setState(() {
-              _isLoading = isBuffering;
-              _hasError = hasError;
-            });
-          },
-        ),
+        onStateChanged: ({
+          required bool isPlaying,
+          required bool isBuffering,
+          required bool hasError,
+          String? errorMessage,
+        }) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = isBuffering;
+            _hasError = hasError;
+          });
+        },
       );
     }
 

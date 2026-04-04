@@ -22,6 +22,7 @@ class EmbeddedExoPlayerWidget extends StatefulWidget {
     required this.contentType,
     this.autoPlay = true,
     this.onStateChanged,
+    this.onTapped,
   });
 
   final String url;
@@ -36,6 +37,9 @@ class EmbeddedExoPlayerWidget extends StatefulWidget {
     required bool hasError,
     String? errorMessage,
   })? onStateChanged;
+
+  /// Called when the user taps the native player surface.
+  final VoidCallback? onTapped;
 
   @override
   State<EmbeddedExoPlayerWidget> createState() =>
@@ -69,7 +73,9 @@ class _EmbeddedExoPlayerWidgetState extends State<EmbeddedExoPlayerWidget> {
   }
 
   Future<dynamic> _handleNativeCall(MethodCall call) async {
-    if (call.method == 'onPlaybackStateChanged') {
+    if (call.method == 'onTapped') {
+      widget.onTapped?.call();
+    } else if (call.method == 'onPlaybackStateChanged') {
       final args = call.arguments as Map;
       final isPlaying = args['isPlaying'] as bool? ?? false;
       final isBuffering = args['isBuffering'] as bool? ?? false;
