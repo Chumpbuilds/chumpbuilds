@@ -82,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
   }
 
   @override
@@ -135,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // before re-applying immersive mode.
     await Future.delayed(const Duration(milliseconds: 100));
     if (mounted) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
     }
   }
 
@@ -145,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     await Future.delayed(const Duration(milliseconds: 100));
     if (mounted) {
-      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
     }
   }
 

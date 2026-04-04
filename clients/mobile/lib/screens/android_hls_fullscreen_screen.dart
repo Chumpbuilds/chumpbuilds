@@ -37,7 +37,7 @@ class _AndroidHlsFullscreenScreenState
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
     WakelockPlus.enable();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -48,7 +48,7 @@ class _AndroidHlsFullscreenScreenState
       );
       if (mounted) {
         await SystemChrome.setEnabledSystemUIMode(
-            SystemUiMode.immersiveSticky);
+            SystemUiMode.immersive);
         Navigator.of(context).pop();
       }
     });

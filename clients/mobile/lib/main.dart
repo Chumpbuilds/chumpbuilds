@@ -24,12 +24,14 @@ void main() async {
   ]);
 
   // Hide system bars globally on startup.
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
 
-  // Ensure the status bar overlays content transparently when briefly visible.
+  // Ensure the status bar and navigation bar are solid black when briefly visible.
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.black,
+    statusBarIconBrightness: Brightness.light,
     systemNavigationBarColor: Colors.black,
+    systemNavigationBarIconBrightness: Brightness.light,
   ));
 
   // Read cached branding from SharedPreferences (fast disk read, no network).

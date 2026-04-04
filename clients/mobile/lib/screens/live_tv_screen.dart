@@ -287,7 +287,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
       ),
     );
     // Re-apply immersive mode after returning from fullscreen.
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
   }
 
   Future<void> _openChannelExternal(Map<String, dynamic> channel) async {
