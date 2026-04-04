@@ -319,7 +319,7 @@ class NativePlayerActivity : Activity() {
             setTextColor(android.graphics.Color.WHITE)
             textSize = 12f
             setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            background = makeFocusDrawable()
             layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
@@ -330,13 +330,14 @@ class NativePlayerActivity : Activity() {
             }
             isClickable = true
             isFocusable = true
+            isFocusableInTouchMode = true
         }
         bottomBar.addView(resizeModeLabel)
 
         // Settings (audio/video tracks) button
         val settingsButton = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_menu_preferences)
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            background = makeFocusDrawable()
             setColorFilter(android.graphics.Color.WHITE)
             layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
                 gravity = android.view.Gravity.CENTER_VERTICAL
@@ -346,6 +347,8 @@ class NativePlayerActivity : Activity() {
                 showSettingsDialog()
                 scheduleHideControls()
             }
+            isFocusable = true
+            isFocusableInTouchMode = true
         }
         bottomBar.addView(settingsButton)
 
@@ -355,7 +358,7 @@ class NativePlayerActivity : Activity() {
             setTextColor(android.graphics.Color.WHITE)
             textSize = 14f
             setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
-            setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            background = makeFocusDrawable()
             layoutParams = android.widget.LinearLayout.LayoutParams(btnSize, btnSize).apply {
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
@@ -367,6 +370,7 @@ class NativePlayerActivity : Activity() {
             }
             isClickable = true
             isFocusable = true
+            isFocusableInTouchMode = true
         }
         bottomBar.addView(ccButton)
 
@@ -503,6 +507,23 @@ class NativePlayerActivity : Activity() {
     }
 
     // ── Device detection ──────────────────────────────────────────────────────
+
+    private fun makeFocusDrawable(): android.graphics.drawable.StateListDrawable {
+        val pressed = android.graphics.drawable.GradientDrawable().apply {
+            setColor(0x993498DB.toInt())
+            cornerRadius = dpToPx(4).toFloat()
+        }
+        val focused = android.graphics.drawable.GradientDrawable().apply {
+            setColor(0x663498DB.toInt())
+            cornerRadius = dpToPx(4).toFloat()
+        }
+        val normal = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+        return android.graphics.drawable.StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), pressed)
+            addState(intArrayOf(android.R.attr.state_focused), focused)
+            addState(intArrayOf(), normal)
+        }
+    }
 
     private fun dpToPx(dp: Int): Int {
         val density = resources.displayMetrics.density
