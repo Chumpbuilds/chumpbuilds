@@ -243,11 +243,38 @@ class _SeriesScreenState extends State<SeriesScreen> {
       ),
       body: (_categorySelected || _headerSearchCtrl.text.isNotEmpty)
           ? _buildSeriesGrid()
-          : _buildCategoriesPanel(),
+          : Row(
+              children: [
+                Expanded(flex: 40, child: _buildCategoriesPanel()),
+                Expanded(flex: 60, child: _buildPlaceholderPanel()),
+              ],
+            ),
     ));
   }
 
   // ─── Panel – Categories (initial state) ──────────────────────────────────
+
+  Widget _buildPlaceholderPanel() {
+    return const ColoredBox(
+      color: _bgColor,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.video_library_outlined, size: 64, color: _secondaryTextColor),
+            SizedBox(height: 16),
+            Text(
+              'Please select a category to proceed',
+              style: TextStyle(
+                color: _secondaryTextColor,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildCategoriesPanel() {
     return Container(
