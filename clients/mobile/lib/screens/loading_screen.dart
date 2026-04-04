@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../services/epg_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/system_ui_wrapper.dart';
@@ -25,7 +26,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
   static const Color _descColor = Color(0xFFB0B0B0);
 
   int _completed = 0;
-  int _total = 7;
+  int _total = 4;
   String _currentLabel = 'Preparing…';
   bool _done = false;
 
@@ -36,21 +37,51 @@ class _LoadingScreenState extends State<LoadingScreen> {
   }
 
   Future<void> _runPrefetch() async {
-    try {
-      await XtreamService().prefetchAll(
-        onProgress: (completed, total, label) {
-          if (!mounted) return;
-          setState(() {
-            _completed = completed;
-            _total = total;
-            _currentLabel = label == 'Complete' ? 'Done!' : 'Loading $label…';
-            _done = label == 'Complete';
-          });
-        },
-      );
-    } catch (e) {
-      debugPrint('[LoadingScreen] prefetchAll error: $e');
+    final xtream = XtreamService();
+    final steps = <MapEntry<String, Future<void> Function()>>[
+      MapEntry('Live TV', () async {
+        await xtream.getLiveCategories();
+        await xtream.getLiveStreams(null);
+      }),
+      MapEntry('Movies', () async {
+        await xtream.getVodCategories();
+        await xtream.getVodStreams(null);
+      }),
+      MapEntry('Series', () async {
+        await xtream.getSeriesCategories();
+        await xtream.getSeries(null);
+      }),
+      MapEntry('EPG', () async {
+        await EpgService().downloadAndCacheEpg(
+          xtream.baseUrl!,
+          xtream.username!,
+          xtream.password!,
+        );
+      }),
+    ];
+
+    for (int i = 0; i < steps.length; i++) {
+      if (!mounted) return;
+      setState(() {
+        _completed = i;
+        _total = steps.length;
+        _currentLabel = 'Loading ${steps[i].key}…';
+        _done = false;
+      });
+      try {
+        await steps[i].value();
+      } catch (e) {
+        debugPrint('[LoadingScreen] step "${steps[i].key}" error: $e');
+      }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _completed = steps.length;
+      _total = steps.length;
+      _currentLabel = 'Done!';
+      _done = true;
+    });
 
     // Small pause so the user sees "Done!" before navigating.
     if (mounted) {

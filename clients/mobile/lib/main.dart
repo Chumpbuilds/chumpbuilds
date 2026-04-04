@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'screens/home_screen.dart';
 import 'screens/license_screen.dart';
-import 'screens/loading_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/epg_service.dart';
 import 'services/license_service.dart';
@@ -159,6 +158,13 @@ class _BootstrapScreen extends StatefulWidget {
 class _BootstrapScreenState extends State<_BootstrapScreen> {
   static const Color _bgColor = Color(0xFF1E1E1E);
   static const Color _primaryColor = Color(0xFF0D7377);
+  static const Color _surfaceColor = Color(0xFF2D2D2D);
+  static const Color _descColor = Color(0xFFB0B0B0);
+
+  bool _showProgress = false;
+  int _completed = 0;
+  int _total = 4;
+  String _currentLabel = '';
 
   @override
   void initState() {
@@ -168,36 +174,105 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
   Future<void> _init() async {
     try {
+      // Start a minimum 3-second timer running in parallel with init work so
+      // the user sees the branded welcome screen for at least 3 seconds.
+      final minWait = Future<void>.delayed(const Duration(seconds: 3));
+
       // 1. Silently validate any stored licence.
       final isValid = await LicenseService().validateLicense();
 
-      Widget nextScreen;
-      if (isValid) {
-        // 2. Licence is valid — attempt silent IPTV auto-login with saved creds.
-        final autoLoggedIn = await _tryAutoLogin();
-        if (autoLoggedIn) {
-          // Check if the core content cache has at least 20 hours remaining.
-          final cacheFresh = await XtreamCacheService().isCacheFresh(
-            minRemainingHours: 20,
+      if (!isValid) {
+        // No valid licence — wait for the minimum welcome time, then activate.
+        await minWait;
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const LicenseScreen()),
+        );
+        return;
+      }
+
+      // 2. Licence is valid — attempt silent IPTV auto-login with saved creds.
+      final autoLoggedIn = await _tryAutoLogin();
+
+      if (!autoLoggedIn) {
+        await minWait;
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
+        );
+        return;
+      }
+
+      // 3. Check if the core content cache has at least 20 hours remaining.
+      final cacheFresh = await XtreamCacheService().isCacheFresh(
+        minRemainingHours: 20,
+      );
+
+      if (cacheFresh) {
+        // Load EPG from disk while waiting for the minimum welcome time.
+        await Future.wait([minWait, EpgService().loadFromCache()]);
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        );
+        return;
+      }
+
+      // 4. Cache is stale — wait for min welcome time, then show progress bar
+      // and run a 4-step prefetch inline (no separate LoadingScreen needed).
+      await minWait;
+      if (!mounted) return;
+      setState(() {
+        _showProgress = true;
+      });
+
+      final xtream = XtreamService();
+      final steps = <MapEntry<String, Future<void> Function()>>[
+        MapEntry('Live TV', () async {
+          await xtream.getLiveCategories();
+          await xtream.getLiveStreams(null);
+        }),
+        MapEntry('Movies', () async {
+          await xtream.getVodCategories();
+          await xtream.getVodStreams(null);
+        }),
+        MapEntry('Series', () async {
+          await xtream.getSeriesCategories();
+          await xtream.getSeries(null);
+        }),
+        MapEntry('EPG', () async {
+          await EpgService().downloadAndCacheEpg(
+            xtream.baseUrl!,
+            xtream.username!,
+            xtream.password!,
           );
-          if (cacheFresh) {
-            // Load EPG data from cache so it's available without re-downloading.
-            await EpgService().loadFromCache();
-            nextScreen = const HomeScreen();
-          } else {
-            nextScreen = const LoadingScreen();
-          }
-        } else {
-          nextScreen = const LoginScreen();
+        }),
+      ];
+
+      for (int i = 0; i < steps.length; i++) {
+        if (!mounted) return;
+        setState(() {
+          _completed = i;
+          _currentLabel = 'Loading ${steps[i].key}...';
+        });
+        try {
+          await steps[i].value();
+        } catch (e) {
+          debugPrint(
+              '[BootstrapScreen] prefetch step "${steps[i].key}" error: $e');
         }
-      } else {
-        // 3. No valid licence — show the activation screen.
-        nextScreen = const LicenseScreen();
       }
 
       if (!mounted) return;
+      setState(() {
+        _completed = steps.length;
+        _currentLabel = 'Done!';
+      });
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute<void>(builder: (_) => nextScreen),
+        MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
       debugPrint('[BootstrapScreen] init error: $e');
@@ -210,48 +285,109 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final progress = _total > 0 ? _completed / _total : 0.0;
     return SystemUiWrapper(
       child: Scaffold(
         backgroundColor: _bgColor,
         body: SafeArea(
           child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Show portal logo if available, otherwise fall back to the
-                // default teal TV icon.
-                if (widget.logoUrl.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: CachedNetworkImage(
-                      imageUrl: widget.logoUrl,
-                      width: 80,
-                      height: 80,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => _defaultIcon(),
-                      errorWidget: (_, __, ___) => _defaultIcon(),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Show portal logo if available, otherwise fall back to the
+                    // default teal TV icon.
+                    if (widget.logoUrl.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: CachedNetworkImage(
+                          imageUrl: widget.logoUrl,
+                          width: 80,
+                          height: 80,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => _defaultIcon(),
+                          errorWidget: (_, __, ___) => _defaultIcon(),
+                        ),
+                      )
+                    else
+                      _defaultIcon(),
+                    const SizedBox(height: 20),
+
+                    // Portal app name with "Welcome to" prefix.
+                    Text(
+                      'Welcome to ${widget.appName}',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        letterSpacing: 0.5,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                  )
-                else
-                  _defaultIcon(),
-                const SizedBox(height: 20),
+                    const SizedBox(height: 12),
 
-                // Portal app name with "Welcome to" prefix.
-                Text(
-                  'Welcome to ${widget.appName}',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                    letterSpacing: 0.5,
-                  ),
-                  textAlign: TextAlign.center,
+                    // "Loading..." text replaces the circular spinner.
+                    const Text(
+                      'Loading...',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: _descColor,
+                      ),
+                    ),
+
+                    // Progress section — animates in only when cache is stale.
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 300),
+                      child: _showProgress
+                          ? Column(
+                              children: [
+                                const SizedBox(height: 32),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: LinearProgressIndicator(
+                                    value: progress,
+                                    minHeight: 6,
+                                    backgroundColor: _surfaceColor,
+                                    valueColor:
+                                        const AlwaysStoppedAnimation<Color>(
+                                      _primaryColor,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _currentLabel,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: _descColor,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Text(
+                                      '$_completed / $_total',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: _descColor,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 40),
-
-                // Subtle loading indicator.
-                const CircularProgressIndicator(color: _primaryColor),
-              ],
+              ),
             ),
           ),
         ),
