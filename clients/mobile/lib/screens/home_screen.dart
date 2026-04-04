@@ -203,9 +203,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
+      resizeToAvoidBottomInset: false,
+      body: Column(
           children: [
             // ── Top bar: user info (left) + icon buttons (right) ──────────
             SizedBox(
@@ -357,7 +356,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
         ),
-      ),
     ));
   }
 }
@@ -848,6 +846,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
 
     return Scaffold(
       backgroundColor: _bgColor,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         title: Text(appName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         centerTitle: true,
@@ -861,9 +860,7 @@ class _SettingsScreenState extends State<_SettingsScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
       ),
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
+      body: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1004,7 +1001,6 @@ class _SettingsScreenState extends State<_SettingsScreen> {
             ],
           ),
         ),
-      ),
     );
   }
 

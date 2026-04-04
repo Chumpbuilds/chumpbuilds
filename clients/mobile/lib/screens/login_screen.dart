@@ -178,9 +178,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return SystemUiWrapper(child: Scaffold(
       backgroundColor: _bgColor,
-      body: SafeArea(
-        bottom: false,
-        child: Center(
+      resizeToAvoidBottomInset: false,
+      body: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
             child: Column(
@@ -231,7 +230,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             ),
           ),
-        ),
       ),
     ));
   }

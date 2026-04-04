@@ -120,9 +120,8 @@ class _LoadingScreenState extends State<LoadingScreen> {
     return SystemUiWrapper(
       child: Scaffold(
         backgroundColor: _bgColor,
-        body: SafeArea(
-          bottom: false,
-          child: Center(
+        resizeToAvoidBottomInset: false,
+        body: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Padding(
@@ -208,7 +207,6 @@ class _LoadingScreenState extends State<LoadingScreen> {
                 ),
               ),
             ),
-          ),
         ),
       ),
     );

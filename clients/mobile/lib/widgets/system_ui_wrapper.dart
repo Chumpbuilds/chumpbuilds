@@ -55,6 +55,10 @@ class _SystemUiWrapperState extends State<SystemUiWrapper>
 
   void _hideSystemUI() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
+    ));
   }
 
   void _onTapDown(TapDownDetails details) {
