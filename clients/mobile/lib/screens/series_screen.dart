@@ -8,7 +8,6 @@ import '../services/favorites_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_list_item.dart';
-import '../widgets/vlc_player_widget.dart';
 import '../widgets/system_ui_wrapper.dart';
 
 /// Series screen — categories → series list → seasons/episodes tree + play.
@@ -56,12 +55,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
   /// showing the categories (35%) + portal logo (65%) layout. After a
   /// category tap it becomes true, switching to series list (35%) + detail/player (65%).
   bool _categorySelected = false;
-
-  // ─── VLC embedded player state ────────────────────────────────────────────
-  String _vlcStreamUrl = '';
-  String _vlcTitle = '';
-  int _vlcPlayerKey = 0;
-  bool _vlcAutoPlay = false;
 
   final _headerSearchCtrl = TextEditingController();
 
@@ -261,15 +254,21 @@ class _SeriesScreenState extends State<SeriesScreen> {
       if (epNum.isNotEmpty) 'Ep $epNum',
       if (title.isNotEmpty) title,
     ].join(': ');
-    setState(() {
-      _currentEpisodeId = episodeId;
-      _vlcStreamUrl = url;
-      _vlcTitle = label.isNotEmpty
-          ? label
-          : (_selectedSeries?['name']?.toString() ?? 'Episode');
-      _vlcAutoPlay = true;
-      _vlcPlayerKey++;
-    });
+    final displayTitle = label.isNotEmpty
+        ? label
+        : (_selectedSeries?['name']?.toString() ?? 'Episode');
+
+    setState(() => _currentEpisodeId = episodeId);
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => AndroidHlsFullscreenScreen(
+          streamUrl: url,
+          title: displayTitle,
+          contentType: 'series',
+        ),
+      ),
+    );
   }
 
   /// Plays the episode currently selected via [_selectedSeason] and
@@ -284,72 +283,17 @@ class _SeriesScreenState extends State<SeriesScreen> {
     _playEpisode(episodes[_selectedEpisodeIndex!]);
   }
 
-  /// Stops the embedded player and resets it to the idle (placeholder) state.
-  ///
-  /// Incrementing [_vlcPlayerKey] disposes the active [VlcPlayerWidget], whose
-  /// [dispose] stops whichever service (VLC or ExoPlayer) is currently active.
-  void _stopEmbeddedPlayback() {
-    setState(() {
-      _vlcStreamUrl = '';
-      _vlcTitle = '';
-      _vlcAutoPlay = false;
-      _vlcPlayerKey++;
-    });
-  }
-
-  Future<void> _goFullscreen() async {
-    if (_vlcStreamUrl.isEmpty) return;
-    final url = _vlcStreamUrl;
-    final title = _vlcTitle;
-    _stopEmbeddedPlayback();
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => AndroidHlsFullscreenScreen(
-          streamUrl: url,
-          title: title,
-          contentType: 'series',
-        ),
-      ),
-    );
-  }
-
-  /// Replays the current stream by reinitializing the player with autoplay enabled.
-  void _replayCurrentStream() {
-    if (_vlcStreamUrl.isEmpty) return;
-    setState(() {
-      _vlcAutoPlay = true;
-      _vlcPlayerKey++;
-    });
-  }
-
-  /// Opens the currently loaded stream URL in an external player (VLC).
-  Future<void> _openCurrentStreamExternal() async {
-    if (_vlcStreamUrl.isEmpty) return;
-    final url = _vlcStreamUrl;
-
-    // Stop the embedded player before launching VLC to avoid dual playback.
-    _stopEmbeddedPlayback();
-
-    final launched =
-        await ExternalPlayerService.instance.openInVlc(url);
-    if (!launched && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Unable to open video in external player.')),
-      );
-    }
-  }
-
-  Future<void> _openEpisodeExternal(Map<String, dynamic> episode) async {
+  Future<void> _openEpisodeExternal() async {
+    if (_seriesInfo == null || _selectedSeason == null || _selectedEpisodeIndex == null) return;
+    final episodesBySeason = _parseEpisodes(_seriesInfo!['episodes']);
+    final episodes = episodesBySeason[_selectedSeason];
+    if (episodes == null || _selectedEpisodeIndex! >= episodes.length) return;
+    final episode = episodes[_selectedEpisodeIndex!];
     final episodeId = episode['id']?.toString() ?? '';
     if (episodeId.isEmpty) return;
     final ext = episode['container_extension']?.toString() ?? 'mp4';
     final url = _xtream.getStreamUrl(episodeId, 'series', extension: ext);
     if (url.isEmpty) return;
-
-    // Stop the embedded player before launching VLC to avoid dual playback.
-    _stopEmbeddedPlayback();
-
     final launched = await ExternalPlayerService.instance.openInVlc(url);
     if (!launched && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -673,10 +617,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       _seriesInfo = null;
                       _selectedSeason = null;
                       _selectedEpisodeIndex = null;
-                      _vlcStreamUrl = '';
-                      _vlcTitle = '';
-                      _vlcAutoPlay = false;
-                      _vlcPlayerKey++;
+                      _currentEpisodeId = '';
                     });
                   },
                 ),
@@ -790,22 +731,12 @@ class _SeriesScreenState extends State<SeriesScreen> {
   // ─── Panel 2 – Series Detail / Episodes ──────────────────────────────────
 
   Widget _buildDetailPanel() {
-    final playerWidget = VlcPlayerWidget(
-      key: ValueKey(_vlcPlayerKey),
-      streamUrl: _vlcStreamUrl,
-      title: _vlcTitle,
-      contentType: 'series',
-      autoPlay: _vlcAutoPlay,
-      onStopRequested: _stopEmbeddedPlayback,
-      onFullscreenRequested: _goFullscreen,
-    );
-
     if (_selectedSeries == null) {
       return ColoredBox(
         color: _bgColor,
         child: Column(
           children: [
-            // ── Row 1 (60%): 35% artwork placeholder | 65% player (idle) ──
+            // ── Row 1 (60%): 35% artwork placeholder | 65% play area ──
             Expanded(
               flex: 60,
               child: Row(
@@ -820,7 +751,19 @@ class _SeriesScreenState extends State<SeriesScreen> {
                       ),
                     ),
                   ),
-                  Expanded(flex: 65, child: playerWidget),
+                  Expanded(
+                    flex: 65,
+                    child: Container(
+                      color: Colors.black,
+                      child: const Center(
+                        child: Text(
+                          'Select an episode to play',
+                          style: TextStyle(color: Colors.white54, fontSize: 14),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -861,6 +804,25 @@ class _SeriesScreenState extends State<SeriesScreen> {
     final seriesId = series['series_id']?.toString() ?? '';
     final isFav = _favSeriesIds.contains(seriesId);
 
+    // Determine selected episode label for the play area
+    final currentEpisodes = _selectedSeason != null
+        ? (episodesBySeasonRaw[_selectedSeason] ?? <Map<String, dynamic>>[])
+        : <Map<String, dynamic>>[];
+    final hasEpisodeSelected = _selectedEpisodeIndex != null &&
+        currentEpisodes.isNotEmpty &&
+        _selectedEpisodeIndex! < currentEpisodes.length;
+    String episodeDisplayTitle = '';
+    if (hasEpisodeSelected) {
+      final ep = currentEpisodes[_selectedEpisodeIndex!];
+      final epNum = ep['episode_num']?.toString() ?? '';
+      final epTitle = ep['title']?.toString() ?? '';
+      final label = [
+        if (epNum.isNotEmpty) 'Ep $epNum',
+        if (epTitle.isNotEmpty) epTitle,
+      ].join(': ');
+      episodeDisplayTitle = label.isNotEmpty ? label : name;
+    }
+
     return ColoredBox(
       color: _bgColor,
       child: _loadingDetail
@@ -868,7 +830,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
               child: CircularProgressIndicator(color: _primaryColor))
           : Column(
               children: [
-                // ── Row 1 (60%): 35% cover artwork | 65% player ───────────
+                // ── Row 1 (60%): 35% cover artwork | 65% play area ────────
                 Expanded(
                   flex: 60,
                   child: Row(
@@ -895,8 +857,75 @@ class _SeriesScreenState extends State<SeriesScreen> {
                                       style: TextStyle(fontSize: 32))),
                         ),
                       ),
-                      // 65% – player
-                      Expanded(flex: 65, child: playerWidget),
+                      // 65% – play buttons area
+                      Expanded(
+                        flex: 65,
+                        child: Container(
+                          color: Colors.black,
+                          child: Center(
+                            child: hasEpisodeSelected
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        episodeDisplayTitle,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 24),
+                                      SizedBox(
+                                        width: 220,
+                                        child: ElevatedButton.icon(
+                                          onPressed: _playSelectedEpisode,
+                                          icon: const Icon(Icons.play_arrow),
+                                          label: const Text('Play'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: _accentColor,
+                                            foregroundColor: Colors.white,
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 14),
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8)),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      SizedBox(
+                                        width: 220,
+                                        child: OutlinedButton.icon(
+                                          onPressed: _openEpisodeExternal,
+                                          icon: const Icon(Icons.open_in_new),
+                                          label: const Text('Play in VLC'),
+                                          style: OutlinedButton.styleFrom(
+                                            foregroundColor: Colors.white,
+                                            side: const BorderSide(
+                                                color: Color(0xFF3D3D3D)),
+                                            padding:
+                                                const EdgeInsets.symmetric(
+                                                    vertical: 12),
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8)),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : const Text(
+                                    'Select an episode to play',
+                                    style: TextStyle(
+                                        color: Colors.white54, fontSize: 14),
+                                    textAlign: TextAlign.center,
+                                  ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -907,7 +936,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Compact player controls (Play / Stop / VLC)
+                      // Season / episode selectors
                       _buildPlayerControls(episodesBySeasonRaw),
 
                       // Scrollable series/episode info
@@ -936,8 +965,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  /// Compact control row immediately below the player – mirrors the live TV
-  /// screen layout: `[episode title] [Play ▶] [Stop ■] [↗ VLC]`.
+  /// Season / episode selector row — shown below the play area.
   Widget _buildPlayerControls(
       Map<int, List<Map<String, dynamic>>> episodesBySeason) {
     final sortedSeasons = episodesBySeason.keys.toList()..sort();
@@ -974,14 +1002,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              _vlcTitle,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-
           // ── Season dropdown ──────────────────────────────────────────────
           if (sortedSeasons.isNotEmpty) ...[
             SizedBox(
@@ -1099,22 +1119,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     ),
                   );
                   if (selected != null && mounted) {
-                    final tappedEpisode = selected < currentEpisodes.length
-                        ? currentEpisodes[selected]
-                        : null;
-                    final tappedEpisodeId =
-                        tappedEpisode?['id']?.toString() ?? '';
-                    // Second tap on the already-playing episode → go fullscreen.
-                    if (tappedEpisodeId.isNotEmpty &&
-                        tappedEpisodeId == _currentEpisodeId &&
-                        _vlcStreamUrl.isNotEmpty) {
-                      await _goFullscreen();
-                    } else {
-                      setState(() => _selectedEpisodeIndex = selected);
-                      if (tappedEpisode != null) {
-                        _playEpisode(tappedEpisode);
-                      }
-                    }
+                    setState(() => _selectedEpisodeIndex = selected);
                   }
                 },
                 child: Text(
@@ -1125,70 +1130,6 @@ class _SeriesScreenState extends State<SeriesScreen> {
             ),
             const SizedBox(width: 4),
           ],
-
-          // ── Play button ──────────────────────────────────────────────────
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              onPressed: _playSelectedEpisode,
-              icon: const Icon(Icons.play_arrow, size: 14),
-              label: const Text('Play', style: TextStyle(fontSize: 11)),
-              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF27AE60),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              onPressed: _stopEmbeddedPlayback,
-              icon: const Icon(Icons.stop, size: 14),
-              label: const Text('Stop', style: TextStyle(fontSize: 11)),
-              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
-            child: ElevatedButton.icon(
-              onPressed: _vlcStreamUrl.isNotEmpty ? _goFullscreen : null,
-              icon: const Icon(Icons.fullscreen, size: 14),
-              label: const Text('Fullscreen', style: TextStyle(fontSize: 11)),
-              style: tvFocusButtonStyle(ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF8E44AD),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-            ),
-          ),
-          const SizedBox(width: 4),
-          SizedBox(
-            height: 28,
-            child: OutlinedButton(
-              onPressed: _openCurrentStreamExternal,
-              style: tvFocusOutlinedButtonStyle(OutlinedButton.styleFrom(
-                foregroundColor: Colors.white,
-                side: const BorderSide(color: Color(0xFF3D3D3D)),
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4)),
-              )),
-              child: const Text('↗ VLC', style: TextStyle(fontSize: 11)),
-            ),
-          ),
         ],
       ),
     );
