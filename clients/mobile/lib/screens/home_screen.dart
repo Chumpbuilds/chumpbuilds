@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/epg_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_cache_service.dart';
 import '../services/xtream_service.dart';
@@ -579,6 +580,11 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
         jsonEncode({'username': username, 'password': password}),
       );
       await prefs.setString('last_used_profile', profileName);
+
+      // Clear all cached data from the previous user so LoadingScreen
+      // fetches fresh content for the new account.
+      await XtreamCacheService().clear();
+      await EpgService().clearCache();
 
       if (!mounted) return;
       Navigator.of(context).pop();

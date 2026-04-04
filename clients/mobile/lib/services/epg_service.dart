@@ -162,6 +162,28 @@ class EpgService {
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
+  /// Clears all EPG data — in-memory cache, on-disk files, and the
+  /// SharedPreferences timestamp — so the next call to [downloadAndCacheEpg]
+  /// will re-download fresh data. Call this when switching user accounts.
+  Future<void> clearCache() async {
+    _epgData = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(epgTimestampKey);
+    try {
+      final epgFile = await _getEpgFile();
+      if (await epgFile.exists()) await epgFile.delete();
+    } catch (e) {
+      debugPrint('[EpgService] Warning: could not delete EPG file: $e');
+    }
+    try {
+      final jsonFile = await _getEpgJsonFile();
+      if (await jsonFile.exists()) await jsonFile.delete();
+    } catch (e) {
+      debugPrint('[EpgService] Warning: could not delete EPG JSON cache: $e');
+    }
+    debugPrint('[EpgService] Cache cleared');
+  }
+
   /// Returns true if the EPG file was downloaded recently enough that
   /// [minRemainingHours] hours are still remaining on its 24-hour TTL.
   Future<bool> isEpgFresh({int minRemainingHours = 20}) async {
