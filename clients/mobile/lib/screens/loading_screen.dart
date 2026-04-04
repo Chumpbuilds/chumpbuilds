@@ -121,6 +121,7 @@ class _LoadingScreenState extends State<LoadingScreen> {
       child: Scaffold(
         backgroundColor: _bgColor,
         body: SafeArea(
+          bottom: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
