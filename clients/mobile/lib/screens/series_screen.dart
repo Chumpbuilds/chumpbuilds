@@ -70,6 +70,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
   // ─── Season / episode quick-select state ─────────────────────────────────
   int? _selectedSeason;
   int? _selectedEpisodeIndex;
+  String _currentEpisodeId = '';
 
   @override
   void initState() {
@@ -261,6 +262,7 @@ class _SeriesScreenState extends State<SeriesScreen> {
       if (title.isNotEmpty) title,
     ].join(': ');
     setState(() {
+      _currentEpisodeId = episodeId;
       _vlcStreamUrl = url;
       _vlcTitle = label.isNotEmpty
           ? label
@@ -1097,9 +1099,21 @@ class _SeriesScreenState extends State<SeriesScreen> {
                     ),
                   );
                   if (selected != null && mounted) {
-                    setState(() => _selectedEpisodeIndex = selected);
-                    if (selected < currentEpisodes.length) {
-                      _playEpisode(currentEpisodes[selected]);
+                    final tappedEpisode = selected < currentEpisodes.length
+                        ? currentEpisodes[selected]
+                        : null;
+                    final tappedEpisodeId =
+                        tappedEpisode?['id']?.toString() ?? '';
+                    // Second tap on the already-playing episode → go fullscreen.
+                    if (tappedEpisodeId.isNotEmpty &&
+                        tappedEpisodeId == _currentEpisodeId &&
+                        _vlcStreamUrl.isNotEmpty) {
+                      await _goFullscreen();
+                    } else {
+                      setState(() => _selectedEpisodeIndex = selected);
+                      if (tappedEpisode != null) {
+                        _playEpisode(tappedEpisode);
+                      }
                     }
                   }
                 },

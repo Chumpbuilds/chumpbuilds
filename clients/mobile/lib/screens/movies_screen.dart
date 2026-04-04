@@ -150,6 +150,15 @@ class _MoviesScreenState extends State<MoviesScreen> {
   }
 
   Future<void> _selectMovie(Map<String, dynamic> movie) async {
+    final tappedId = movie['stream_id']?.toString() ?? '';
+    final currentId = _selectedMovie?['stream_id']?.toString() ?? '';
+
+    // Second tap on the already-playing movie → go fullscreen.
+    if (tappedId.isNotEmpty && tappedId == currentId && _vlcStreamUrl.isNotEmpty) {
+      await _goFullscreen();
+      return;
+    }
+
     setState(() {
       _selectedMovie = movie;
       _vodInfo = null;
