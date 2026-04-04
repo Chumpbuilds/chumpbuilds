@@ -64,6 +64,10 @@ class ExoPlayerPlatformView(
 
         playerView.player = player
 
+        playerView.setOnClickListener {
+            channel.invokeMethod("onTapped", null)
+        }
+
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 sendStateUpdate()
