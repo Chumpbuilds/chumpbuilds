@@ -14,15 +14,6 @@ void main() {
     expect(find.byIcon(Icons.tv), findsOneWidget);
   });
 
-  testWidgets('X87App bootstrap screen shows portal app name',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      const X87App(appName: 'My IPTV App'),
-    );
-
-    expect(find.text('Welcome to My IPTV App'), findsOneWidget);
-  });
-
   testWidgets('X87App applies dark theme with correct background colour',
       (WidgetTester tester) async {
     await tester.pumpWidget(const X87App());

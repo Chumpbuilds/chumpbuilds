@@ -14,46 +14,13 @@ import 'services/xtream_cache_service.dart';
 import 'services/xtream_service.dart';
 import 'widgets/system_ui_wrapper.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Lock the entire app to landscape.
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-
-  // Hide system bars globally on startup.
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
-
-  // Ensure the status bar and navigation bar are solid black when briefly visible.
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.black,
-    statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: Colors.black,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
-
-  // Read cached branding from SharedPreferences (fast disk read, no network).
-  // This ensures the bootstrap screen shows the portal-configured name and
-  // logo before any network call is made.
-  String cachedAppName = 'X87 Player';
-  String cachedLogoUrl = '';
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString('user_settings');
-    if (raw != null && raw.isNotEmpty) {
-      final settings = jsonDecode(raw) as Map<String, dynamic>;
-      cachedAppName = settings['app_name'] as String? ?? 'X87 Player';
-      cachedLogoUrl = settings['logo_url'] as String? ?? '';
-    }
-  } catch (_) {
-    // Silently fall back to defaults — branding is cosmetic and must never
-    // prevent the app from launching.
-  }
-
-  // Show the app immediately — async init runs inside _BootstrapScreen.
-  runApp(X87App(appName: cachedAppName, logoUrl: cachedLogoUrl));
+  // Call runApp() immediately — no awaits before this.
+  // All async init (orientation, system UI, SharedPreferences, license,
+  // auto-login) runs inside _BootstrapScreen.initState() so the Flutter
+  // framework can start rendering the first frame as fast as possible.
+  runApp(const X87App());
 }
 
 /// Attempt to auto-login using the last-used cloud profile's saved credentials.
@@ -123,18 +90,7 @@ Future<bool> _tryAutoLogin() async {
 /// app's dark theme. [home] defaults to [_BootstrapScreen], which performs
 /// all async initialization and navigates to the correct screen when done.
 class X87App extends StatelessWidget {
-  const X87App({
-    super.key,
-    this.appName = 'X87 Player',
-    this.logoUrl = '',
-    this.home,
-  });
-
-  /// Portal-configured app name read from cached SharedPreferences.
-  final String appName;
-
-  /// Portal-configured logo URL read from cached SharedPreferences.
-  final String logoUrl;
+  const X87App({super.key, this.home});
 
   /// Override the initial screen. Defaults to [_BootstrapScreen].
   final Widget? home;
@@ -153,7 +109,7 @@ class X87App extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF1E1E1E),
       ),
-      home: home ?? _BootstrapScreen(appName: appName, logoUrl: logoUrl),
+      home: home ?? const _BootstrapScreen(),
     );
   }
 }
@@ -164,13 +120,7 @@ class X87App extends StatelessWidget {
 /// Displays the portal-configured app name and logo so the user sees branded
 /// content instantly rather than a blank white screen.
 class _BootstrapScreen extends StatefulWidget {
-  const _BootstrapScreen({required this.appName, required this.logoUrl});
-
-  /// Portal-configured app name (e.g. "My IPTV App").
-  final String appName;
-
-  /// Portal-configured logo URL. If empty, a default icon is shown instead.
-  final String logoUrl;
+  const _BootstrapScreen();
 
   @override
   State<_BootstrapScreen> createState() => _BootstrapScreenState();
@@ -182,6 +132,8 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
   static const Color _surfaceColor = Color(0xFF2D2D2D);
   static const Color _descColor = Color(0xFFB0B0B0);
 
+  String _appName = 'X87 Player';
+  String _logoUrl = '';
   bool _showProgress = false;
   int _completed = 0;
   int _total = 4;
@@ -194,6 +146,40 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
   }
 
   Future<void> _init() async {
+    // ── Platform setup (was previously in main()) ──────────────────────
+    // Fire these off without blocking — they complete in the background
+    // while the welcome screen is already visible.
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.black,
+      statusBarIconBrightness: Brightness.light,
+      systemNavigationBarColor: Colors.black,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ));
+
+    // ── Load cached branding from SharedPreferences ────────────────────
+    // This updates the displayed app name/logo once loaded.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('user_settings');
+      if (raw != null && raw.isNotEmpty) {
+        final settings = jsonDecode(raw) as Map<String, dynamic>;
+        final name = settings['app_name'] as String? ?? 'X87 Player';
+        final logo = settings['logo_url'] as String? ?? '';
+        if (mounted) {
+          setState(() {
+            _appName = name;
+            _logoUrl = logo;
+          });
+        }
+      }
+    } catch (_) {}
+
+    // ── Existing parallel init work ────────────────────────────────────
     try {
       // Start ALL async work immediately in parallel:
       //  • cache warm  — file I/O, hides behind the license network round-trip
@@ -362,11 +348,11 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
                   children: [
                     // Show portal logo if available, otherwise fall back to the
                     // default teal TV icon.
-                    if (widget.logoUrl.isNotEmpty)
+                    if (_logoUrl.isNotEmpty)
                       ClipRRect(
                         borderRadius: BorderRadius.circular(20),
                         child: CachedNetworkImage(
-                          imageUrl: widget.logoUrl,
+                          imageUrl: _logoUrl,
                           width: 80,
                           height: 80,
                           fit: BoxFit.cover,
@@ -380,7 +366,7 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
                     // Portal app name with "Welcome to" prefix.
                     Text(
-                      'Welcome to ${widget.appName}',
+                      'Welcome to $_appName',
                       style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
