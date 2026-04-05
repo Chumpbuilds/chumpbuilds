@@ -3,9 +3,12 @@
     <item>
         <color android:color="#FF1E1E1E" />
     </item>
-    <item>
+    <item
+        android:gravity="center"
+        android:width="192dp"
+        android:height="192dp">
         <bitmap
-            android:gravity="center"
+            android:gravity="fill"
             android:src="@mipmap/ic_launcher" />
     </item>
 </layer-list>
