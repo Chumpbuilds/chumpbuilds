@@ -222,53 +222,85 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 4. Cache is stale — show progress bar and run a 4-step prefetch inline
+      // 4. Cache is stale — show progress bar and run a parallel prefetch inline
       // (no separate LoadingScreen needed).
       if (!mounted) return;
       setState(() {
         _showProgress = true;
+        _currentLabel = 'Loading content…';
       });
 
       final xtream = XtreamService();
-      final steps = <MapEntry<String, Future<void> Function()>>[
-        MapEntry('Live TV', () async {
-          await xtream.getLiveCategories();
-          await xtream.getLiveStreams(null);
-        }),
-        MapEntry('Movies', () async {
-          await xtream.getVodCategories();
-          await xtream.getVodStreams(null);
-        }),
-        MapEntry('Series', () async {
-          await xtream.getSeriesCategories();
-          await xtream.getSeries(null);
-        }),
-        MapEntry('EPG', () async {
-          await EpgService().downloadAndCacheEpg(
-            xtream.baseUrl!,
-            xtream.username!,
-            xtream.password!,
-          );
-        }),
-      ];
+      final cache = XtreamCacheService();
 
-      for (int i = 0; i < steps.length; i++) {
-        if (!mounted) return;
-        setState(() {
-          _completed = i;
-          _currentLabel = 'Loading ${steps[i].key}...';
-        });
-        try {
-          await steps[i].value();
-        } catch (e) {
-          debugPrint(
-              '[BootstrapScreen] prefetch step "${steps[i].key}" error: $e');
-        }
-      }
+      // Defer disk writes so we do a single fsync at the end instead of one
+      // after every API response (saves ~3-4 s on cold start).
+      cache.setDeferPersistence(defer: true);
+
+      // Run all 4 groups in parallel — they are fully independent.
+      // `groupsDone` is incremented in the setState callbacks of each group.
+      // Dart's event loop is single-threaded so concurrent increments from
+      // different futures are safe (no two microtasks run simultaneously).
+      int groupsDone = 0;
+      await Future.wait([
+        // Group 1: Live TV (categories + streams in parallel)
+        () async {
+          try {
+            await Future.wait([
+              xtream.getLiveCategories(),
+              xtream.getLiveStreams(null),
+            ]);
+          } catch (e) {
+            debugPrint('[BootstrapScreen] Live TV group error: $e');
+          }
+          if (mounted) setState(() => _completed = ++groupsDone);
+        }(),
+        // Group 2: Movies (categories + streams in parallel)
+        () async {
+          try {
+            await Future.wait([
+              xtream.getVodCategories(),
+              xtream.getVodStreams(null),
+            ]);
+          } catch (e) {
+            debugPrint('[BootstrapScreen] Movies group error: $e');
+          }
+          if (mounted) setState(() => _completed = ++groupsDone);
+        }(),
+        // Group 3: Series (categories + streams in parallel)
+        () async {
+          try {
+            await Future.wait([
+              xtream.getSeriesCategories(),
+              xtream.getSeries(null),
+            ]);
+          } catch (e) {
+            debugPrint('[BootstrapScreen] Series group error: $e');
+          }
+          if (mounted) setState(() => _completed = ++groupsDone);
+        }(),
+        // Group 4: EPG (independent, runs alongside everything else)
+        () async {
+          try {
+            await EpgService().downloadAndCacheEpg(
+              xtream.baseUrl!,
+              xtream.username!,
+              xtream.password!,
+            );
+          } catch (e) {
+            debugPrint('[BootstrapScreen] EPG group error: $e');
+          }
+          if (mounted) setState(() => _completed = ++groupsDone);
+        }(),
+      ]);
+
+      // Re-enable normal persistence and flush all deferred entries in one write.
+      cache.setDeferPersistence(defer: false);
+      await cache.flushToStorage();
 
       if (!mounted) return;
       setState(() {
-        _completed = steps.length;
+        _completed = _total;
         _currentLabel = 'Done!';
       });
 

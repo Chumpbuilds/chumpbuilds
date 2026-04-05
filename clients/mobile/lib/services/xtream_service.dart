@@ -8,6 +8,11 @@ import 'package:http/http.dart' as http;
 import 'epg_service.dart';
 import 'xtream_cache_service.dart';
 
+/// Top-level function used with [compute] to decode a JSON list on a
+/// background isolate, avoiding GC pauses on the main isolate for large
+/// payloads (VOD streams ~35 MB, Series streams ~47 MB).
+List<dynamic> _decodeJsonList(String body) => jsonDecode(body) as List<dynamic>;
+
 /// Singleton service that mirrors the logic in `clients/windows/auth/xtreme_codes.py`.
 ///
 /// Handles Xtream Codes API authentication and data retrieval.
@@ -361,8 +366,10 @@ class XtreamService {
           ? debugPrint('[XtreamAPI] $action OK')
           : debugPrint('[XtreamAPI] $action HTTP ${response.statusCode}');
       if (response.statusCode != 200) return [];
-      final body = jsonDecode(response.body);
-      return body is List ? body : [];
+      // Decode on a background isolate to avoid GC pauses on the main thread
+      // for large payloads (e.g. VOD/Series streams are 35-47 MB).
+      final body = await compute(_decodeJsonList, response.body);
+      return body;
     } catch (e) {
       debugPrint('[XtreamAPI] Error in $action: $e');
       return [];
