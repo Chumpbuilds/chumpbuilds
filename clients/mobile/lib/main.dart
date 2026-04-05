@@ -142,12 +142,15 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
   @override
   void initState() {
     super.initState();
-    // Delay all async init work until AFTER the first frame is painted.
-    // This ensures the "Welcome to..." screen with the spinner is visible
-    // before any heavy work (SharedPreferences, compute() isolates,
-    // network calls) starts competing for the main thread.
+    // Wait for TWO frames so the Impeller/Vulkan engine completes its
+    // pipeline setup and the Welcome screen is actually composited and
+    // visible on the display before we start heavy async work.
+    // A single addPostFrameCallback fires after layout but before the
+    // engine has finished rendering on devices with slow GPU drivers.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _init();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _init();
+      });
     });
   }
 
@@ -187,17 +190,18 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
     // ── Existing parallel init work ────────────────────────────────────
     try {
-      // Start ALL async work immediately in parallel:
-      //  • cache warm  — file I/O, hides behind the license network round-trip
-      //  • license     — network POST to validation server
-      //  • auto-login  — reads saved creds from SharedPreferences then makes a
-      //                  network GET; independent of license validation because
-      //                  _tryAutoLogin() now reads cloud_profiles directly from
-      //                  SharedPreferences instead of from LicenseService
-      //  • EPG load    — disk read of the JSON EPG cache; purely I/O-bound
-      final cacheWarm = XtreamCacheService().ensureLoaded();
+      // Start NETWORK calls first — they're I/O-bound and won't block
+      // the main thread while waiting for server responses.
       final licenseFuture = LicenseService().validateLicense();
       final autoLoginFuture = _tryAutoLogin();
+
+      // Give the rendering pipeline a breather before starting heavy
+      // compute() isolate work. This 100ms gap lets the Impeller engine
+      // finish any pending Vulkan pipeline compilation.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+
+      // NOW start the compute()-heavy disk I/O work.
+      final cacheWarm = XtreamCacheService().ensureLoaded();
       final epgLoadFuture = EpgService().loadFromCache();
 
       // License is the gate — if invalid, discard parallel results and bail.
