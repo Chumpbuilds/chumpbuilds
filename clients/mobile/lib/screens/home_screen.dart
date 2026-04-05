@@ -83,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint('[HomeScreen] initState() called');
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
   }
 
