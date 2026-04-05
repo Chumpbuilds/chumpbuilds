@@ -212,8 +212,10 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       final cacheFresh = results[1] as bool;
 
       debugPrint('[Bootstrap] isCacheFresh=$cacheFresh, autoLogin=$autoLoggedIn');
+      final sw = Stopwatch()..start();
 
       if (!autoLoggedIn) {
+        debugPrint('[Bootstrap] _init() completed in ${sw.elapsedMilliseconds}ms');
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
@@ -224,6 +226,7 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       // 3. Cache freshness check — EPG is already loaded from the parallel
       // call above, so navigate directly if cache is still fresh.
       if (cacheFresh) {
+        debugPrint('[Bootstrap] _init() completed in ${sw.elapsedMilliseconds}ms');
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
@@ -314,6 +317,7 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       });
 
       await Future<void>.delayed(const Duration(milliseconds: 300));
+      debugPrint('[Bootstrap] _init() completed in ${sw.elapsedMilliseconds}ms');
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
