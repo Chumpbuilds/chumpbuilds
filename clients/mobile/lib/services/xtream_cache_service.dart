@@ -13,11 +13,22 @@ import 'epg_service.dart';
 Map<String, dynamic> _decodeCacheJson(String raw) =>
     jsonDecode(raw) as Map<String, dynamic>;
 
-/// Top-level helper for [compute]: decode a single cache-entry JSON string.
+/// Top-level helper for [compute]: decode multiple cache-entry JSON strings in
+/// one isolate invocation to avoid the ~50-100 ms per-isolate spawn overhead.
+///
+/// Returns a nullable list so that individual malformed entries can be skipped
+/// without aborting the entire batch decode.
 ///
 /// Must be top-level to satisfy the [compute] isolate boundary requirement.
-Map<String, dynamic> _decodeCacheEntryJson(String raw) =>
-    jsonDecode(raw) as Map<String, dynamic>;
+List<Map<String, dynamic>?> _decodeMultipleCacheEntries(List<String> raws) =>
+    raws.map((raw) {
+      try {
+        return jsonDecode(raw) as Map<String, dynamic>;
+      } catch (e) {
+        debugPrint('[XtreamCache] Skipping malformed cache entry: $e');
+        return null;
+      }
+    }).toList();
 
 /// A single cache entry holding the cached data, its creation timestamp,
 /// and the expiry time.
@@ -299,8 +310,9 @@ class XtreamCacheService {
 
   /// Loads all non-expired cache entries from individual files.
   ///
-  /// Each file is decoded on a background isolate via [compute] to avoid GC
-  /// pressure on the main thread.  Files are read in parallel.
+  /// All files are read in parallel, then decoded together in a single
+  /// background isolate via [compute] to avoid the per-isolate spawn overhead
+  /// that a sequential loop of individual [compute] calls would incur.
   Future<void> _loadFromDisk() async {
     // One-time migration: move old SharedPreferences blob to individual files.
     await _migrateFromSharedPreferences();
@@ -313,15 +325,21 @@ class XtreamCacheService {
           await dir.list().where((e) => e.path.endsWith('.json')).toList();
       if (entities.isEmpty) return;
 
-      // Read all files concurrently, then decode each on a background isolate.
+      // Read all files concurrently, then decode them all in a single
+      // background isolate invocation to avoid the ~50-100 ms per-isolate
+      // spawn overhead that a sequential loop of compute() calls would incur.
       final raws = await Future.wait(
         entities.map((e) => File(e.path).readAsString()),
       );
 
+      final decodedList =
+          await compute(_decodeMultipleCacheEntries, raws);
+
       int loaded = 0;
       for (int i = 0; i < entities.length; i++) {
         try {
-          final decoded = await compute(_decodeCacheEntryJson, raws[i]);
+          final decoded = decodedList[i];
+          if (decoded == null) continue; // malformed entry — skip silently
           final entry = _CacheEntry.fromJson(decoded);
           if (!entry.isExpired) {
             final key = _keyFromPath(entities[i].path);

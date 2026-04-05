@@ -58,13 +58,26 @@ void main() async {
 
 /// Attempt to auto-login using the last-used cloud profile's saved credentials.
 ///
+/// Reads cloud profiles directly from SharedPreferences (key: `cloud_profiles`)
+/// so that this function can run in parallel with [LicenseService.validateLicense]
+/// without waiting for the network round-trip to complete first.
+///
 /// Returns `true` if login succeeds, `false` otherwise.
 Future<bool> _tryAutoLogin() async {
-  final profiles = LicenseService().getCloudProfiles();
-  if (profiles.isEmpty) return false;
-
   try {
     final prefs = await SharedPreferences.getInstance();
+
+    // Read cloud profiles directly from SharedPreferences — they were persisted
+    // by the previous session's validateLicense() call.  This lets us start the
+    // auto-login network call in parallel with the current validateLicense()
+    // call instead of waiting for it to finish first.
+    final profilesRaw = prefs.getString('cloud_profiles');
+    if (profilesRaw == null || profilesRaw.isEmpty) return false;
+    // jsonDecode may throw if the stored value is malformed; the enclosing
+    // try-catch returns false in that case so it never propagates to _init().
+    final profiles = jsonDecode(profilesRaw) as List<dynamic>;
+    if (profiles.isEmpty) return false;
+
     final lastProfile = prefs.getString('last_used_profile');
 
     // Find the profile to use (last-used or first available).
@@ -182,13 +195,21 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
   Future<void> _init() async {
     try {
-      // Start cache warming immediately — file reads run in parallel with the
-      // license-validation network call, hiding I/O latency behind the network
-      // round-trip.  By the time auto-login completes the cache is ready.
+      // Start ALL async work immediately in parallel:
+      //  • cache warm  — file I/O, hides behind the license network round-trip
+      //  • license     — network POST to validation server
+      //  • auto-login  — reads saved creds from SharedPreferences then makes a
+      //                  network GET; independent of license validation because
+      //                  _tryAutoLogin() now reads cloud_profiles directly from
+      //                  SharedPreferences instead of from LicenseService
+      //  • EPG load    — disk read of the JSON EPG cache; purely I/O-bound
       final cacheWarm = XtreamCacheService().ensureLoaded();
+      final licenseFuture = LicenseService().validateLicense();
+      final autoLoginFuture = _tryAutoLogin();
+      final epgLoadFuture = EpgService().loadFromCache();
 
-      // 1. Silently validate any stored licence.
-      final isValid = await LicenseService().validateLicense();
+      // License is the gate — if invalid, discard parallel results and bail.
+      final isValid = await licenseFuture;
 
       if (!isValid) {
         // No valid licence — navigate immediately.
@@ -199,17 +220,14 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 2. Licence is valid — wait for cache warm to finish (it has likely
-      // already completed during the license network round-trip), then run
-      // auto-login, cache freshness check, and EPG disk load concurrently.
+      // Licence is valid — wait for the remaining parallel work.  Most of it
+      // has been running concurrently with the license network call, so the
+      // actual wait here is typically very short (or already done).
       await cacheWarm;
-      final results = await Future.wait<dynamic>([
-        _tryAutoLogin(),
-        XtreamCacheService().isCacheFresh(minRemainingHours: 20),
-        EpgService().loadFromCache(),
-      ]);
-      final autoLoggedIn = results[0] as bool;
-      final cacheFresh = results[1] as bool;
+      final autoLoggedIn = await autoLoginFuture;
+      final cacheFresh =
+          await XtreamCacheService().isCacheFresh(minRemainingHours: 20);
+      await epgLoadFuture;
 
       debugPrint('[Bootstrap] isCacheFresh=$cacheFresh, autoLogin=$autoLoggedIn');
 
@@ -221,8 +239,8 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 3. Cache freshness check — EPG is already loaded from the parallel
-      // call above, so navigate directly if cache is still fresh.
+      // Cache is fresh — EPG is already loaded from the parallel call above,
+      // so navigate directly to HomeScreen.
       if (cacheFresh) {
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
