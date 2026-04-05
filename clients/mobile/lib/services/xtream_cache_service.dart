@@ -57,6 +57,11 @@ class XtreamCacheService {
   final Map<String, _CacheEntry> _cache = {};
   bool _loaded = false;
 
+  /// When true, [set] updates the in-memory cache only and skips the expensive
+  /// SharedPreferences write.  Call [flushToStorage] once when done to persist
+  /// all entries in a single fsync.
+  bool _deferPersistence = false;
+
   // ─── Public API ───────────────────────────────────────────────────────────
 
   /// Returns cached data for [key] if it exists and has not expired.
@@ -88,6 +93,10 @@ class XtreamCacheService {
   /// Stores [data] under [key] with a 24-hour expiry.
   ///
   /// Does nothing if [data] is an empty [List] or empty [Map].
+  ///
+  /// When [_deferPersistence] is true the entry is stored in-memory only;
+  /// call [flushToStorage] once when all deferred writes are done to perform a
+  /// single batched disk write.
   Future<void> set(String key, dynamic data) async {
     // Never cache empty results.
     if (data is List && data.isEmpty) return;
@@ -101,8 +110,27 @@ class XtreamCacheService {
     debugPrint(
         '[XtreamCache] Stored: $key (expires at ${expiresAt.toIso8601String()})');
 
-    await _saveToDisk();
+    if (!_deferPersistence) {
+      await _saveToDisk();
+    }
   }
+
+  /// Enable or disable deferred disk persistence.
+  ///
+  /// While [defer] is true, [set] will only update the in-memory cache and
+  /// skip the SharedPreferences write.  Call [flushToStorage] once all entries
+  /// have been stored to persist them in a single write.
+  void setDeferPersistence({required bool defer}) {
+    _deferPersistence = defer;
+  }
+
+  /// Flush all in-memory cache entries to disk in a single write.
+  ///
+  /// Intended to be called once after a batch of [set] calls made while
+  /// [_deferPersistence] was true, replacing 6+ individual fsyncs with one.
+  /// May also be called at any time to force an immediate disk sync regardless
+  /// of the current [_deferPersistence] state.
+  Future<void> flushToStorage() => _saveToDisk();
 
   /// Clears a single [key], or the entire cache when [key] is omitted.
   Future<void> clear([String? key]) async {
