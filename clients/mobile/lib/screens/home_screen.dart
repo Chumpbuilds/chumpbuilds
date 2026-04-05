@@ -2,7 +2,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/epg_service.dart';
@@ -83,7 +82,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[HomeScreen] initState() called');
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
   }
 
@@ -331,14 +329,16 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 TextSpan(
                                   text: 'Welcome to ',
-                                  style: GoogleFonts.dancingScript(
+                                  style: TextStyle(
+                                    fontFamily: 'DancingScript',
                                     color: _descColor,
                                     fontSize: welcomeFontSize,
                                   ),
                                 ),
                                 TextSpan(
                                   text: '"$profileName"',
-                                  style: GoogleFonts.dancingScript(
+                                  style: TextStyle(
+                                    fontFamily: 'DancingScript',
                                     color: Colors.white,
                                     fontSize: welcomeBoldFontSize,
                                     fontWeight: FontWeight.bold,
