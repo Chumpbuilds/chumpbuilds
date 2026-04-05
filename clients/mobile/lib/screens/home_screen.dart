@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -83,6 +84,47 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
+    _backgroundRefresh();
+  }
+
+  /// Silently refresh stale content + EPG in the background so the user
+  /// is never blocked. Errors are swallowed — partial data is fine.
+  Future<void> _backgroundRefresh() async {
+    try {
+      final cache = XtreamCacheService();
+      final xtream = XtreamService();
+
+      // Refresh EPG if it's getting old (>12h remaining means we skip).
+      // Fire-and-forget: errors are handled inside downloadAndCacheEpg.
+      final epgFresh = await EpgService().isEpgFresh(minRemainingHours: 12);
+      if (!epgFresh && xtream.isAuthenticated) {
+        // Intentionally not awaited — runs in the background while the user
+        // browses. EpgService handles its own errors and partial data is fine.
+        unawaited(EpgService().downloadAndCacheEpg(
+          xtream.baseUrl!,
+          xtream.username!,
+          xtream.password!,
+        ));
+      }
+
+      // Refresh content cache if aging
+      final contentFresh = await cache.isCacheFresh(minRemainingHours: 12);
+      if (!contentFresh && xtream.isAuthenticated) {
+        cache.setDeferPersistence(defer: true);
+        await Future.wait([
+          xtream.getLiveCategories(),
+          xtream.getLiveStreams(null),
+          xtream.getVodCategories(),
+          xtream.getVodStreams(null),
+          xtream.getSeriesCategories(),
+          xtream.getSeries(null),
+        ]);
+        cache.setDeferPersistence(defer: false);
+        await cache.flushToStorage();
+      }
+    } catch (e) {
+      debugPrint('[HomeScreen] Background refresh error: $e');
+    }
   }
 
   @override
