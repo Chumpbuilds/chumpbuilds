@@ -17,15 +17,6 @@ import 'widgets/system_ui_wrapper.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Keep the native Android splash screen visible until the destination
-  // screen is ready.  deferFirstFrame() prevents Flutter from compositing
-  // any UI until allowFirstFrame() is called, so the OS-level launch theme
-  // stays on screen through all of the async init work in
-  // _BootstrapScreenState._init().  Each navigation branch calls
-  // allowFirstFrame() just before pushReplacement(), giving a single clean
-  // splash → screen transition with no intermediate "Loading…" view.
-  WidgetsBinding.instance.deferFirstFrame();
-
   // Lock the entire app to landscape.
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
@@ -223,7 +214,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       if (!isValid) {
         // No valid licence — navigate immediately.
         if (!mounted) return;
-        WidgetsBinding.instance.allowFirstFrame();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const LicenseScreen()),
         );
@@ -243,7 +233,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
       if (!autoLoggedIn) {
         if (!mounted) return;
-        WidgetsBinding.instance.allowFirstFrame();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const LoginScreen()),
         );
@@ -254,7 +243,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       // so navigate directly to HomeScreen.
       if (cacheFresh) {
         if (!mounted) return;
-        WidgetsBinding.instance.allowFirstFrame();
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
         );
@@ -345,14 +333,12 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
       await Future<void>.delayed(const Duration(milliseconds: 300));
       if (!mounted) return;
-      WidgetsBinding.instance.allowFirstFrame();
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
       );
     } catch (e) {
       debugPrint('[BootstrapScreen] init error: $e');
       if (!mounted) return;
-      WidgetsBinding.instance.allowFirstFrame();
       Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(builder: (_) => const LicenseScreen()),
       );
