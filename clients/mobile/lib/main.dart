@@ -391,13 +391,10 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // "Loading..." text replaces the circular spinner.
-                    const Text(
-                      'Loading...',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: _descColor,
-                      ),
+                    // Circular loading spinner shown while initialising.
+                    const CircularProgressIndicator(
+                      color: _primaryColor,
+                      strokeWidth: 3,
                     ),
 
                     // Progress section — animates in only when cache is stale.
