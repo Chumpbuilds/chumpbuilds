@@ -142,7 +142,13 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
   @override
   void initState() {
     super.initState();
-    _init();
+    // Delay all async init work until AFTER the first frame is painted.
+    // This ensures the "Welcome to..." screen with the spinner is visible
+    // before any heavy work (SharedPreferences, compute() isolates,
+    // network calls) starts competing for the main thread.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _init();
+    });
   }
 
   Future<void> _init() async {
