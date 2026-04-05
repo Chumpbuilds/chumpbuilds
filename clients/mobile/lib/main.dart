@@ -211,6 +211,8 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       final autoLoggedIn = results[0] as bool;
       final cacheFresh = results[1] as bool;
 
+      debugPrint('[Bootstrap] isCacheFresh=$cacheFresh, autoLogin=$autoLoggedIn');
+
       if (!autoLoggedIn) {
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
