@@ -182,6 +182,11 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
   Future<void> _init() async {
     try {
+      // Start cache warming immediately — file reads run in parallel with the
+      // license-validation network call, hiding I/O latency behind the network
+      // round-trip.  By the time auto-login completes the cache is ready.
+      final cacheWarm = XtreamCacheService().ensureLoaded();
+
       // 1. Silently validate any stored licence.
       final isValid = await LicenseService().validateLicense();
 
@@ -194,8 +199,10 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // 2. Licence is valid — run auto-login, cache freshness check, and EPG
-      // disk load concurrently; they are all independent of each other.
+      // 2. Licence is valid — wait for cache warm to finish (it has likely
+      // already completed during the license network round-trip), then run
+      // auto-login, cache freshness check, and EPG disk load concurrently.
+      await cacheWarm;
       final results = await Future.wait<dynamic>([
         _tryAutoLogin(),
         XtreamCacheService().isCacheFresh(minRemainingHours: 20),
