@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
 import androidx.media3.common.MimeTypes
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -54,6 +55,7 @@ object ExoPlayerFactory {
      * @param isTvDevice  Pass the result of [isTvOrAmlogicDevice] to avoid
      *                    calling it twice in the same setup sequence.
      */
+    @androidx.annotation.OptIn(UnstableApi::class)
     fun build(context: Context, isTvDevice: Boolean): ExoPlayer {
         val renderersFactory = DefaultRenderersFactory(context).apply {
             // Use EXTENSION_RENDERER_MODE_ON for all devices. PREFER was only useful
@@ -65,6 +67,9 @@ object ExoPlayerFactory {
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
+                // Use custom codec selector that finds hidden Amlogic audio decoders
+                // for AC3/EAC3 that the default selector misses.
+                setMediaCodecSelector(AmlogicAudioCodecSelector())
             } else {
                 setEnableAudioTrackPlaybackParams(true)
             }
@@ -96,6 +101,7 @@ object ExoPlayerFactory {
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
             "extensionRendererMode=ON, " +
+            "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}, " +
             "audioPassthrough=${if (isTvDevice) "disabled(PCM)" else "default"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
