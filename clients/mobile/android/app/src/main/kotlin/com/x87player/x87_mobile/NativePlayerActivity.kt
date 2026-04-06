@@ -11,6 +11,8 @@ package com.x87player.x87_mobile
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -125,20 +127,40 @@ class NativePlayerActivity : Activity() {
                     }
 
                     override fun onTracksChanged(tracks: Tracks) {
+                        var hasAudio = false
+                        var hasUnsupportedAudio = false
+                        val unsupportedCodecs = mutableListOf<String>()
+
                         for (group in tracks.groups) {
                             if (group.type == C.TRACK_TYPE_AUDIO) {
                                 for (i in 0 until group.length) {
                                     val format = group.getTrackFormat(i)
                                     val selected = group.isTrackSelected(i)
                                     val supported = group.isTrackSupported(i)
+                                    val codec = format.codecs ?: format.sampleMimeType ?: "unknown"
                                     android.util.Log.i("NativePlayerActivity",
-                                        "Audio track [$i]: codec=${format.codecs ?: format.sampleMimeType} " +
+                                        "Audio track [$i]: codec=$codec " +
                                         "channels=${format.channelCount} " +
                                         "sampleRate=${format.sampleRate} " +
                                         "lang=${format.language ?: "?"} " +
                                         "selected=$selected supported=$supported")
+                                    if (selected) {
+                                        hasAudio = true
+                                        if (!supported) {
+                                            hasUnsupportedAudio = true
+                                            unsupportedCodecs.add(codec)
+                                        }
+                                    }
                                 }
                             }
+                        }
+
+                        // Auto-launch VLC when ExoPlayer cannot decode the selected
+                        // audio track (e.g. EAC3 on Amlogic boxes with no Dolby decoder).
+                        if (hasAudio && hasUnsupportedAudio) {
+                            android.util.Log.w("NativePlayerActivity",
+                                "Unsupported audio codec(s): ${unsupportedCodecs.joinToString()} — launching VLC")
+                            launchVlcFallback()
                         }
                     }
                 })
@@ -159,6 +181,38 @@ class NativePlayerActivity : Activity() {
             player.release()
         }
         super.onDestroy()
+    }
+
+    // ── VLC fallback ──────────────────────────────────────────────────────────
+
+    /**
+     * Stops ExoPlayer and launches VLC (or any installed video player) with the
+     * same stream URL. Called automatically when [onTracksChanged] detects that
+     * the selected audio track cannot be decoded on this device.
+     */
+    private fun launchVlcFallback() {
+        val url = intent.getStringExtra(EXTRA_URL) ?: return
+        if (::player.isInitialized) player.stop()
+
+        // Try VLC directly first, then fall back to any video app.
+        val vlcIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+            setDataAndType(Uri.parse(url), "video/*")
+            setPackage("org.videolan.vlc")
+        }
+        try {
+            startActivity(vlcIntent)
+        } catch (_: Exception) {
+            val genericIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                setDataAndType(Uri.parse(url), "video/*")
+            }
+            try {
+                startActivity(genericIntent)
+            } catch (e2: Exception) {
+                android.util.Log.e("NativePlayerActivity", "VLC fallback failed: ${e2.message}")
+            }
+        }
+        setResult(RESULT_CANCELED)
+        finish()
     }
 
     // ── Key / D-pad handling (Fire Stick remote) ──────────────────────────────

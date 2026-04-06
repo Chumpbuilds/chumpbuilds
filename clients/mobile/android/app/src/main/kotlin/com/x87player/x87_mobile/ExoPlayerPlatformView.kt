@@ -81,17 +81,42 @@ class ExoPlayerPlatformView(
                 sendStateUpdate(hasError = true, errorMessage = error.message)
             }
             override fun onTracksChanged(tracks: Tracks) {
+                var hasAudio = false
+                var hasUnsupportedAudio = false
+                val unsupportedCodecs = mutableListOf<String>()
+
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_AUDIO) {
                         for (i in 0 until group.length) {
                             val format = group.getTrackFormat(i)
                             val selected = group.isTrackSelected(i)
+                            val supported = group.isTrackSupported(i)
+                            val codec = format.codecs ?: format.sampleMimeType ?: "unknown"
+
                             android.util.Log.i("ExoPlayerPlatformView",
-                                "Audio track [$i]: codec=${format.codecs ?: format.sampleMimeType} " +
+                                "Audio track [$i]: codec=$codec " +
                                 "channels=${format.channelCount} " +
-                                "selected=$selected")
+                                "selected=$selected supported=$supported")
+
+                            if (selected) {
+                                hasAudio = true
+                                if (!supported) {
+                                    hasUnsupportedAudio = true
+                                    unsupportedCodecs.add(codec)
+                                }
+                            }
                         }
                     }
+                }
+
+                // If selected audio track(s) are not supported, notify Flutter
+                // so it can auto-launch VLC as a fallback player.
+                if (hasAudio && hasUnsupportedAudio) {
+                    android.util.Log.w("ExoPlayerPlatformView",
+                        "Unsupported audio codec(s) detected: ${unsupportedCodecs.joinToString()}")
+                    channel.invokeMethod("onUnsupportedAudioCodec", mapOf(
+                        "codecs" to unsupportedCodecs
+                    ))
                 }
             }
         })

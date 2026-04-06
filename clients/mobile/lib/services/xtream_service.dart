@@ -322,11 +322,16 @@ class XtreamService {
   /// [type] is one of: `live`, `movie`, `series`.
   /// [extension] overrides the default file extension.
   /// [streamData] can provide `container_extension` as fallback.
+  /// [preferTs] when true, uses `.ts` instead of `.m3u8` for live streams.
+  /// Many IPTV providers serve AAC audio in the TS container and EAC3/AC3 in
+  /// the HLS/m3u8 container — requesting TS avoids codec compatibility issues
+  /// on Android TV boxes that lack Dolby audio decoders.
   String getStreamUrl(
     String streamId,
     String type, {
     String? extension,
     Map<String, dynamic>? streamData,
+    bool preferTs = false,
   }) {
     if (!isAuthenticated || baseUrl == null) return '';
     final String ext;
@@ -336,6 +341,8 @@ class XtreamService {
         streamData['container_extension'] != null &&
         (streamData['container_extension'] as String).isNotEmpty) {
       ext = streamData['container_extension'] as String;
+    } else if (type == 'live' && preferTs) {
+      ext = 'ts';
     } else {
       ext = type == 'live' ? 'm3u8' : 'mp4';
     }

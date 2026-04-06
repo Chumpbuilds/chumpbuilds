@@ -246,7 +246,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   void _playChannel(Map<String, dynamic> channel) {
     final streamId = channel['stream_id']?.toString() ?? '';
     if (streamId.isEmpty) return;
-    final url = _xtream.getStreamUrl(streamId, 'live');
+    final url = _xtream.getStreamUrl(streamId, 'live', preferTs: true);
     if (url.isEmpty) return;
     final name = channel['name']?.toString() ?? '';
     setState(() {
