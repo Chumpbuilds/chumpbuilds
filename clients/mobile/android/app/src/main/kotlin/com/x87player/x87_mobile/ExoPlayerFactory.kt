@@ -8,6 +8,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
@@ -57,17 +60,34 @@ object ExoPlayerFactory {
      */
     @androidx.annotation.OptIn(UnstableApi::class)
     fun build(context: Context, isTvDevice: Boolean): ExoPlayer {
-        val renderersFactory = DefaultRenderersFactory(context).apply {
-            if (isTvDevice) {
-                // PREFER extension (FFmpeg) decoders over platform decoders on TV.
-                // Many Amlogic boxes report hardware AC3/EAC3 decoders via ALL_CODECS
-                // that claim to be supported but silently fail. The FFmpeg extension
-                // (if present) provides reliable software decoding for these formats.
-                // Without it, PREFER falls back to platform decoders anyway.
-                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
-            } else {
-                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            @UnstableApi
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink? {
+                if (!isTvDevice) {
+                    return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
+                }
+                // Force no-passthrough AudioCapabilities on TV/Amlogic devices.
+                // The system setting encoded_surround_output=0 (Auto) advertises
+                // EAC3/AC3 passthrough over HDMI. ExoPlayer then sends raw compressed
+                // bytes instead of decoding them. If the TV can't decode EAC3, the
+                // result is silence. By using DEFAULT_AUDIO_CAPABILITIES (which reports
+                // no passthrough support), we force ExoPlayer to use the hardware
+                // decoder (OMX.amlogic.audio.decoder.eac3) and output PCM.
+                // Confirmed working on Amiko A11 Gold (S905X4, Android 11).
+                android.util.Log.i("ExoPlayerFactory",
+                    "Building AudioSink with no-passthrough capabilities for TV device")
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+                    .build()
             }
+        }.apply {
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
@@ -104,8 +124,9 @@ object ExoPlayerFactory {
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
-            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
-            "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}")
+            "extensionRendererMode=ON, " +
+            "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}, " +
+            "audioSink=${if (isTvDevice) "no-passthrough" else "default"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
