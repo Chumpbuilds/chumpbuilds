@@ -116,15 +116,22 @@ class _TvTextFieldState extends State<TvTextField> {
 
   /// Activates editing mode in response to a D-pad Enter / Select key press.
   ///
-  /// For D-pad, we use a [WidgetsBinding.addPostFrameCallback] before
-  /// requesting focus because focus traversal may still be in-progress during
-  /// the key-event handler.  [_isEditing] is NOT set here; it will be set to
-  /// `true` asynchronously by [_onInnerFocusChange] once the inner focus node
-  /// actually receives focus.
+  /// [_isEditing] is set to `true` immediately (via [setState]) so that the
+  /// surrounding [FocusTraversalGroup] rebuilds with
+  /// `descendantsAreFocusable: true` before the inner focus request fires in
+  /// the next frame.  Without this eager rebuild the traversal group would
+  /// still block the focus request because it reads [_isEditing] at build time.
+  ///
+  /// The actual [FocusNode.requestFocus] call is still deferred to a
+  /// [WidgetsBinding.addPostFrameCallback] because focus traversal may still
+  /// be in-progress during the key-event handler.
   void _enterEditingMode() {
     if (!widget.enabled) return;
     if (kDebugMode) debugPrint('TvTextField: _enterEditingMode (dpad=$_isDpadMode)');
     _innerFocus.canRequestFocus = true;
+    // Set _isEditing = true immediately so the FocusTraversalGroup rebuilds
+    // with descendantsAreFocusable: true before the focus request fires.
+    setState(() => _isEditing = true);
     // Delay until after the current frame so the focus system is ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _innerFocus.requestFocus();
@@ -216,30 +223,34 @@ class _TvTextFieldState extends State<TvTextField> {
       child: Focus(
         focusNode: _outerFocus,
         onKeyEvent: _handleKeyEvent,
-        child: TextField(
-          controller: widget.controller,
-          focusNode: _innerFocus,
-          enabled: widget.enabled,
-          // Never use readOnly here.  The keyboard is controlled exclusively
-          // by whether _innerFocus.canRequestFocus is true — if the inner node
-          // cannot accept focus, the TextField never receives focus and the
-          // IME stays closed.  Using readOnly: true caused a race condition on
-          // Android where the IME was not triggered after a programmatic focus
-          // change following a touch tap.
-          readOnly: false,
-          obscureText: widget.obscureText,
-          style: widget.style,
-          decoration: decoration,
-          maxLength: widget.maxLength,
-          textCapitalization: widget.textCapitalization,
-          onSubmitted: (value) {
-            widget.onSubmitted?.call(value);
-            // After submitting, return to non-editing state.
-            _exitEditingMode();
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _outerFocus.requestFocus();
-            });
-          },
+        child: FocusTraversalGroup(
+          descendantsAreFocusable: _isEditing,
+          descendantsAreTraversable: _isEditing,
+          child: TextField(
+            controller: widget.controller,
+            focusNode: _innerFocus,
+            enabled: widget.enabled,
+            // Never use readOnly here.  The keyboard is controlled exclusively
+            // by whether _innerFocus.canRequestFocus is true — if the inner node
+            // cannot accept focus, the TextField never receives focus and the
+            // IME stays closed.  Using readOnly: true caused a race condition on
+            // Android where the IME was not triggered after a programmatic focus
+            // change following a touch tap.
+            readOnly: false,
+            obscureText: widget.obscureText,
+            style: widget.style,
+            decoration: decoration,
+            maxLength: widget.maxLength,
+            textCapitalization: widget.textCapitalization,
+            onSubmitted: (value) {
+              widget.onSubmitted?.call(value);
+              // After submitting, return to non-editing state.
+              _exitEditingMode();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _outerFocus.requestFocus();
+              });
+            },
+          ),
         ),
       ),
     );
