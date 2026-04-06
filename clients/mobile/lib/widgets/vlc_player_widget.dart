@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
 import 'embedded_exo_player_widget.dart';
+import 'ios_video_player_widget.dart';
 
 /// Embedded video area widget.
 ///
@@ -62,6 +63,14 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   bool get _useEmbedded =>
       Platform.isAndroid && widget.streamUrl.isNotEmpty;
 
+  bool get _useIosEmbedded =>
+      Platform.isIOS && widget.streamUrl.isNotEmpty;
+
+  /// True when this platform requires the fullscreen platform-channel path
+  /// for playback (i.e. not Android ExoPlayer and not iOS AVFoundation inline).
+  bool get _useFullscreenOnlyPlayback =>
+      !Platform.isAndroid && !Platform.isIOS;
+
   String get _placeholder {
     switch (widget.contentType) {
       case 'movie':
@@ -77,8 +86,9 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   void initState() {
     super.initState();
     // On Android, EmbeddedExoPlayerWidget handles autoPlay via creation params.
-    // The fullscreen _startPlayback path is only used on non-Android platforms.
-    if (!Platform.isAndroid &&
+    // On iOS, IosVideoPlayerWidget handles autoPlay internally.
+    // The fullscreen _startPlayback path is only used on other platforms.
+    if (_useFullscreenOnlyPlayback &&
         widget.autoPlay &&
         widget.streamUrl.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -99,7 +109,15 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
           _isLoading = false;
           _embeddedKey = UniqueKey();
         });
-      } else if (widget.autoPlay && widget.streamUrl.isNotEmpty) {
+      } else if (Platform.isIOS) {
+        // IosVideoPlayerWidget reacts to URL changes via its own didUpdateWidget.
+        // Reset error/loading state here so the parent reflects the new URL.
+        setState(() {
+          _hasError = false;
+          _isLoading = false;
+          _embeddedKey = UniqueKey();
+        });
+      } else if (_useFullscreenOnlyPlayback && widget.autoPlay && widget.streamUrl.isNotEmpty) {
         _startPlayback();
       } else if (widget.streamUrl.isEmpty) {
         setState(() {
@@ -220,7 +238,23 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       );
     }
 
-    // ── Non-Android / placeholder path ────────────────────────────────────────
+    // ── iOS: render video inline via AVFoundation (video_player) ─────────────
+    if (_useIosEmbedded) {
+      return IosVideoPlayerWidget(
+        key: _embeddedKey,
+        url: widget.streamUrl,
+        title: widget.title,
+        contentType: widget.contentType,
+        autoPlay: widget.autoPlay,
+        onTapped: () {
+          if (widget.streamUrl.isNotEmpty) {
+            widget.onFullscreenRequested?.call();
+          }
+        },
+      );
+    }
+
+    // ── Other platforms / placeholder path ────────────────────────────────────
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: _sliderActive),
