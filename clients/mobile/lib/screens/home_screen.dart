@@ -9,6 +9,7 @@ import '../services/epg_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_cache_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_list_item.dart';
 import '../widgets/tv_text_field.dart';
 import '../widgets/system_ui_wrapper.dart';
 import 'favorites_screen.dart';
@@ -582,16 +583,35 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
   int _selectedIndex = 0;
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _scrollController = ScrollController();
   bool _isLoading = false;
   String _statusMessage = '';
   bool _isError = false;
+
+  // Two-stage focus for the profile dropdown (Stage 1: highlight, Stage 2: open).
+  bool _dropdownFocused = false;
+  late final FocusNode _dropdownOuterFocus;
+  late final FocusNode _dropdownInnerFocus;
 
   String _credsKey(String profileName) => 'cloud_creds_$profileName';
 
   @override
   void initState() {
     super.initState();
+    // Set up the two-stage dropdown focus nodes.
+    _dropdownOuterFocus = FocusNode();
+    _dropdownInnerFocus = FocusNode()..canRequestFocus = false;
+    _dropdownOuterFocus.addListener(() {
+      if (mounted) setState(() => _dropdownFocused = _dropdownOuterFocus.hasFocus);
+    });
+    _dropdownInnerFocus.addListener(() {
+      // When the dropdown closes (inner focus lost), reset and return to outer.
+      if (!_dropdownInnerFocus.hasFocus && _dropdownInnerFocus.canRequestFocus) {
+        _dropdownInnerFocus.canRequestFocus = false;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _dropdownOuterFocus.requestFocus();
+        });
+      }
+    });
     if (widget.profiles.isNotEmpty) {
       final name = widget.profiles[0]['name'] as String? ?? '';
       _loadSavedCredentials(name);
@@ -602,7 +622,8 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    _scrollController.dispose();
+    _dropdownOuterFocus.dispose();
+    _dropdownInnerFocus.dispose();
     super.dispose();
   }
 
@@ -712,50 +733,8 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Focus(
-            autofocus: true,
-            onKeyEvent: (node, event) {
-              // Only intercept when this outer node itself is the primary focus
-              // (not when a descendant text-field / button / dropdown is focused).
-              if (!node.hasPrimaryFocus) return KeyEventResult.ignored;
-              if (event is! KeyDownEvent) return KeyEventResult.ignored;
-
-              const double scrollAmount = 80.0;
-              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                if (_scrollController.hasClients) {
-                  _scrollController.animateTo(
-                    (_scrollController.offset + scrollAmount).clamp(
-                        0.0, _scrollController.position.maxScrollExtent),
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                  );
-                }
-                return KeyEventResult.handled;
-              }
-              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                if (_scrollController.hasClients) {
-                  _scrollController.animateTo(
-                    (_scrollController.offset - scrollAmount).clamp(
-                        0.0, _scrollController.position.maxScrollExtent),
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOut,
-                  );
-                }
-                return KeyEventResult.handled;
-              }
-              // Enter / Select moves focus into the first interactive child.
-              if (event.logicalKey == LogicalKeyboardKey.enter ||
-                  event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-                  event.logicalKey == LogicalKeyboardKey.select ||
-                  event.logicalKey == LogicalKeyboardKey.gameButtonA) {
-                node.nextFocus();
-                return KeyEventResult.handled;
-              }
-              return KeyEventResult.ignored;
-            },
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: Column(
+          child: SingleChildScrollView(
+            child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -791,29 +770,52 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                   ),
                 )
               else
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: _borderColor),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      value: _selectedIndex,
-                      isExpanded: true,
-                      dropdownColor: _surfaceColor,
-                      style: const TextStyle(color: Colors.white, fontSize: 13),
-                      items: List.generate(
-                        profiles.length,
-                        (i) => DropdownMenuItem<int>(
-                          value: i,
-                          child: Text(
-                              profiles[i]['name'] as String? ?? 'Profile $i'),
-                        ),
+                Focus(
+                  autofocus: true,
+                  focusNode: _dropdownOuterFocus,
+                  onKeyEvent: (node, event) {
+                    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+                    if (event.logicalKey == LogicalKeyboardKey.enter ||
+                        event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                        event.logicalKey == LogicalKeyboardKey.select ||
+                        event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+                      // Stage 2: enable inner focus so the dropdown opens.
+                      _dropdownInnerFocus.canRequestFocus = true;
+                      _dropdownInnerFocus.requestFocus();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: _dropdownFocused ? Colors.white : _borderColor,
+                        width: _dropdownFocused ? 3 : 1,
                       ),
-                      onChanged: (i) {
-                        if (i != null) _onProfileChanged(i);
-                      },
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        focusNode: _dropdownInnerFocus,
+                        value: _selectedIndex,
+                        isExpanded: true,
+                        dropdownColor: _surfaceColor,
+                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        items: List.generate(
+                          profiles.length,
+                          (i) => DropdownMenuItem<int>(
+                            value: i,
+                            child: Text(
+                                profiles[i]['name'] as String? ?? 'Profile $i'),
+                          ),
+                        ),
+                        onChanged: (i) {
+                          if (i != null) _onProfileChanged(i);
+                          // Focus return is handled by _dropdownInnerFocus listener.
+                        },
+                      ),
                     ),
                   ),
                 ),
@@ -898,12 +900,14 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                     child: OutlinedButton(
                       onPressed:
                           _isLoading ? null : () => Navigator.of(context).pop(),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: _borderColor),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                      style: tvFocusOutlinedButtonStyle(
+                        OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: _borderColor),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
                       child: const Text('Cancel', style: TextStyle(fontSize: 13)),
@@ -913,12 +917,14 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: _isLoading ? null : _switchProfile,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryColor,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                      style: tvFocusButtonStyle(
+                        ElevatedButton.styleFrom(
+                          backgroundColor: _primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
                         ),
                       ),
                       child: _isLoading
@@ -937,7 +943,6 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                 ],
               ),
             ],
-          ),
           ),
           ),
         ),
