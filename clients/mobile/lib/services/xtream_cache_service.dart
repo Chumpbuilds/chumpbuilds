@@ -219,6 +219,29 @@ class XtreamCacheService {
     return true;
   }
 
+  /// Returns `true` if all 6 core content keys are present in the cache and
+  /// have not yet expired (regardless of how much time is remaining).
+  ///
+  /// Use this as a lightweight short-circuit check at boot time: if all keys
+  /// are still valid, the user can go straight to [HomeScreen] and let
+  /// [HomeScreen._backgroundRefresh] handle aging data silently.
+  Future<bool> areAllContentKeysValid() async {
+    await ensureLoaded();
+    const coreKeys = [
+      'live_categories',
+      'live_streams_all',
+      'vod_categories',
+      'vod_streams_all',
+      'series_categories',
+      'series_all',
+    ];
+    for (final key in coreKeys) {
+      final entry = _cache[key];
+      if (entry == null || entry.isExpired) return false;
+    }
+    return true;
+  }
+
   /// Returns the number of currently cached (non-expired) entries.
   int get entryCount => _cache.values.where((e) => !e.isExpired).length;
 
