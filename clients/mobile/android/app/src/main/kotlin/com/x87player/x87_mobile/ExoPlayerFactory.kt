@@ -8,9 +8,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.AudioCapabilities
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
@@ -60,37 +57,17 @@ object ExoPlayerFactory {
      */
     @androidx.annotation.OptIn(UnstableApi::class)
     fun build(context: Context, isTvDevice: Boolean): ExoPlayer {
-        @androidx.annotation.OptIn(UnstableApi::class)
-        val renderersFactory = object : DefaultRenderersFactory(context) {
-            override fun buildAudioSink(
-                context: Context,
-                enableFloatOutput: Boolean,
-                enableAudioTrackPlaybackParams: Boolean
-            ): AudioSink? {
-                if (!isTvDevice) {
-                    return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
-                }
-                // On TV/Amlogic devices: force decode to PCM — NO HDMI passthrough.
-                // Without this, ExoPlayer sends raw EAC3 bytes directly over HDMI.
-                // If the TV doesn't support EAC3 decoding, the result is silence.
-                android.util.Log.i("ExoPlayerFactory",
-                    "Building custom AudioSink: passthrough=DISABLED, float=false")
-                return DefaultAudioSink.Builder(context)
-                    .setEnableFloatOutput(false)
-                    // Intentionally hardcoded to false regardless of the parameter:
-                    // AudioTrackPlaybackParams can trigger speed/pitch manipulation
-                    // that interferes with PCM-decoded audio on Amlogic firmware.
-                    .setEnableAudioTrackPlaybackParams(false)
-                    .setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
-                    .build()
+        val renderersFactory = DefaultRenderersFactory(context).apply {
+            if (isTvDevice) {
+                // PREFER extension (FFmpeg) decoders over platform decoders on TV.
+                // Many Amlogic boxes report hardware AC3/EAC3 decoders via ALL_CODECS
+                // that claim to be supported but silently fail. The FFmpeg extension
+                // (if present) provides reliable software decoding for these formats.
+                // Without it, PREFER falls back to platform decoders anyway.
+                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            } else {
+                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             }
-        }.apply {
-            // Use EXTENSION_RENDERER_MODE_ON for all devices. PREFER was only useful
-            // when the FFmpeg extension (media3-decoder-ffmpeg) was present to provide
-            // software AC3/EAC3 decoders; without it PREFER has no benefit and may
-            // unnecessarily delay hardware decoder selection. The AudioAttributes fix
-            // below is now responsible for forcing PCM output on TV/Amlogic devices.
-            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
@@ -127,9 +104,8 @@ object ExoPlayerFactory {
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
-            "extensionRendererMode=ON, " +
-            "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}, " +
-            "audioPassthrough=${if (isTvDevice) "DISABLED(force PCM)" else "default"}")
+            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
+            "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
