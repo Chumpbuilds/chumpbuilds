@@ -16,6 +16,9 @@ import 'widgets/system_ui_wrapper.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Pre-warm SharedPreferences so it's ready by the time _init() runs.
+  // This hides the first-call latency (called in 4+ places during boot).
+  SharedPreferences.getInstance();
   // Call runApp() immediately — no awaits before this.
   // All async init (orientation, system UI, SharedPreferences, license,
   // auto-login) runs inside _BootstrapScreen.initState() so the Flutter
@@ -136,7 +139,7 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
   String _logoUrl = '';
   bool _showProgress = false;
   int _completed = 0;
-  int _total = 4;
+  int _total = 3;
   String _currentLabel = '';
 
   @override
@@ -195,14 +198,16 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       final licenseFuture = LicenseService().validateLicense();
       final autoLoginFuture = _tryAutoLogin();
 
-      // Give the rendering pipeline a breather before starting heavy
-      // compute() isolate work. This 100ms gap lets the Impeller engine
-      // finish any pending Vulkan pipeline compilation.
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-
       // NOW start the compute()-heavy disk I/O work.
       final cacheWarm = XtreamCacheService().ensureLoaded();
       final epgLoadFuture = EpgService().loadFromCache();
+
+      // Start freshness check early — it needs cache loaded first but can
+      // overlap with license validation and auto-login.
+      final cacheFreshFuture = () async {
+        await cacheWarm;
+        return XtreamCacheService().isCacheFresh(minRemainingHours: 2);
+      }();
 
       // License is the gate — if invalid, discard parallel results and bail.
       final isValid = await licenseFuture;
@@ -219,10 +224,9 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       // Licence is valid — wait for the remaining parallel work.  Most of it
       // has been running concurrently with the license network call, so the
       // actual wait here is typically very short (or already done).
-      await cacheWarm;
+      await cacheWarm; // likely already done
       final autoLoggedIn = await autoLoginFuture;
-      final cacheFresh =
-          await XtreamCacheService().isCacheFresh(minRemainingHours: 20);
+      final cacheFresh = await cacheFreshFuture; // likely already resolved
       await epgLoadFuture;
 
       debugPrint('[Bootstrap] isCacheFresh=$cacheFresh, autoLogin=$autoLoggedIn');
@@ -260,10 +264,12 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       // after every API response (saves ~3-4 s on cold start).
       cache.setDeferPersistence(defer: true);
 
-      // Run all 4 groups in parallel — they are fully independent.
+      // Run groups 1-3 in parallel — they are fully independent.
       // `groupsDone` is incremented in the setState callbacks of each group.
       // Dart's event loop is single-threaded so concurrent increments from
       // different futures are safe (no two microtasks run simultaneously).
+      // EPG download is deferred to HomeScreen's background refresh so the
+      // user is never blocked by the ~29 MB XMLTV re-download.
       int groupsDone = 0;
       await Future.wait([
         // Group 1: Live TV (categories + streams in parallel)
@@ -299,19 +305,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
             ]);
           } catch (e) {
             debugPrint('[BootstrapScreen] Series group error: $e');
-          }
-          if (mounted) setState(() => _completed = ++groupsDone);
-        }(),
-        // Group 4: EPG (independent, runs alongside everything else)
-        () async {
-          try {
-            await EpgService().downloadAndCacheEpg(
-              xtream.baseUrl!,
-              xtream.username!,
-              xtream.password!,
-            );
-          } catch (e) {
-            debugPrint('[BootstrapScreen] EPG group error: $e');
           }
           if (mounted) setState(() => _completed = ++groupsDone);
         }(),
