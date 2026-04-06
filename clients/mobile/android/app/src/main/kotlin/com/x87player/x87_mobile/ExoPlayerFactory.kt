@@ -23,6 +23,11 @@ object ExoPlayerFactory {
     private const val HTTP_CONNECT_TIMEOUT_MS = 15_000
     private const val HTTP_READ_TIMEOUT_MS = 15_000
 
+    private val ffmpegAvailable: Boolean by lazy {
+        try { Class.forName("androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer"); true }
+        catch (_: Exception) { false }
+    }
+
     /**
      * Returns true when running on an Android TV, Amlogic-based box, or
      * Amazon Fire Stick — devices that advertise tunneling / audio-offload
@@ -96,7 +101,8 @@ object ExoPlayerFactory {
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
-            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}")
+            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
+            "ffmpegAvailable=$ffmpegAvailable")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
