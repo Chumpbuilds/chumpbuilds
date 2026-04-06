@@ -33,11 +33,33 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
   bool _isFav = false;
   final _favService = FavoritesService();
 
+  // Focus state for action buttons
+  bool _playButtonFocused = false;
+  bool _vlcButtonFocused = false;
+
+  late final FocusNode _playFocusNode;
+  late final FocusNode _vlcFocusNode;
+
   @override
   void initState() {
     super.initState();
+    _playFocusNode = FocusNode()
+      ..addListener(() {
+        setState(() => _playButtonFocused = _playFocusNode.hasFocus);
+      });
+    _vlcFocusNode = FocusNode()
+      ..addListener(() {
+        setState(() => _vlcButtonFocused = _vlcFocusNode.hasFocus);
+      });
     _loadDetail();
     _checkFavorite();
+  }
+
+  @override
+  void dispose() {
+    _playFocusNode.dispose();
+    _vlcFocusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDetail() async {
@@ -252,12 +274,14 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         // ▶ Play button
                         Expanded(
                           child: ElevatedButton.icon(
+                            focusNode: _playFocusNode,
                             onPressed: _playMovie,
                             icon: const Icon(Icons.play_arrow, size: 22),
                             label: const Text('Play'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: _accentColor,
+                              backgroundColor: _vlcButtonFocused ? _surfaceColor : _accentColor,
                               foregroundColor: Colors.white,
+                              side: _playButtonFocused ? const BorderSide(color: Colors.white, width: 2) : null,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
@@ -268,13 +292,15 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                         const SizedBox(width: 12),
                         // Play in VLC button
                         Expanded(
-                          child: OutlinedButton.icon(
+                          child: ElevatedButton.icon(
+                            focusNode: _vlcFocusNode,
                             onPressed: _openExternal,
                             icon: const Icon(Icons.open_in_new, size: 18),
                             label: const Text('Play in VLC'),
-                            style: OutlinedButton.styleFrom(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _vlcButtonFocused ? _accentColor : _surfaceColor,
                               foregroundColor: Colors.white,
-                              side: const BorderSide(color: Color(0xFF3D3D3D)),
+                              side: _vlcButtonFocused ? const BorderSide(color: Colors.white, width: 2) : const BorderSide(color: Color(0xFF3D3D3D)),
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
