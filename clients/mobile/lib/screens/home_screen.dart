@@ -587,30 +587,17 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
   String _statusMessage = '';
   bool _isError = false;
 
-  // Two-stage focus for the profile dropdown (Stage 1: highlight, Stage 2: open).
+  final _dropdownFocusNode = FocusNode();
   bool _dropdownFocused = false;
-  late final FocusNode _dropdownOuterFocus;
-  late final FocusNode _dropdownInnerFocus;
 
   String _credsKey(String profileName) => 'cloud_creds_$profileName';
 
   @override
   void initState() {
     super.initState();
-    // Set up the two-stage dropdown focus nodes.
-    _dropdownOuterFocus = FocusNode();
-    _dropdownInnerFocus = FocusNode()..canRequestFocus = false;
-    _dropdownOuterFocus.addListener(() {
-      if (mounted) setState(() => _dropdownFocused = _dropdownOuterFocus.hasFocus);
-    });
-    _dropdownInnerFocus.addListener(() {
-      // When the dropdown closes (inner focus lost), reset and return to outer.
-      if (!_dropdownInnerFocus.hasFocus && _dropdownInnerFocus.canRequestFocus) {
-        _dropdownInnerFocus.canRequestFocus = false;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _dropdownOuterFocus.requestFocus();
-        });
-      }
+    // Track focus on the dropdown for visual highlighting.
+    _dropdownFocusNode.addListener(() {
+      if (mounted) setState(() => _dropdownFocused = _dropdownFocusNode.hasFocus);
     });
     if (widget.profiles.isNotEmpty) {
       final name = widget.profiles[0]['name'] as String? ?? '';
@@ -622,8 +609,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    _dropdownOuterFocus.dispose();
-    _dropdownInnerFocus.dispose();
+    _dropdownFocusNode.dispose();
     super.dispose();
   }
 
@@ -770,52 +756,35 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                   ),
                 )
               else
-                Focus(
-                  autofocus: true,
-                  focusNode: _dropdownOuterFocus,
-                  onKeyEvent: (node, event) {
-                    if (event is! KeyDownEvent) return KeyEventResult.ignored;
-                    if (event.logicalKey == LogicalKeyboardKey.enter ||
-                        event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-                        event.logicalKey == LogicalKeyboardKey.select ||
-                        event.logicalKey == LogicalKeyboardKey.gameButtonA) {
-                      // Stage 2: enable inner focus so the dropdown opens.
-                      _dropdownInnerFocus.canRequestFocus = true;
-                      _dropdownInnerFocus.requestFocus();
-                      return KeyEventResult.handled;
-                    }
-                    return KeyEventResult.ignored;
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: _dropdownFocused ? Colors.white : _borderColor,
-                        width: _dropdownFocused ? 3 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(4),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: _dropdownFocused ? Colors.white : _borderColor,
+                      width: _dropdownFocused ? 3 : 1,
                     ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int>(
-                        focusNode: _dropdownInnerFocus,
-                        value: _selectedIndex,
-                        isExpanded: true,
-                        dropdownColor: _surfaceColor,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
-                        items: List.generate(
-                          profiles.length,
-                          (i) => DropdownMenuItem<int>(
-                            value: i,
-                            child: Text(
-                                profiles[i]['name'] as String? ?? 'Profile $i'),
-                          ),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<int>(
+                      value: _selectedIndex,
+                      focusNode: _dropdownFocusNode,
+                      autofocus: true,
+                      isExpanded: true,
+                      dropdownColor: _surfaceColor,
+                      style: const TextStyle(color: Colors.white, fontSize: 13),
+                      items: List.generate(
+                        profiles.length,
+                        (i) => DropdownMenuItem<int>(
+                          value: i,
+                          child: Text(
+                              profiles[i]['name'] as String? ?? 'Profile $i'),
                         ),
-                        onChanged: (i) {
-                          if (i != null) _onProfileChanged(i);
-                          // Focus return is handled by _dropdownInnerFocus listener.
-                        },
                       ),
+                      onChanged: (i) {
+                        if (i != null) _onProfileChanged(i);
+                      },
                     ),
                   ),
                 ),
