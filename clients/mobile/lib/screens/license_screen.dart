@@ -177,14 +177,18 @@ class _LicenseScreenState extends State<LicenseScreen> {
                         try {
                           final data =
                               await Clipboard.getData(Clipboard.kTextPlain);
-                          if (data?.text != null) {
-                            _controller.text = data!.text!.trim();
-                            _controller.selection = TextSelection.collapsed(
-                              offset: _controller.text.length,
-                            );
+                          debugPrint('Clipboard data: ${data?.text}');
+                          if (data?.text != null &&
+                              data!.text!.trim().isNotEmpty) {
+                            setState(() {
+                              _controller.text = data.text!.trim();
+                              _controller.selection = TextSelection.collapsed(
+                                offset: _controller.text.length,
+                              );
+                            });
                           }
-                        } catch (_) {
-                          // Clipboard access may fail on some platforms/configurations.
+                        } catch (e) {
+                          debugPrint('Paste error: $e');
                         }
                       },
                       icon: const Icon(Icons.content_paste, size: 14),
