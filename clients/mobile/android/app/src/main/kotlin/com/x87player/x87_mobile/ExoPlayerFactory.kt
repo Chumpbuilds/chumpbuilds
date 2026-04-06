@@ -23,11 +23,6 @@ object ExoPlayerFactory {
     private const val HTTP_CONNECT_TIMEOUT_MS = 15_000
     private const val HTTP_READ_TIMEOUT_MS = 15_000
 
-    private val ffmpegAvailable: Boolean by lazy {
-        try { Class.forName("androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer"); true }
-        catch (_: Exception) { false }
-    }
-
     /**
      * Returns true when running on an Android TV, Amlogic-based box, or
      * Amazon Fire Stick — devices that advertise tunneling / audio-offload
@@ -61,18 +56,17 @@ object ExoPlayerFactory {
      */
     fun build(context: Context, isTvDevice: Boolean): ExoPlayer {
         val renderersFactory = DefaultRenderersFactory(context).apply {
+            // Use EXTENSION_RENDERER_MODE_ON for all devices. PREFER was only useful
+            // when the FFmpeg extension (media3-decoder-ffmpeg) was present to provide
+            // software AC3/EAC3 decoders; without it PREFER has no benefit and may
+            // unnecessarily delay hardware decoder selection. The AudioAttributes fix
+            // below is now responsible for forcing PCM output on TV/Amlogic devices.
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
-                // Prefer software/extension audio decoders over hardware ones on TV
-                // devices. Many Amlogic/Droidlogic SoCs have buggy hardware decoders
-                // for AC3/EAC3/DTS that silently produce no audio output.
-                // EXTENSION_RENDERER_MODE_PREFER uses software decoders first, falling
-                // back to hardware if software isn't available for a given codec.
-                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             } else {
                 setEnableAudioTrackPlaybackParams(true)
-                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             }
         }
 
@@ -101,8 +95,8 @@ object ExoPlayerFactory {
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
-            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
-            "ffmpegAvailable=$ffmpegAvailable")
+            "extensionRendererMode=ON, " +
+            "audioPassthrough=${if (isTvDevice) "disabled(PCM)" else "default"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
@@ -112,9 +106,26 @@ object ExoPlayerFactory {
 
         val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
 
-        return ExoPlayer.Builder(context, renderersFactory)
+        val player = ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
+            .apply {
+                if (isTvDevice) {
+                    // Force CONTENT_TYPE_MUSIC with USAGE_MEDIA — this tells the Android
+                    // audio system to use a standard PCM audio path rather than attempting
+                    // HDMI passthrough for AC3/EAC3 bitstreams. On Amlogic boxes, the
+                    // passthrough path silently fails when the connected TV doesn't
+                    // support the codec, producing no audio.
+                    setAudioAttributes(
+                        androidx.media3.common.AudioAttributes.Builder()
+                            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+                            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                            .build(),
+                        /* handleAudioFocus= */ true
+                    )
+                }
+            }
+        return player
     }
 }
