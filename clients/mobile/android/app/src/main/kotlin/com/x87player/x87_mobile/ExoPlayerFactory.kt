@@ -8,6 +8,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
@@ -57,7 +60,35 @@ object ExoPlayerFactory {
      */
     @androidx.annotation.OptIn(UnstableApi::class)
     fun build(context: Context, isTvDevice: Boolean): ExoPlayer {
-        val renderersFactory = DefaultRenderersFactory(context).apply {
+        @androidx.annotation.OptIn(UnstableApi::class)
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink? {
+                if (!isTvDevice) {
+                    return super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)
+                }
+                // On TV/Amlogic devices: force decode to PCM — NO HDMI passthrough.
+                // Without this, ExoPlayer sends raw EAC3 bytes directly over HDMI.
+                // If the TV doesn't support EAC3 decoding, the result is silence.
+                // By reporting no passthrough capability (DEFAULT_AUDIO_CAPABILITIES)
+                // and disabling offload, ExoPlayer is forced to instantiate the
+                // hardware audio decoder and decode to PCM samples.
+                android.util.Log.i("ExoPlayerFactory",
+                    "Building custom AudioSink: passthrough=DISABLED, offload=DISABLED, float=false")
+                return DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(false)
+                    // Intentionally hardcoded to false regardless of the parameter:
+                    // AudioTrackPlaybackParams can trigger speed/pitch manipulation
+                    // that interferes with PCM-decoded audio on Amlogic firmware.
+                    .setEnableAudioTrackPlaybackParams(false)
+                    .setOffloadMode(DefaultAudioSink.OFFLOAD_MODE_DISABLED)
+                    .setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
+                    .build()
+            }
+        }.apply {
             // Use EXTENSION_RENDERER_MODE_ON for all devices. PREFER was only useful
             // when the FFmpeg extension (media3-decoder-ffmpeg) was present to provide
             // software AC3/EAC3 decoders; without it PREFER has no benefit and may
@@ -102,7 +133,8 @@ object ExoPlayerFactory {
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
             "extensionRendererMode=ON, " +
             "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}, " +
-            "audioPassthrough=${if (isTvDevice) "disabled(PCM)" else "default"}")
+            "audioPassthrough=${if (isTvDevice) "DISABLED(force PCM)" else "default"}, " +
+            "audioOffload=${if (isTvDevice) "DISABLED" else "default"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
