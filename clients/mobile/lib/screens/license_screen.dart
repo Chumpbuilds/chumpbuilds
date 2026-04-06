@@ -168,7 +168,33 @@ class _LicenseScreenState extends State<LicenseScreen> {
                         horizontal: 12, vertical: 12),
                   ),
                 ),
-                const SizedBox(height: 6),
+                // Paste button
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () async {
+                        try {
+                          final data =
+                              await Clipboard.getData(Clipboard.kTextPlain);
+                          if (data?.text != null) {
+                            _controller.text = data!.text!.trim();
+                            _controller.selection = TextSelection.collapsed(
+                              offset: _controller.text.length,
+                            );
+                          }
+                        } catch (_) {
+                          // Clipboard access may fail on some platforms/configurations.
+                        }
+                      },
+                      icon: const Icon(Icons.content_paste, size: 14),
+                      label:
+                          const Text('Paste', style: TextStyle(fontSize: 12)),
+                      style:
+                          TextButton.styleFrom(foregroundColor: _descColor),
+                    ),
+                  ],
+                ),
 
                 // Format hint
                 const Text(
