@@ -23,6 +23,7 @@ class EmbeddedExoPlayerWidget extends StatefulWidget {
     this.autoPlay = true,
     this.onStateChanged,
     this.onTapped,
+    this.onUnsupportedAudioCodec,
   });
 
   final String url;
@@ -40,6 +41,14 @@ class EmbeddedExoPlayerWidget extends StatefulWidget {
 
   /// Called when the user taps the native player surface.
   final VoidCallback? onTapped;
+
+  /// Called when ExoPlayer detects a selected audio track that cannot be
+  /// decoded on this device (e.g. EAC3/AC3 on Amlogic boxes without Dolby
+  /// decoders). The parent should stop the embedded player and launch an
+  /// external player (e.g. VLC) that bundles software decoders.
+  ///
+  /// [codecs] contains the MIME types / codec strings of the unsupported tracks.
+  final void Function(List<String> codecs)? onUnsupportedAudioCodec;
 
   @override
   State<EmbeddedExoPlayerWidget> createState() =>
@@ -96,6 +105,14 @@ class _EmbeddedExoPlayerWidgetState extends State<EmbeddedExoPlayerWidget> {
         hasError: hasError,
         errorMessage: errorMessage,
       );
+    } else if (call.method == 'onUnsupportedAudioCodec') {
+      final args = call.arguments as Map;
+      final rawCodecs = args['codecs'];
+      final codecs = rawCodecs is List
+          ? rawCodecs.map((e) => e.toString()).toList()
+          : <String>[];
+      debugPrint('[ExoPlayer] Unsupported audio codec detected: $codecs — launching VLC');
+      widget.onUnsupportedAudioCodec?.call(codecs);
     }
   }
 

@@ -212,6 +212,11 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
             _hasError = hasError;
           });
         },
+        onUnsupportedAudioCodec: (codecs) {
+          // Stop embedded player and auto-launch VLC when ExoPlayer detects
+          // an audio codec it cannot decode (e.g. EAC3 on Amlogic TV boxes).
+          _openExternal();
+        },
       );
     }
 
