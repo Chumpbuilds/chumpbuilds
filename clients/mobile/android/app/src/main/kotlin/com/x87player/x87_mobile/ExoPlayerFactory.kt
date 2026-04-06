@@ -3,9 +3,11 @@ package com.x87player.x87_mobile
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
+import androidx.media3.common.MimeTypes
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
@@ -59,6 +61,9 @@ object ExoPlayerFactory {
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
+                // Use default codec selection to avoid specific buggy hardware
+                // decoders on cheap Amlogic/Allwinner SoCs (AC3/EAC3/DTS).
+                setMediaCodecSelector(MediaCodecSelector.DEFAULT)
             } else {
                 setEnableAudioTrackPlaybackParams(true)
             }
@@ -67,8 +72,28 @@ object ExoPlayerFactory {
         val trackSelector = DefaultTrackSelector(context).apply {
             parameters = buildUponParameters()
                 .setTunnelingEnabled(!isTvDevice)
+                .apply {
+                    if (isTvDevice) {
+                        // Prefer stereo over surround — many cheap boxes/TVs can't
+                        // decode or downmix 5.1 AC3/EAC3 properly via HDMI.
+                        setMaxAudioChannelCount(2)
+
+                        // Prefer AAC over AC3/EAC3 — AAC is universally decoded in
+                        // software, while AC3 passthrough depends on HDMI sink caps.
+                        setPreferredAudioMimeType(MimeTypes.AUDIO_AAC)
+
+                        // Allow non-seamless adaptation so ExoPlayer can switch to a
+                        // working audio track mid-stream if the initial one fails.
+                        setAllowAudioMixedMimeTypeAdaptiveness(true)
+                    }
+                }
                 .build()
         }
+
+        android.util.Log.i("ExoPlayerFactory",
+            "TrackSelector config: tunneling=${!isTvDevice}, " +
+            "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
+            "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
