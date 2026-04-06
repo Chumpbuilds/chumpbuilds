@@ -47,10 +47,12 @@ List<int> _encodeJsonIsolate(Map<String, List<Map<String, dynamic>>> data) {
   return utf8.encode(jsonEncode(data));
 }
 
-/// Top-level isolate function for decoding JSON bytes into parsed EPG data.
+/// Decodes pre-parsed EPG JSON bytes into the in-memory channel→programmes map.
 ///
-/// Must be top-level for use with [compute].
-Map<String, List<Map<String, dynamic>>> _decodeJsonIsolate(List<int> bytes) {
+/// Called directly on the main isolate (not via [compute]) since the expensive
+/// I/O is already done; decoding in-place avoids the costly cross-isolate Map
+/// copy that caused a ~4.8 s Davey frame when returning from [compute].
+Map<String, List<Map<String, dynamic>>> _decodeEpgJson(List<int> bytes) {
   final decoded = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
   return decoded.map(
     (key, value) => MapEntry(
@@ -281,7 +283,11 @@ class EpgService {
         final jsonBytes = await jsonFile.readAsBytes();
         if (jsonBytes.isNotEmpty) {
           debugPrint('[EpgService] Loading EPG from JSON cache…');
-          final epgData = await compute(_decodeJsonIsolate, jsonBytes);
+          // Decode directly on the main isolate — avoids the ~4.8 s Davey
+          // frame caused by copying the 1,754-channel Map across the isolate
+          // boundary when using compute().  The expensive I/O is already done;
+          // the synchronous decode is much cheaper than the isolate copy.
+          final epgData = _decodeEpgJson(jsonBytes);
           if (epgData.isNotEmpty) {
             _epgData = epgData;
             debugPrint('[EpgService] Loaded EPG from JSON cache (${_epgData!.length} channels)');

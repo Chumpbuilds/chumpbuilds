@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -200,13 +201,17 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
 
       // NOW start the compute()-heavy disk I/O work.
       final cacheWarm = XtreamCacheService().ensureLoaded();
-      final epgLoadFuture = EpgService().loadFromCache();
+      // Fire-and-forget — EPG is not needed for navigation. It completes in the
+      // background and is ready by the time the user opens a live channel.
+      // Errors are handled inside loadFromCache() which swallows them so that
+      // a missing/corrupt EPG file never blocks startup or navigation.
+      unawaited(EpgService().loadFromCache());
 
       // Start freshness check early — it needs cache loaded first but can
       // overlap with license validation and auto-login.
       final cacheFreshFuture = () async {
         await cacheWarm;
-        return XtreamCacheService().isCacheFresh(minRemainingHours: 2);
+        return XtreamCacheService().isCacheFresh(minRemainingHours: 0);
       }();
 
       // License is the gate — if invalid, discard parallel results and bail.
@@ -227,7 +232,6 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       await cacheWarm; // likely already done
       final autoLoggedIn = await autoLoginFuture;
       final cacheFresh = await cacheFreshFuture; // likely already resolved
-      await epgLoadFuture;
 
       debugPrint('[Bootstrap] isCacheFresh=$cacheFresh, autoLogin=$autoLoggedIn');
 
@@ -239,9 +243,22 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
         return;
       }
 
-      // Cache is fresh — EPG is already loaded from the parallel call above,
-      // so navigate directly to HomeScreen.
+      // Cache is fresh — navigate directly to HomeScreen.
       if (cacheFresh) {
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
+        );
+        return;
+      }
+
+      // Cache is not "fresh" by the threshold, but check if all core content
+      // keys are still non-expired (just aging). In this case the data is still
+      // valid — skip the inline prefetch and let HomeScreen's background refresh
+      // handle the silent refresh once the user is on screen.
+      final allKeysValid = await XtreamCacheService().areAllContentKeysValid();
+      if (allKeysValid) {
+        debugPrint('[Bootstrap] All content keys valid — skipping inline prefetch');
         if (!mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute<void>(builder: (_) => const HomeScreen()),
