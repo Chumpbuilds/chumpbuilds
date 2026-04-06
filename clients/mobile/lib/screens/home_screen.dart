@@ -582,6 +582,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
   int _selectedIndex = 0;
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _scrollController = ScrollController();
   bool _isLoading = false;
   String _statusMessage = '';
   bool _isError = false;
@@ -601,6 +602,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -710,8 +712,50 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
         ),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: SingleChildScrollView(
-            child: Column(
+          child: Focus(
+            autofocus: true,
+            onKeyEvent: (node, event) {
+              // Only intercept when this outer node itself is the primary focus
+              // (not when a descendant text-field / button / dropdown is focused).
+              if (!node.hasPrimaryFocus) return KeyEventResult.ignored;
+              if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
+              const double scrollAmount = 80.0;
+              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                if (_scrollController.hasClients) {
+                  _scrollController.animateTo(
+                    (_scrollController.offset + scrollAmount).clamp(
+                        0.0, _scrollController.position.maxScrollExtent),
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                  );
+                }
+                return KeyEventResult.handled;
+              }
+              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                if (_scrollController.hasClients) {
+                  _scrollController.animateTo(
+                    (_scrollController.offset - scrollAmount).clamp(
+                        0.0, _scrollController.position.maxScrollExtent),
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                  );
+                }
+                return KeyEventResult.handled;
+              }
+              // Enter / Select moves focus into the first interactive child.
+              if (event.logicalKey == LogicalKeyboardKey.enter ||
+                  event.logicalKey == LogicalKeyboardKey.numpadEnter ||
+                  event.logicalKey == LogicalKeyboardKey.select ||
+                  event.logicalKey == LogicalKeyboardKey.gameButtonA) {
+                node.nextFocus();
+                return KeyEventResult.handled;
+              }
+              return KeyEventResult.ignored;
+            },
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -893,6 +937,7 @@ class _SwitchProfileDialogState extends State<_SwitchProfileDialog> {
                 ],
               ),
             ],
+          ),
           ),
           ),
         ),
