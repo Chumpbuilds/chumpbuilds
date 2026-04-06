@@ -205,7 +205,10 @@ class _BootstrapScreenState extends State<_BootstrapScreen> {
       // background and is ready by the time the user opens a live channel.
       // Errors are handled inside loadFromCache() which swallows them so that
       // a missing/corrupt EPG file never blocks startup or navigation.
-      unawaited(EpgService().loadFromCache());
+      // Schedule EPG load after a microtask yield so bootstrap network calls
+      // get priority on the event loop. The compute() inside loadFromCache()
+      // runs on a background isolate so it won't cause jank.
+      unawaited(Future.microtask(() => EpgService().loadFromCache()));
 
       // Start freshness check early — it needs cache loaded first but can
       // overlap with license validation and auto-login.
