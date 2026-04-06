@@ -73,18 +73,14 @@ object ExoPlayerFactory {
                 // On TV/Amlogic devices: force decode to PCM — NO HDMI passthrough.
                 // Without this, ExoPlayer sends raw EAC3 bytes directly over HDMI.
                 // If the TV doesn't support EAC3 decoding, the result is silence.
-                // By reporting no passthrough capability (DEFAULT_AUDIO_CAPABILITIES)
-                // and disabling offload, ExoPlayer is forced to instantiate the
-                // hardware audio decoder and decode to PCM samples.
                 android.util.Log.i("ExoPlayerFactory",
-                    "Building custom AudioSink: passthrough=DISABLED, offload=DISABLED, float=false")
+                    "Building custom AudioSink: passthrough=DISABLED, float=false")
                 return DefaultAudioSink.Builder(context)
                     .setEnableFloatOutput(false)
                     // Intentionally hardcoded to false regardless of the parameter:
                     // AudioTrackPlaybackParams can trigger speed/pitch manipulation
                     // that interferes with PCM-decoded audio on Amlogic firmware.
                     .setEnableAudioTrackPlaybackParams(false)
-                    .setOffloadMode(DefaultAudioSink.OFFLOAD_MODE_DISABLED)
                     .setAudioCapabilities(AudioCapabilities.DEFAULT_AUDIO_CAPABILITIES)
                     .build()
             }
@@ -133,8 +129,7 @@ object ExoPlayerFactory {
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
             "extensionRendererMode=ON, " +
             "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}, " +
-            "audioPassthrough=${if (isTvDevice) "DISABLED(force PCM)" else "default"}, " +
-            "audioOffload=${if (isTvDevice) "DISABLED" else "default"}")
+            "audioPassthrough=${if (isTvDevice) "DISABLED(force PCM)" else "default"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)
