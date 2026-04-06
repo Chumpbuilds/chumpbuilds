@@ -2,9 +2,11 @@ package com.x87player.x87_mobile
 
 import android.content.Context
 import android.view.View
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import io.flutter.plugin.common.BinaryMessenger
@@ -77,6 +79,20 @@ class ExoPlayerPlatformView(
             }
             override fun onPlayerError(error: PlaybackException) {
                 sendStateUpdate(hasError = true, errorMessage = error.message)
+            }
+            override fun onTracksChanged(tracks: Tracks) {
+                for (group in tracks.groups) {
+                    if (group.type == C.TRACK_TYPE_AUDIO) {
+                        for (i in 0 until group.length) {
+                            val format = group.getTrackFormat(i)
+                            val selected = group.isTrackSelected(i)
+                            android.util.Log.i("ExoPlayerPlatformView",
+                                "Audio track [$i]: codec=${format.codecs ?: format.sampleMimeType} " +
+                                "channels=${format.channelCount} " +
+                                "selected=$selected")
+                        }
+                    }
+                }
             }
         })
 

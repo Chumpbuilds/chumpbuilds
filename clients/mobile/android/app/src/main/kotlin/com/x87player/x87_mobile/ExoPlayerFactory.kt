@@ -7,7 +7,6 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
@@ -57,15 +56,18 @@ object ExoPlayerFactory {
      */
     fun build(context: Context, isTvDevice: Boolean): ExoPlayer {
         val renderersFactory = DefaultRenderersFactory(context).apply {
-            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
-                // Use default codec selection to avoid specific buggy hardware
-                // decoders on cheap Amlogic/Allwinner SoCs (AC3/EAC3/DTS).
-                setMediaCodecSelector(MediaCodecSelector.DEFAULT)
+                // Prefer software/extension audio decoders over hardware ones on TV
+                // devices. Many Amlogic/Droidlogic SoCs have buggy hardware decoders
+                // for AC3/EAC3/DTS that silently produce no audio output.
+                // EXTENSION_RENDERER_MODE_PREFER uses software decoders first, falling
+                // back to hardware if software isn't available for a given codec.
+                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             } else {
                 setEnableAudioTrackPlaybackParams(true)
+                setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
             }
         }
 
@@ -93,7 +95,8 @@ object ExoPlayerFactory {
         android.util.Log.i("ExoPlayerFactory",
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
-            "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}")
+            "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
+            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}")
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(USER_AGENT)

@@ -123,6 +123,24 @@ class NativePlayerActivity : Activity() {
                         setResult(RESULT_CANCELED)
                         finish()
                     }
+
+                    override fun onTracksChanged(tracks: Tracks) {
+                        for (group in tracks.groups) {
+                            if (group.type == C.TRACK_TYPE_AUDIO) {
+                                for (i in 0 until group.length) {
+                                    val format = group.getTrackFormat(i)
+                                    val selected = group.isTrackSelected(i)
+                                    val supported = group.isTrackSupported(i)
+                                    android.util.Log.i("NativePlayerActivity",
+                                        "Audio track [$i]: codec=${format.codecs ?: format.sampleMimeType} " +
+                                        "channels=${format.channelCount} " +
+                                        "sampleRate=${format.sampleRate} " +
+                                        "lang=${format.language ?: "?"} " +
+                                        "selected=$selected supported=$supported")
+                                }
+                            }
+                        }
+                    }
                 })
             }
         } catch (e: Exception) {
