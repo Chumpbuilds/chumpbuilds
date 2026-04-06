@@ -55,5 +55,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
     implementation("androidx.media3:media3-datasource:1.5.1")
+    // FFmpeg extension — software decoders for AC3, EAC3, DTS, Vorbis, FLAC, OPUS.
+    // Required because many Amlogic/Droidlogic TV boxes have hardware decoders that
+    // silently fail (no audio output) for these codecs.
+    implementation("androidx.media3:media3-decoder-ffmpeg:1.5.1")
 }
 

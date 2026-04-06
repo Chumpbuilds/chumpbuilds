@@ -20,3 +20,7 @@
 -keep class androidx.media3.** { *; }
 -keep interface androidx.media3.** { *; }
 -dontwarn androidx.media3.**
+
+# Media3 FFmpeg extension (software AC3/EAC3/DTS decoders)
+-keep class androidx.media3.decoder.ffmpeg.** { *; }
+-dontwarn androidx.media3.decoder.ffmpeg.**
