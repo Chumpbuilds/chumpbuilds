@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../screens/movie_detail_screen.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_grid_tile.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/system_ui_wrapper.dart';
 
@@ -433,19 +434,21 @@ class _MoviesScreenState extends State<MoviesScreen> {
                 childAspectRatio: 0.55,
               ),
               itemCount: _filteredMovies.length,
-              itemBuilder: (_, i) => _buildMovieTile(_filteredMovies[i]),
+              itemBuilder: (_, i) =>
+                  _buildMovieTile(_filteredMovies[i], autofocus: i == 0),
             ),
           ),
       ],
     );
   }
 
-  Widget _buildMovieTile(Map<String, dynamic> movie) {
+  Widget _buildMovieTile(Map<String, dynamic> movie, {bool autofocus = false}) {
     final name = movie['name']?.toString() ?? '';
     final posterUrl = movie['stream_icon']?.toString() ?? '';
     final isFav = _favMovieIds.contains(movie['stream_id']?.toString() ?? '');
 
-    return GestureDetector(
+    return FocusGridTile(
+      autofocus: autofocus,
       onTap: () async {
         await Navigator.of(context).push(
           MaterialPageRoute(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../screens/series_detail_screen.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_grid_tile.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/system_ui_wrapper.dart';
 
@@ -431,19 +432,21 @@ class _SeriesScreenState extends State<SeriesScreen> {
                 childAspectRatio: 0.55,
               ),
               itemCount: _filteredSeries.length,
-              itemBuilder: (_, i) => _buildSeriesTile(_filteredSeries[i]),
+              itemBuilder: (_, i) =>
+                  _buildSeriesTile(_filteredSeries[i], autofocus: i == 0),
             ),
           ),
       ],
     );
   }
 
-  Widget _buildSeriesTile(Map<String, dynamic> series) {
+  Widget _buildSeriesTile(Map<String, dynamic> series, {bool autofocus = false}) {
     final name = series['name']?.toString() ?? '';
     final coverUrl = series['cover']?.toString() ?? '';
     final isFav = _favSeriesIds.contains(series['series_id']?.toString() ?? '');
 
-    return GestureDetector(
+    return FocusGridTile(
+      autofocus: autofocus,
       onTap: () async {
         await Navigator.of(context).push(
           MaterialPageRoute(
