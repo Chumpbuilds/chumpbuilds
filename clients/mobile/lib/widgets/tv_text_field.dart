@@ -163,11 +163,14 @@ class _TvTextFieldState extends State<TvTextField> {
     }
     // Allow the inner TextField to accept focus so the tap opens the keyboard.
     _innerFocus.canRequestFocus = true;
-    // Leaving D-pad mode clears the Stage-1 border highlight on next rebuild.
-    if (_isDpadMode) {
-      setState(() => _isDpadMode = false);
-    }
-    // _isEditing will be updated by _onInnerFocusChange once focus is gained.
+    // Set _isEditing = true so the FocusTraversalGroup rebuilds with
+    // descendantsAreFocusable: true before the tap reaches the inner TextField.
+    // Without this the traversal group blocks focus even though canRequestFocus
+    // is true, and the keyboard never opens (mirrors _enterEditingMode logic).
+    setState(() {
+      _isEditing = true;
+      _isDpadMode = false;
+    });
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
