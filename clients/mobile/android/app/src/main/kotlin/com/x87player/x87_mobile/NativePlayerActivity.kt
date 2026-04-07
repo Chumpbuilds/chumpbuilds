@@ -50,6 +50,7 @@ class NativePlayerActivity : Activity() {
         private const val SEEK_BAR_FOCUS_BACKGROUND_COLOR: Int = 0x333498DB
         private const val SEEK_BAR_SCRUB_INCREMENT = 10   // 1% per D-pad press (out of max=1000)
         private const val SEEK_COMMIT_DELAY_MS = 1_000L   // commit seek 1 second after last scrub
+        private const val SEEK_GUARD_TIMEOUT_MS = 2_000L  // max time to wait for seek completion
         private val RESIZE_MODES = listOf(
             AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
             AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH to "Width",
@@ -75,9 +76,15 @@ class NativePlayerActivity : Activity() {
     private var currentResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
     private var isUserSeekingBar = false
     private var isDpadScrubbing = false
+    private var pendingSeekComplete = false
 
     private val hideControlsRunnable = Runnable { hideControls() }
     private val seekCommitRunnable = Runnable { commitDpadSeek() }
+    private val seekGuardTimeoutRunnable = Runnable {
+        android.util.Log.w("NativePlayerActivity", "Seek guard timed out — clearing isUserSeekingBar")
+        pendingSeekComplete = false
+        isUserSeekingBar = false
+    }
 
     private val seekBarUpdateRunnable = object : Runnable {
         override fun run() {
@@ -132,6 +139,12 @@ class NativePlayerActivity : Activity() {
                         if (state == Player.STATE_ENDED) {
                             setResult(RESULT_OK)
                             finish()
+                        }
+                        // Clear the seek guard once ExoPlayer has finished seeking
+                        if (state == Player.STATE_READY && pendingSeekComplete) {
+                            pendingSeekComplete = false
+                            isUserSeekingBar = false
+                            mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
                         }
                     }
 
@@ -203,6 +216,7 @@ class NativePlayerActivity : Activity() {
         mainHandler.removeCallbacks(hideControlsRunnable)
         mainHandler.removeCallbacks(seekBarUpdateRunnable)
         mainHandler.removeCallbacks(seekCommitRunnable)
+        mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
         if (::player.isInitialized) {
             player.release()
         }
@@ -606,13 +620,20 @@ class NativePlayerActivity : Activity() {
                     mainHandler.removeCallbacks(hideControlsRunnable)
                 }
                 override fun onStopTrackingTouch(bar: SeekBar?) {
-                    isUserSeekingBar = false
                     if (::player.isInitialized) {
                         val duration = player.duration
                         if (duration > 0 && duration != C.TIME_UNSET) {
                             val seekPos = duration * (bar?.progress ?: 0) / 1000L
+                            pendingSeekComplete = true
                             player.seekTo(seekPos)
+                            mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
+                            mainHandler.postDelayed(seekGuardTimeoutRunnable, SEEK_GUARD_TIMEOUT_MS)
+                            // DO NOT clear isUserSeekingBar — wait for seek complete
+                        } else {
+                            isUserSeekingBar = false
                         }
+                    } else {
+                        isUserSeekingBar = false
                     }
                     scheduleHideControls()
                 }
@@ -831,10 +852,14 @@ class NativePlayerActivity : Activity() {
         val duration = player.duration
         if (duration > 0 && duration != C.TIME_UNSET) {
             val seekPos = duration * seekBar.progress / 1000L
+            pendingSeekComplete = true
             player.seekTo(seekPos)
+            mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
+            mainHandler.postDelayed(seekGuardTimeoutRunnable, SEEK_GUARD_TIMEOUT_MS)
+            // DO NOT clear isUserSeekingBar here — wait for seek to complete
         }
         isDpadScrubbing = false
-        isUserSeekingBar = false
+        // isUserSeekingBar stays true until onPlaybackStateChanged fires STATE_READY
         scheduleHideControls()
     }
 
