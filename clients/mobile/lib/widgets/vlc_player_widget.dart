@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/external_player_service.dart';
 import '../services/video_player_service.dart';
 import 'embedded_exo_player_widget.dart';
+import 'embedded_ios_player_widget.dart';
 import 'ios_video_player_widget.dart';
 
 /// Embedded video area widget.
@@ -86,7 +87,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
   void initState() {
     super.initState();
     // On Android, EmbeddedExoPlayerWidget handles autoPlay via creation params.
-    // On iOS, IosVideoPlayerWidget handles autoPlay internally.
+    // On iOS, EmbeddedIosPlayerWidget handles autoPlay via creation params.
     // The fullscreen _startPlayback path is only used on other platforms.
     if (_useFullscreenOnlyPlayback &&
         widget.autoPlay &&
@@ -110,7 +111,7 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
           _embeddedKey = UniqueKey();
         });
       } else if (Platform.isIOS) {
-        // IosVideoPlayerWidget reacts to URL changes via its own didUpdateWidget.
+        // EmbeddedIosPlayerWidget reacts to URL changes via key-based recreation.
         // Reset error/loading state here so the parent reflects the new URL.
         setState(() {
           _hasError = false;
@@ -238,9 +239,9 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
       );
     }
 
-    // ── iOS: render video inline via AVFoundation (video_player) ─────────────
+    // ── iOS: render video inline via native AVPlayer PlatformView ────────────
     if (_useIosEmbedded) {
-      return IosVideoPlayerWidget(
+      return EmbeddedIosPlayerWidget(
         key: _embeddedKey,
         url: widget.streamUrl,
         title: widget.title,
@@ -250,6 +251,18 @@ class _VlcPlayerWidgetState extends State<VlcPlayerWidget> {
           if (widget.streamUrl.isNotEmpty) {
             widget.onFullscreenRequested?.call();
           }
+        },
+        onStateChanged: ({
+          required bool isPlaying,
+          required bool isBuffering,
+          required bool hasError,
+          String? errorMessage,
+        }) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = isBuffering;
+            _hasError = hasError;
+          });
         },
       );
     }
