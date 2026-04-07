@@ -41,15 +41,27 @@ import Flutter
             }
 
             let title = args["title"] as? String
-            let playerVC = NativePlayerViewController()
-            playerVC.streamURL = url
-            playerVC.streamTitle = title
-            playerVC.modalPresentationStyle = .fullScreen
-            playerVC.onDismissed = {
-                result("dismissed")
-            }
+            let contentType = args["contentType"] as? String ?? "live"
 
-            presenter.present(playerVC, animated: true, completion: nil)
+            if contentType == "movie" || contentType == "series" {
+                let vlcVC = VLCPlayerViewController()
+                vlcVC.streamURL = url
+                vlcVC.streamTitle = title
+                vlcVC.modalPresentationStyle = .fullScreen
+                vlcVC.onDismissed = {
+                    result("dismissed")
+                }
+                presenter.present(vlcVC, animated: true, completion: nil)
+            } else {
+                let playerVC = NativePlayerViewController()
+                playerVC.streamURL = url
+                playerVC.streamTitle = title
+                playerVC.modalPresentationStyle = .fullScreen
+                playerVC.onDismissed = {
+                    result("dismissed")
+                }
+                presenter.present(playerVC, animated: true, completion: nil)
+            }
         }
     }
 

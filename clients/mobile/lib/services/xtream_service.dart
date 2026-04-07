@@ -347,14 +347,6 @@ class XtreamService {
       ext = type == 'live' ? 'm3u8' : 'mp4';
     }
 
-    // On iOS, always request HLS for movies/series. Even .mp4 containers can
-    // hold HEVC (hev1) video that AVPlayer renders as a black screen on some
-    // devices. HLS repackaging by the Xtream server normalises codec signaling
-    // so AVPlayer handles every codec correctly.
-    if (Platform.isIOS && type != 'live') {
-      ext = 'm3u8';
-    }
-
     return '$baseUrl/$type/$username/$password/$streamId.$ext';
   }
 
