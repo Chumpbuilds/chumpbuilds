@@ -38,10 +38,10 @@ class IosVideoPlayerWidget extends StatefulWidget {
 class _IosVideoPlayerWidgetState extends State<IosVideoPlayerWidget> {
   static const Color _accentColor = Color(0xFF3498DB);
 
-  // Stall recovery: check every 5 s; if position has not advanced for
-  // [_stallThreshold] while the player reports isPlaying/isBuffering, restart.
-  static const _stallCheckInterval = Duration(seconds: 5);
-  static const _stallThreshold = Duration(seconds: 10);
+  // Stall recovery: check every 10 s; if position has not advanced for
+  // [_stallThreshold] while the player reports isPlaying/isBuffering, recover.
+  static const _stallCheckInterval = Duration(seconds: 10);
+  static const _stallThreshold = Duration(seconds: 30);
 
   VideoPlayerController? _controller;
   bool _initialized = false;
@@ -115,7 +115,7 @@ class _IosVideoPlayerWidgetState extends State<IosVideoPlayerWidget> {
     if (ctrl == null) return;
     if (ctrl.value.hasError) {
       debugPrint('[IosVideoPlayerWidget] Error: ${ctrl.value.errorDescription}');
-      if (mounted) _recover();
+      if (mounted) _fullRecover();
     }
   }
 
@@ -157,6 +157,26 @@ class _IosVideoPlayerWidgetState extends State<IosVideoPlayerWidget> {
   }
 
   void _recover() {
+    _stopStallMonitor();
+    if (!mounted) return;
+
+    final ctrl = _controller;
+    if (ctrl != null && _initialized) {
+      // First attempt: seek near the end (live edge) and resume.
+      ctrl.seekTo(ctrl.value.duration).then((_) {
+        ctrl.play();
+        _startStallMonitor();
+      }).catchError((Object e) {
+        // If seek fails, fall back to full teardown/recreate.
+        debugPrint('[IosVideoPlayerWidget] Seek-to-live-edge failed ($e), doing full recover');
+        _fullRecover();
+      });
+    } else {
+      _fullRecover();
+    }
+  }
+
+  void _fullRecover() {
     _stopStallMonitor();
     if (!mounted) return;
     final url = widget.url;
