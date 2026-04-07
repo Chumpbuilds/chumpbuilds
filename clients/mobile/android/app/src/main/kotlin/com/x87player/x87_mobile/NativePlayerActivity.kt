@@ -249,14 +249,24 @@ class NativePlayerActivity : Activity() {
                 true
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
-                showControls()
-                skipRewind()
-                true
+                if (!controlsVisible) {
+                    showControls()
+                    skipRewind()
+                    true
+                } else {
+                    // Let Android's focus navigation move between buttons
+                    super.onKeyDown(keyCode, event)
+                }
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                showControls()
-                skipForward()
-                true
+                if (!controlsVisible) {
+                    showControls()
+                    skipForward()
+                    true
+                } else {
+                    // Let Android's focus navigation move between buttons
+                    super.onKeyDown(keyCode, event)
+                }
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
             KeyEvent.KEYCODE_MEDIA_PLAY,
@@ -303,6 +313,9 @@ class NativePlayerActivity : Activity() {
     private fun showControls() {
         controlsOverlay.visibility = View.VISIBLE
         controlsVisible = true
+        if (::playPauseButton.isInitialized) {
+            playPauseButton.requestFocus()
+        }
         scheduleHideControls()
     }
 
@@ -465,6 +478,16 @@ class NativePlayerActivity : Activity() {
             isFocusable = true
         }
         transportRow.addView(forwardButton)
+
+        // Assign stable IDs and wire up explicit D-pad focus navigation order
+        rewindButton.id = View.generateViewId()
+        playPauseButton.id = View.generateViewId()
+        forwardButton.id = View.generateViewId()
+
+        rewindButton.nextFocusRightId = playPauseButton.id
+        playPauseButton.nextFocusLeftId = rewindButton.id
+        playPauseButton.nextFocusRightId = forwardButton.id
+        forwardButton.nextFocusLeftId = playPauseButton.id
 
         root.addView(transportRow)
 
