@@ -494,12 +494,12 @@ class _GradientCardState extends State<_GradientCard> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(widget.card.emoji,
-                    style: const TextStyle(fontSize: 36)),
-                const SizedBox(height: 8),
+                    style: TextStyle(fontSize: widget.height * 0.3)),
+                SizedBox(height: widget.height * 0.06),
                 Text(
                   widget.card.label,
-                  style: const TextStyle(
-                    fontSize: 13,
+                  style: TextStyle(
+                    fontSize: (widget.height * 0.14).clamp(10.0, 18.0),
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
                   ),
