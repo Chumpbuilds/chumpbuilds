@@ -21,12 +21,22 @@ import UIKit
 ///   - `.AVPlayerItemPlaybackStalled` — seeks to live edge and calls play().
 ///   - Periodic time observer every 0.5 s — detects when the playback position
 ///     has not advanced for 8+ seconds while supposedly playing.
+/// A UIView subclass that automatically resizes its first sublayer
+/// (the AVPlayerLayer) whenever the view's bounds change.
+private class PlayerContainerView: UIView {
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // Resize the AVPlayerLayer to fill the container.
+        layer.sublayers?.first?.frame = bounds
+    }
+}
+
 class IosPlayerPlatformView: NSObject, FlutterPlatformView {
 
     // MARK: - UI
 
-    private let containerView: UIView = {
-        let v = UIView()
+    private let containerView: PlayerContainerView = {
+        let v = PlayerContainerView()
         v.backgroundColor = .black
         return v
     }()
@@ -310,13 +320,6 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
 
     @objc private func handleTap() {
         channel.invokeMethod("onTapped", arguments: nil)
-    }
-
-    // MARK: - Layout
-
-    /// Called by the factory when the frame changes (e.g. device rotation).
-    func layoutSubviews() {
-        playerLayer?.frame = containerView.bounds
     }
 
     // MARK: - Cleanup
