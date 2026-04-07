@@ -913,6 +913,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
                         ),
                       ),
                       const SizedBox(width: 4),
+                      if (!Platform.isIOS)
                       SizedBox(
                         height: 28,
                         child: OutlinedButton(
