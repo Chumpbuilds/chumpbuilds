@@ -346,14 +346,6 @@ class XtreamService {
     } else {
       ext = type == 'live' ? 'm3u8' : 'mp4';
     }
-    // On iOS, AVPlayer cannot play MKV/AVI/FLV containers. Request HLS (.m3u8)
-    // instead — most Xtream Codes servers repackage the stream on the fly.
-    if (Platform.isIOS && type != 'live') {
-      const iosNativeFormats = {'mp4', 'm4v', 'mov', 'm3u8', 'ts'};
-      if (!iosNativeFormats.contains(ext.toLowerCase())) {
-        ext = 'm3u8';
-      }
-    }
     return '$baseUrl/$type/$username/$password/$streamId.$ext';
   }
 

@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/android_hls_fullscreen_screen.dart';
+import '../screens/ios_vlc_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
@@ -212,11 +213,17 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AndroidHlsFullscreenScreen(
-          streamUrl: url,
-          title: displayTitle,
-          contentType: 'series',
-        ),
+        builder: (_) => Platform.isIOS
+            ? IosVlcFullscreenScreen(
+                streamUrl: url,
+                title: displayTitle,
+                contentType: 'series',
+              )
+            : AndroidHlsFullscreenScreen(
+                streamUrl: url,
+                title: displayTitle,
+                contentType: 'series',
+              ),
       ),
     );
   }
