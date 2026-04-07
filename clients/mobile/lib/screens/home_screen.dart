@@ -10,6 +10,7 @@ import '../services/epg_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_cache_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_icon_button.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/tv_text_field.dart';
 import '../widgets/system_ui_wrapper.dart';
@@ -281,12 +282,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _FocusIconButton(
+                        FocusIconButton(
                           icon: Icons.account_circle,
                           onPressed: () => _showSwitchProfileDialog(context),
                         ),
                         const SizedBox(width: 8),
-                        _FocusIconButton(
+                        FocusIconButton(
                           icon: Icons.settings,
                           onPressed: () => _openSettings(context),
                         ),
@@ -507,63 +508,6 @@ class _GradientCardState extends State<_GradientCard> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─── Focusable icon button for D-pad navigation ───────────────────────────────
-
-/// A small icon button that participates in Flutter's focus system so that
-/// D-pad / remote-control devices can navigate to it and see a visual highlight.
-///
-/// When focused:
-///  - Shows a circular white border around the icon.
-///  - Activates [onPressed] when the Enter / Select / game-pad A key is pressed.
-class _FocusIconButton extends StatefulWidget {
-  const _FocusIconButton({
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  State<_FocusIconButton> createState() => _FocusIconButtonState();
-}
-
-class _FocusIconButtonState extends State<_FocusIconButton> {
-  bool _focused = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Focus(
-      onFocusChange: (hasFocus) => setState(() => _focused = hasFocus),
-      onKeyEvent: (node, event) {
-        if (event is KeyDownEvent &&
-            (event.logicalKey == LogicalKeyboardKey.select ||
-                event.logicalKey == LogicalKeyboardKey.enter ||
-                event.logicalKey == LogicalKeyboardKey.gameButtonA)) {
-          widget.onPressed();
-          return KeyEventResult.handled;
-        }
-        return KeyEventResult.ignored;
-      },
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: _focused ? Colors.white : Colors.transparent,
-              width: 2,
-            ),
-          ),
-          child: Icon(widget.icon, color: Colors.white, size: 20),
         ),
       ),
     );
