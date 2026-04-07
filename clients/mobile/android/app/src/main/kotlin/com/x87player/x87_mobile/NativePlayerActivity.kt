@@ -257,7 +257,10 @@ class NativePlayerActivity : Activity() {
 
     // ── Key / D-pad handling (Fire Stick remote) ──────────────────────────────
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN) return super.dispatchKeyEvent(event)
+
+        val keyCode = event.keyCode
         return when (keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER -> {
                 if (!controlsVisible) {
@@ -271,7 +274,7 @@ class NativePlayerActivity : Activity() {
                 } else {
                     // Let the focused button handle the click naturally
                     scheduleHideControls()
-                    super.onKeyDown(keyCode, event)
+                    super.dispatchKeyEvent(event)
                 }
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
@@ -279,13 +282,13 @@ class NativePlayerActivity : Activity() {
                     showControls()
                     true
                 } else if (::seekBar.isInitialized && seekBar.hasFocus()) {
-                    // Seek bar has focus — scrub left freely
+                    // Seek bar has focus — scrub left freely; consume so SeekBar won't also handle it
                     dpadScrubSeekBar(-SEEK_BAR_SCRUB_INCREMENT)
                     true
                 } else {
                     // Other button focused — let Android handle focus navigation
                     scheduleHideControls()
-                    super.onKeyDown(keyCode, event)
+                    super.dispatchKeyEvent(event)
                 }
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
@@ -293,13 +296,13 @@ class NativePlayerActivity : Activity() {
                     showControls()
                     true
                 } else if (::seekBar.isInitialized && seekBar.hasFocus()) {
-                    // Seek bar has focus — scrub right freely
+                    // Seek bar has focus — scrub right freely; consume so SeekBar won't also handle it
                     dpadScrubSeekBar(SEEK_BAR_SCRUB_INCREMENT)
                     true
                 } else {
                     // Other button focused — let Android handle focus navigation
                     scheduleHideControls()
-                    super.onKeyDown(keyCode, event)
+                    super.dispatchKeyEvent(event)
                 }
             }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
@@ -346,13 +349,13 @@ class NativePlayerActivity : Activity() {
                         commitDpadSeek()
                     }
                     scheduleHideControls()
-                    super.onKeyDown(keyCode, event)
+                    super.dispatchKeyEvent(event)
                 }
             }
             else -> {
                 // Any other key shows controls
                 showControls()
-                super.onKeyDown(keyCode, event)
+                super.dispatchKeyEvent(event)
             }
         }
     }
@@ -599,7 +602,7 @@ class NativePlayerActivity : Activity() {
             )
             max = 1000
             id = View.generateViewId()
-            keyProgressIncrement = 10  // 1% per D-pad press
+            keyProgressIncrement = 0   // Disable built-in D-pad handling — we handle it via dispatchKeyEvent
             // Blue accent thumb and progress
             progressDrawable = buildSeekBarDrawable()
             thumb = buildSeekBarThumb()
