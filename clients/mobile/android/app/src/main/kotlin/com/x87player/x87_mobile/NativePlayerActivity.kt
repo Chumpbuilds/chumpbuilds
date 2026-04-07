@@ -47,6 +47,7 @@ class NativePlayerActivity : Activity() {
         private const val SKIP_FORWARD_MS = 30_000L
         private const val PREFS_NAME = "player_prefs"
         private const val PREF_RESIZE_MODE = "resize_mode"
+        private const val SEEK_BAR_FOCUS_BACKGROUND_COLOR: Int = 0x333498DB
         private val RESIZE_MODES = listOf(
             AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
             AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH to "Width",
@@ -300,6 +301,16 @@ class NativePlayerActivity : Activity() {
                 finish()
                 true
             }
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (!controlsVisible) {
+                    showControls()
+                    true
+                } else {
+                    // Pass through to Android's focus system without stealing focus
+                    scheduleHideControls()
+                    super.onKeyDown(keyCode, event)
+                }
+            }
             else -> {
                 // Any other key shows controls
                 showControls()
@@ -311,9 +322,12 @@ class NativePlayerActivity : Activity() {
     // ── Controls visibility ───────────────────────────────────────────────────
 
     private fun showControls() {
+        val wasHidden = !controlsVisible
         controlsOverlay.visibility = View.VISIBLE
         controlsVisible = true
-        if (::playPauseButton.isInitialized) {
+        // Only grab focus on play/pause when controls first appear,
+        // not when they're already visible (which would steal focus from seek bar, settings, etc.)
+        if (wasHidden && ::playPauseButton.isInitialized) {
             playPauseButton.requestFocus()
         }
         scheduleHideControls()
@@ -574,6 +588,16 @@ class NativePlayerActivity : Activity() {
                     scheduleHideControls()
                 }
             })
+            setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    seekBarRow.setBackgroundColor(SEEK_BAR_FOCUS_BACKGROUND_COLOR)
+                    thumb = buildSeekBarThumbFocused()
+                } else {
+                    seekBarRow.setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    thumb = buildSeekBarThumb()
+                }
+                scheduleHideControls()
+            }
         }
         seekBarRow.addView(seekBar)
 
@@ -796,6 +820,15 @@ class NativePlayerActivity : Activity() {
             shape = android.graphics.drawable.GradientDrawable.OVAL
             setColor(0xFF3498DB.toInt())
             val size = dpToPx(14)
+            setSize(size, size)
+        }
+    }
+
+    private fun buildSeekBarThumbFocused(): android.graphics.drawable.Drawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(android.graphics.Color.WHITE)
+            val size = dpToPx(20)
             setSize(size, size)
         }
     }
