@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -288,6 +290,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                             ),
                           ),
                         ),
+                        if (!Platform.isIOS) ...[
                         const SizedBox(width: 12),
                         // Play in VLC button
                         Expanded(
@@ -307,6 +310,7 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                             ),
                           ),
                         ),
+                        ],
                       ],
                     ),
                   ),

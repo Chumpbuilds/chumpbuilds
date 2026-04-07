@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -543,6 +545,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                             ),
                           ),
                         ),
+                        if (!Platform.isIOS) ...[
                         const SizedBox(width: 12),
                         // Play in VLC button
                         Expanded(
@@ -562,6 +565,7 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
                             ),
                           ),
                         ),
+                        ],
                       ],
                     ),
                   ),
