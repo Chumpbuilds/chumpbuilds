@@ -72,6 +72,9 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
       });
     _loadDetail();
     _checkFavorite();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _seasonFocusNode.requestFocus();
+    });
   }
 
   @override

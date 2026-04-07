@@ -53,6 +53,9 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
       });
     _loadDetail();
     _checkFavorite();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _playFocusNode.requestFocus();
+    });
   }
 
   @override
