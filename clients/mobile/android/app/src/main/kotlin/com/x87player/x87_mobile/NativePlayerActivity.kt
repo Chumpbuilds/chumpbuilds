@@ -74,9 +74,10 @@ class NativePlayerActivity : Activity() {
     private var controlsVisible = true
     private var currentResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
     private var isUserSeekingBar = false
+    private var isDpadScrubbing = false
 
     private val hideControlsRunnable = Runnable { hideControls() }
-    private val seekCommitRunnable = Runnable { commitSeek() }
+    private val seekCommitRunnable = Runnable { commitDpadSeek() }
 
     private val seekBarUpdateRunnable = object : Runnable {
         override fun run() {
@@ -248,34 +249,42 @@ class NativePlayerActivity : Activity() {
                 if (!controlsVisible) {
                     showControls()
                     true
+                } else if (::seekBar.isInitialized && seekBar.hasFocus() && isDpadScrubbing) {
+                    // Commit the scrub immediately on center press
+                    mainHandler.removeCallbacks(seekCommitRunnable)
+                    commitDpadSeek()
+                    true
                 } else {
-                    // Let the focused button handle the click
+                    // Let the focused button handle the click naturally
+                    scheduleHideControls()
                     super.onKeyDown(keyCode, event)
                 }
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (!controlsVisible) {
                     showControls()
-                    skipRewind()
                     true
-                } else if (seekBar.hasFocus()) {
-                    scrubSeekBar(-SEEK_BAR_SCRUB_INCREMENT)
+                } else if (::seekBar.isInitialized && seekBar.hasFocus()) {
+                    // Seek bar has focus — scrub left freely
+                    dpadScrubSeekBar(-SEEK_BAR_SCRUB_INCREMENT)
                     true
                 } else {
-                    // Let Android's focus navigation move between buttons
+                    // Other button focused — let Android handle focus navigation
+                    scheduleHideControls()
                     super.onKeyDown(keyCode, event)
                 }
             }
             KeyEvent.KEYCODE_DPAD_RIGHT -> {
                 if (!controlsVisible) {
                     showControls()
-                    skipForward()
                     true
-                } else if (seekBar.hasFocus()) {
-                    scrubSeekBar(SEEK_BAR_SCRUB_INCREMENT)
+                } else if (::seekBar.isInitialized && seekBar.hasFocus()) {
+                    // Seek bar has focus — scrub right freely
+                    dpadScrubSeekBar(SEEK_BAR_SCRUB_INCREMENT)
                     true
                 } else {
-                    // Let Android's focus navigation move between buttons
+                    // Other button focused — let Android handle focus navigation
+                    scheduleHideControls()
                     super.onKeyDown(keyCode, event)
                 }
             }
@@ -311,12 +320,17 @@ class NativePlayerActivity : Activity() {
                 finish()
                 true
             }
-            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+            KeyEvent.KEYCODE_DPAD_UP,
+            KeyEvent.KEYCODE_DPAD_DOWN -> {
                 if (!controlsVisible) {
                     showControls()
                     true
                 } else {
-                    // Pass through to Android's focus system without stealing focus
+                    // If we were scrubbing the seek bar, commit before moving focus away
+                    if (isDpadScrubbing) {
+                        mainHandler.removeCallbacks(seekCommitRunnable)
+                        commitDpadSeek()
+                    }
                     scheduleHideControls()
                     super.onKeyDown(keyCode, event)
                 }
@@ -344,6 +358,11 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun hideControls() {
+        // If user was scrubbing, commit before hiding
+        if (isDpadScrubbing) {
+            mainHandler.removeCallbacks(seekCommitRunnable)
+            commitDpadSeek()
+        }
         controlsOverlay.visibility = View.GONE
         controlsVisible = false
     }
@@ -605,10 +624,10 @@ class NativePlayerActivity : Activity() {
                 } else {
                     seekBarRow.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     thumb = buildSeekBarThumb()
-                    // If we were scrubbing and lost focus, commit immediately
-                    if (isUserSeekingBar) {
+                    // If scrubbing and lost focus, commit immediately
+                    if (isDpadScrubbing) {
                         mainHandler.removeCallbacks(seekCommitRunnable)
-                        commitSeek()
+                        commitDpadSeek()
                     }
                 }
             }
@@ -782,37 +801,39 @@ class NativePlayerActivity : Activity() {
         }
     }
 
-    private fun scrubSeekBar(delta: Int) {
-        if (!::player.isInitialized) return
+    private fun dpadScrubSeekBar(delta: Int) {
+        if (!::player.isInitialized || !::seekBar.isInitialized) return
         val duration = player.duration
         if (duration <= 0 || duration == C.TIME_UNSET) return
 
-        // Mark as user-seeking so updateSeekBar() doesn't override our position
+        // Enter scrub mode — blocks updateSeekBar() from overwriting our position
+        isDpadScrubbing = true
         isUserSeekingBar = true
 
-        // Adjust progress
+        // Move the thumb
         val newProgress = (seekBar.progress + delta).coerceIn(0, seekBar.max)
         seekBar.progress = newProgress
 
-        // Update time display in real-time
+        // Update the time text live
         val seekPos = duration * newProgress / 1000L
         currentTimeText.text = formatMs(seekPos)
 
-        // Cancel any previous commit, schedule a new one after 1 second
+        // Cancel previous commit, schedule new one 1s from now
         mainHandler.removeCallbacks(seekCommitRunnable)
         mainHandler.postDelayed(seekCommitRunnable, SEEK_COMMIT_DELAY_MS)
 
-        // Keep controls visible indefinitely while scrubbing — cancel hide, don't reschedule
+        // Keep controls visible — cancel hide, do NOT reschedule
         mainHandler.removeCallbacks(hideControlsRunnable)
     }
 
-    private fun commitSeek() {
-        if (!::player.isInitialized) return
+    private fun commitDpadSeek() {
+        if (!::player.isInitialized || !::seekBar.isInitialized) return
         val duration = player.duration
-        if (duration <= 0 || duration == C.TIME_UNSET) return
-
-        val seekPos = duration * seekBar.progress / 1000L
-        player.seekTo(seekPos)
+        if (duration > 0 && duration != C.TIME_UNSET) {
+            val seekPos = duration * seekBar.progress / 1000L
+            player.seekTo(seekPos)
+        }
+        isDpadScrubbing = false
         isUserSeekingBar = false
         scheduleHideControls()
     }
