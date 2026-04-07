@@ -299,6 +299,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   final welcomeFontSize = availableHeight < 350 ? 13.0 : 16.0;
                   final welcomeBoldFontSize =
                       availableHeight < 350 ? 15.0 : 18.0;
+                  final isTvNavigation =
+                      MediaQuery.of(context).navigationMode ==
+                      NavigationMode.directional;
 
                   return SizedBox(
                     height: availableHeight,
@@ -321,7 +324,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         child: _GradientCard(
                                           card: entry.value,
                                           height: cardHeight,
-                                          autofocus: entry.key == 0,
+                                          autofocus: isTvNavigation && entry.key == 0,
                                           onTap: () => _navigate(
                                               context, entry.value.tag),
                                         ),
