@@ -148,6 +148,9 @@ class NativePlayerViewController: UIViewController {
             name: .AVPlayerItemDidPlayToEndTime,
             object: item
         )
+
+        // Auto-play immediately — don't wait for viewDidAppear.
+        avPlayer.play()
     }
 
     // MARK: - Stall recovery
