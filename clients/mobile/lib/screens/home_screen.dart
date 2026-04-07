@@ -936,6 +936,33 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   static const Color _borderColor = Color(0xFF3D3D3D);
   static const Color _descColor = Color(0xFFB0B0B0);
 
+  /// Clears all saved IPTV credentials, favorites, and cache,
+  /// then logs out of the XtreamService in-memory state.
+  Future<void> _performLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Clear all saved IPTV credential entries (cloud_creds_<profileName>).
+    final credsKeys =
+        prefs.getKeys().where((k) => k.startsWith('cloud_creds_')).toList();
+    for (final key in credsKeys) {
+      await prefs.remove(key);
+    }
+
+    // Clear last used profile.
+    await prefs.remove('last_used_profile');
+
+    // Clear all favorites.
+    await prefs.remove('favorites_channels');
+    await prefs.remove('favorites_movies');
+    await prefs.remove('favorites_series');
+
+    // Clear file-based content cache.
+    await XtreamCacheService().clear();
+
+    // Clear in-memory auth state.
+    XtreamService().logout();
+  }
+
   String _formatExpiry(dynamic expDate) {
     if (expDate == null) return 'N/A';
     try {
@@ -1041,6 +1068,59 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               ),
               const SizedBox(height: 12),
 
+              // Log Out
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      backgroundColor: _surfaceColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: const BorderSide(color: _borderColor),
+                      ),
+                      title: const Text('Log Out',
+                          style: TextStyle(color: Colors.white)),
+                      content: const Text(
+                        'This will clear all saved credentials, favorites, and cached data from this device.\n\nYour license will remain active.',
+                        style: TextStyle(color: _descColor),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(false),
+                          child: const Text('Cancel',
+                              style: TextStyle(color: _descColor)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(true),
+                          child: const Text('Log Out',
+                              style: TextStyle(color: Colors.white)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                  await _performLogout();
+                  if (context.mounted) {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
+                    );
+                  }
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text('Log Out'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: _borderColor),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
               // Clear Cached Data
               OutlinedButton.icon(
                 onPressed: () async {
@@ -1095,16 +1175,47 @@ class _SettingsScreenState extends State<_SettingsScreen> {
               // Deactivate License
               OutlinedButton.icon(
                 onPressed: () async {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (dialogCtx) => AlertDialog(
+                      backgroundColor: _surfaceColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: const BorderSide(color: _borderColor),
+                      ),
+                      title: const Text('Deactivate License',
+                          style: TextStyle(color: Colors.redAccent)),
+                      content: const Text(
+                        'This will permanently remove your license and wipe all saved credentials, favorites, and cached data from this device.\n\nYou will need your activation code to use the app again.',
+                        style: TextStyle(color: _descColor),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(false),
+                          child: const Text('Cancel',
+                              style: TextStyle(color: _descColor)),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogCtx).pop(true),
+                          child: const Text('Deactivate',
+                              style: TextStyle(color: Colors.redAccent)),
+                        ),
+                      ],
+                    ),
+                  );
+                  if (confirmed != true) return;
+                  await _performLogout();
                   await LicenseService().clearStoredLicense();
-                  XtreamService().logout();
                   if (context.mounted) {
-                    Navigator.of(context).pushReplacement(
+                    Navigator.of(context).pushAndRemoveUntil(
                       MaterialPageRoute(
                           builder: (_) => const LicenseScreen()),
+                      (route) => false,
                     );
                   }
                 },
-                icon: const Icon(Icons.logout, color: Colors.redAccent),
+                icon: const Icon(Icons.no_accounts_outlined,
+                    color: Colors.redAccent),
                 label: const Text('Deactivate License',
                     style: TextStyle(color: Colors.redAccent)),
                 style: OutlinedButton.styleFrom(
