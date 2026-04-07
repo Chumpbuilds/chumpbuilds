@@ -29,6 +29,13 @@ class NativePlayerViewController: UIViewController {
     private var playerViewController: AVPlayerViewController?
     private var timeObserverToken: Any?
     private var itemStatusObserver: NSKeyValueObservation?
+    private var timeControlStatusObserver: NSKeyValueObservation?
+    private var waitingTimer: Timer?
+    private var lastPosition: CMTime = .zero
+    private var stallCounter: Int = 0
+    private static let stallTicks = 16  // 8 s / 0.5 s
+    /// Seconds of `.waitingToPlayAtSpecifiedRate` before proactive recovery.
+    private static let waitingTimeoutSeconds: TimeInterval = 5.0
 
     // MARK: - Lifecycle
 
@@ -54,11 +61,20 @@ class NativePlayerViewController: UIViewController {
     private func setupPlayer() {
         guard let url = streamURL else { return }
 
+        // Activate audio session for playback — without this iOS may suspend
+        // the audio pipeline which stalls AVPlayer entirely.
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setActive(true)
+        } catch {
+            print("[NativePlayer] AVAudioSession setup failed: \(error)")
+        }
+
         // Create a player item so we can tune live-stream buffer settings.
         let item = AVPlayerItem(url: url)
-        // Keep a small forward buffer so AVPlayer stays close to the live edge
-        // rather than accumulating a large VOD-style window.
-        item.preferredForwardBufferDuration = 3
+        // Enough margin for network jitter while still staying near live edge.
+        item.preferredForwardBufferDuration = 10
 
         let avPlayer = AVPlayer(playerItem: item)
         // Disabling automaticallyWaitsToMinimizeStalling prevents AVPlayer
@@ -66,6 +82,35 @@ class NativePlayerViewController: UIViewController {
         // default behaviour causes the ~1-minute playback freeze.
         avPlayer.automaticallyWaitsToMinimizeStalling = false
         self.player = avPlayer
+
+        // Periodic time observer — detect position stalls.
+        lastPosition = .zero
+        stallCounter = 0
+        timeObserverToken = avPlayer.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] time in
+            self?.checkForPositionStall(currentTime: time)
+        }
+
+        // Observe timeControlStatus — if waiting too long, recover.
+        timeControlStatusObserver = avPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                if player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                    self.waitingTimer?.invalidate()
+                    self.waitingTimer = Timer.scheduledTimer(withTimeInterval: NativePlayerViewController.waitingTimeoutSeconds, repeats: false) { [weak self] _ in
+                        guard let self = self,
+                              self.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+                        print("[NativePlayer] Waiting too long — recovering")
+                        self.recoverPlayback()
+                    }
+                } else {
+                    self.waitingTimer?.invalidate()
+                    self.waitingTimer = nil
+                }
+            }
+        }
 
         let pvc = AVPlayerViewController()
         pvc.player = avPlayer
@@ -114,6 +159,25 @@ class NativePlayerViewController: UIViewController {
         }
     }
 
+    private func checkForPositionStall(currentTime: CMTime) {
+        guard let p = player, p.timeControlStatus == .playing else {
+            stallCounter = 0
+            lastPosition = currentTime
+            return
+        }
+        if currentTime == lastPosition {
+            stallCounter += 1
+            if stallCounter >= NativePlayerViewController.stallTicks {
+                stallCounter = 0
+                print("[NativePlayer] Position stall detected — recovering")
+                recoverPlayback()
+            }
+        } else {
+            stallCounter = 0
+            lastPosition = currentTime
+        }
+    }
+
     private func recoverPlayback() {
         guard let player = player, let item = player.currentItem else { return }
         // Seek to the live edge (end of the last seekable time range) then resume.
@@ -121,8 +185,8 @@ class NativePlayerViewController: UIViewController {
            lastRange.end.isValid && !lastRange.end.isIndefinite {
             player.seek(
                 to: lastRange.end,
-                toleranceBefore: .positiveInfinity,
-                toleranceAfter: .positiveInfinity
+                toleranceBefore: .zero,
+                toleranceAfter: .zero
             ) { [weak player] _ in
                 player?.play()
             }
@@ -143,6 +207,10 @@ class NativePlayerViewController: UIViewController {
         NotificationCenter.default.removeObserver(self)
         itemStatusObserver?.invalidate()
         itemStatusObserver = nil
+        timeControlStatusObserver?.invalidate()
+        timeControlStatusObserver = nil
+        waitingTimer?.invalidate()
+        waitingTimer = nil
         if let token = timeObserverToken {
             player?.removeTimeObserver(token)
             timeObserverToken = nil

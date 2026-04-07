@@ -10,10 +10,13 @@ import UIKit
 /// communication with the Flutter side.
 ///
 /// Key AVPlayer settings that prevent the ~1-minute live-stream freeze:
+///   - `AVAudioSession` category `.playback` / mode `.moviePlayback` — must be
+///     active before creating the player; without this iOS can suspend the
+///     audio pipeline which stalls AVPlayer entirely.
 ///   - `automaticallyWaitsToMinimizeStalling = false` — prevents AVPlayer from
 ///     pausing to rebuild a large buffer on live IPTV streams.
-///   - `preferredForwardBufferDuration = 3` — keeps the buffer small so the
-///     player stays close to the live edge.
+///   - `preferredForwardBufferDuration = 10` — provides enough margin for
+///     network jitter while still staying near the live edge.
 ///
 /// Stall recovery strategies:
 ///   - KVO on `AVPlayerItem.status` — on `.failed`, recreates the item and
@@ -21,6 +24,8 @@ import UIKit
 ///   - `.AVPlayerItemPlaybackStalled` — seeks to live edge and calls play().
 ///   - Periodic time observer every 0.5 s — detects when the playback position
 ///     has not advanced for 8+ seconds while supposedly playing.
+///   - KVO on `AVPlayer.timeControlStatus` — if `.waitingToPlayAtSpecifiedRate`
+///     persists for 5 s, seeks to live edge and resumes.
 /// A UIView subclass that automatically resizes its first sublayer
 /// (the AVPlayerLayer) whenever the view's bounds change.
 private class PlayerContainerView: UIView {
@@ -59,6 +64,10 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
     /// Number of 0.5 s ticks without position advance that triggers recovery
     /// (8 s / 0.5 s = 16 ticks).
     private static let stallTicks = 16
+    private var timeControlStatusObserver: NSKeyValueObservation?
+    private var waitingTimer: Timer?
+    /// Seconds of `.waitingToPlayAtSpecifiedRate` before proactive recovery.
+    private static let waitingTimeoutSeconds: TimeInterval = 5.0
 
     // MARK: - Channel
 
@@ -148,10 +157,19 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
         stopPlayback()
         currentURL = url
 
+        // Activate audio session for playback — without this iOS may suspend
+        // the audio pipeline which stalls AVPlayer entirely.
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .moviePlayback)
+            try session.setActive(true)
+        } catch {
+            print("[IosPlayer] AVAudioSession setup failed: \(error)")
+        }
+
         let item = AVPlayerItem(url: url)
-        // Small forward buffer keeps AVPlayer near the live edge instead of
-        // trying to buffer a large VOD-style window.
-        item.preferredForwardBufferDuration = 3
+        // Enough margin for network jitter while still staying near live edge.
+        item.preferredForwardBufferDuration = 10
 
         let avPlayer = AVPlayer(playerItem: item)
         // Critical for live IPTV: prevents AVPlayer from pausing playback to
@@ -171,6 +189,25 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
         }
 
         player = avPlayer
+
+        // Observe timeControlStatus — if waiting too long, seek to live edge.
+        timeControlStatusObserver = avPlayer.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                if player.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                    // Start a timer — if still waiting after 5 s, recover.
+                    self.waitingTimer?.invalidate()
+                    self.waitingTimer = Timer.scheduledTimer(withTimeInterval: IosPlayerPlatformView.waitingTimeoutSeconds, repeats: false) { [weak self] _ in
+                        guard let self,
+                              self.player?.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+                        self.seekToLiveEdgeAndPlay()
+                    }
+                } else {
+                    self.waitingTimer?.invalidate()
+                    self.waitingTimer = nil
+                }
+            }
+        }
 
         // Observe item status for error recovery.
         statusObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
@@ -242,6 +279,11 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
             NotificationCenter.default.removeObserver(obs)
         }
         endedObserver = nil
+
+        timeControlStatusObserver?.invalidate()
+        timeControlStatusObserver = nil
+        waitingTimer?.invalidate()
+        waitingTimer = nil
     }
 
     // MARK: - Stall & error recovery
