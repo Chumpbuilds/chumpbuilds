@@ -36,6 +36,15 @@ class NativePlayerViewController: UIViewController {
     private static let stallTicks = 16  // 8 s / 0.5 s
     /// Seconds of `.waitingToPlayAtSpecifiedRate` before proactive recovery.
     private static let waitingTimeoutSeconds: TimeInterval = 5.0
+    /// HTTP headers sent with every AVURLAsset request so that the Xtream
+    /// Codes server accepts the connection (it rejects AVPlayer's default UA).
+    private static let httpHeaders: [String: String] = [
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+        "Cache-Control": "no-cache",
+    ]
 
     // MARK: - Lifecycle
 
@@ -72,7 +81,8 @@ class NativePlayerViewController: UIViewController {
         }
 
         // Create a player item so we can tune live-stream buffer settings.
-        let item = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": NativePlayerViewController.httpHeaders])
+        let item = AVPlayerItem(asset: asset)
         // Enough margin for network jitter while still staying near live edge.
         item.preferredForwardBufferDuration = 10
 
