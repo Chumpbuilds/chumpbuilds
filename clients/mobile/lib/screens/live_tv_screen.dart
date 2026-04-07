@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -246,7 +248,7 @@ class _LiveTvScreenState extends State<LiveTvScreen> {
   void _playChannel(Map<String, dynamic> channel) {
     final streamId = channel['stream_id']?.toString() ?? '';
     if (streamId.isEmpty) return;
-    final url = _xtream.getStreamUrl(streamId, 'live', preferTs: true);
+    final url = _xtream.getStreamUrl(streamId, 'live', preferTs: !Platform.isIOS);
     if (url.isEmpty) return;
     final name = channel['name']?.toString() ?? '';
     setState(() {
