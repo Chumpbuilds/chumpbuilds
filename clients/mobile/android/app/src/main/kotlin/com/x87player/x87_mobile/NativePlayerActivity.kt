@@ -605,8 +605,12 @@ class NativePlayerActivity : Activity() {
                 } else {
                     seekBarRow.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                     thumb = buildSeekBarThumb()
+                    // If we were scrubbing and lost focus, commit immediately
+                    if (isUserSeekingBar) {
+                        mainHandler.removeCallbacks(seekCommitRunnable)
+                        commitSeek()
+                    }
                 }
-                scheduleHideControls()
             }
         }
         seekBarRow.addView(seekBar)
@@ -798,9 +802,8 @@ class NativePlayerActivity : Activity() {
         mainHandler.removeCallbacks(seekCommitRunnable)
         mainHandler.postDelayed(seekCommitRunnable, SEEK_COMMIT_DELAY_MS)
 
-        // Keep controls visible while scrubbing
+        // Keep controls visible indefinitely while scrubbing — cancel hide, don't reschedule
         mainHandler.removeCallbacks(hideControlsRunnable)
-        scheduleHideControls()
     }
 
     private fun commitSeek() {
@@ -811,6 +814,7 @@ class NativePlayerActivity : Activity() {
         val seekPos = duration * seekBar.progress / 1000L
         player.seekTo(seekPos)
         isUserSeekingBar = false
+        scheduleHideControls()
     }
 
     // ── Seek bar update ───────────────────────────────────────────────────────
