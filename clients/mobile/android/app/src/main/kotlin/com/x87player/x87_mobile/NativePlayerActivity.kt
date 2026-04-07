@@ -43,7 +43,7 @@ class NativePlayerActivity : Activity() {
 
         private const val CONTROLS_HIDE_DELAY_MS = 5_000L
         private const val SEEK_BAR_UPDATE_INTERVAL_MS = 500L
-        private const val SKIP_REWIND_MS = 10_000L
+        private const val SKIP_REWIND_MS = 30_000L
         private const val SKIP_FORWARD_MS = 30_000L
         private const val PREFS_NAME = "player_prefs"
         private const val PREF_RESIZE_MODE = "resize_mode"
@@ -240,13 +240,13 @@ class NativePlayerActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         return when (keyCode) {
             KeyEvent.KEYCODE_DPAD_CENTER -> {
-                // On D-pad: first tap shows controls, second tap toggles play/pause
                 if (!controlsVisible) {
                     showControls()
+                    true
                 } else {
-                    togglePlayPause()
+                    // Let the focused button handle the click
+                    super.onKeyDown(keyCode, event)
                 }
-                true
             }
             KeyEvent.KEYCODE_DPAD_LEFT -> {
                 if (!controlsVisible) {
@@ -423,7 +423,7 @@ class NativePlayerActivity : Activity() {
         val largeBtnSize = dpToPx(56)
         val transportBtnMargin = dpToPx(24)
 
-        // Rewind 10 s
+        // Rewind 30 s
         val rewindButton = ImageButton(this).apply {
             setImageResource(android.R.drawable.ic_media_previous)
             setColorFilter(android.graphics.Color.WHITE)
@@ -432,7 +432,7 @@ class NativePlayerActivity : Activity() {
                 marginEnd = transportBtnMargin
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
-            contentDescription = "Rewind 10 seconds"
+            contentDescription = "Rewind 30 seconds"
             setOnClickListener {
                 skipRewind()
                 scheduleHideControls()
@@ -489,6 +489,9 @@ class NativePlayerActivity : Activity() {
         playPauseButton.nextFocusRightId = forwardButton.id
         forwardButton.nextFocusLeftId = playPauseButton.id
 
+        // Vertical: transport row → seek bar (set after seekBar.id is assigned below)
+        // (wired after all views are built — see end of buildControlsOverlay)
+
         root.addView(transportRow)
 
         // ── Bottom bar ────────────────────────────────────────────────────────
@@ -538,6 +541,8 @@ class NativePlayerActivity : Activity() {
                 1f
             )
             max = 1000
+            id = View.generateViewId()
+            keyProgressIncrement = 10  // 1% per D-pad press
             // Blue accent thumb and progress
             progressDrawable = buildSeekBarDrawable()
             thumb = buildSeekBarThumb()
@@ -684,6 +689,34 @@ class NativePlayerActivity : Activity() {
             isFocusable = true
         }
         infoRow.addView(ccButton)
+
+        // Assign stable IDs to bottom bar buttons
+        resizeModeButton.id = View.generateViewId()
+        settingsButton.id = View.generateViewId()
+        ccButton.id = View.generateViewId()
+
+        // Wire up the complete vertical D-pad focus chain:
+        //   [Rewind] ←→ [Play/Pause] ←→ [Forward]
+        //                    ↕
+        //                [Seek Bar]
+        //                    ↕
+        //       [Resize] ←→ [Settings] ←→ [CC]
+        rewindButton.nextFocusDownId = seekBar.id
+        playPauseButton.nextFocusDownId = seekBar.id
+        forwardButton.nextFocusDownId = seekBar.id
+
+        seekBar.nextFocusUpId = playPauseButton.id
+        seekBar.nextFocusDownId = resizeModeButton.id
+
+        resizeModeButton.nextFocusUpId = seekBar.id
+        resizeModeButton.nextFocusRightId = settingsButton.id
+
+        settingsButton.nextFocusUpId = seekBar.id
+        settingsButton.nextFocusLeftId = resizeModeButton.id
+        settingsButton.nextFocusRightId = ccButton.id
+
+        ccButton.nextFocusUpId = seekBar.id
+        ccButton.nextFocusLeftId = settingsButton.id
 
         bottomBar.addView(infoRow)
         root.addView(bottomBar)
