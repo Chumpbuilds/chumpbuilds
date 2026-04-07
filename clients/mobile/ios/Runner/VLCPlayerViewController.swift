@@ -178,7 +178,7 @@ class VLCPlayerViewController: UIViewController {
 
     private func setupGestures() {
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
-        view.addGestureRecognizer(tap)
+        videoView.addGestureRecognizer(tap)
     }
 
     private func setupPlayer() {
@@ -291,7 +291,9 @@ extension VLCPlayerViewController: VLCMediaPlayerDelegate {
                 self.playPauseButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
 
             case .buffering:
-                self.loadingIndicator.startAnimating()
+                if !player.isPlaying {
+                    self.loadingIndicator.startAnimating()
+                }
 
             case .ended, .stopped:
                 self.dismiss(animated: true, completion: nil)
