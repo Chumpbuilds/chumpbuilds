@@ -77,6 +77,8 @@ class MainActivity : FlutterActivity() {
                         putExtra(NativePlayerActivity.EXTRA_CONTENT_TYPE, contentType)
                     }
                     startActivityForResult(intent, REQUEST_CODE_NATIVE_PLAYER)
+                } else if (call.method == "isTvDevice") {
+                    result.success(ExoPlayerFactory.isTvOrAmlogicDevice(this))
                 } else {
                     result.notImplemented()
                 }
