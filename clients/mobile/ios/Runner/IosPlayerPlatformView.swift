@@ -68,6 +68,15 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
     private var waitingTimer: Timer?
     /// Seconds of `.waitingToPlayAtSpecifiedRate` before proactive recovery.
     private static let waitingTimeoutSeconds: TimeInterval = 5.0
+    /// HTTP headers sent with every AVURLAsset request so that the Xtream
+    /// Codes server accepts the connection (it rejects AVPlayer's default UA).
+    private static let httpHeaders: [String: String] = [
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Connection": "keep-alive",
+        "Cache-Control": "no-cache",
+    ]
 
     // MARK: - Channel
 
@@ -167,7 +176,8 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
             print("[IosPlayer] AVAudioSession setup failed: \(error)")
         }
 
-        let item = AVPlayerItem(url: url)
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": IosPlayerPlatformView.httpHeaders])
+        let item = AVPlayerItem(asset: asset)
         // Enough margin for network jitter while still staying near live edge.
         item.preferredForwardBufferDuration = 10
 
