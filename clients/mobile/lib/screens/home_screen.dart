@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/device_type_service.dart';
 import '../services/epg_service.dart';
 import '../services/license_service.dart';
 import '../services/xtream_cache_service.dart';
@@ -81,11 +82,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ─── Lifecycle ────────────────────────────────────────────────────────────
 
+  bool _isTvDevice = false;
+
   @override
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);
     _backgroundRefresh();
+    _detectDeviceType();
+  }
+
+  Future<void> _detectDeviceType() async {
+    final isTv = await DeviceTypeService.instance.isTvDevice();
+    if (mounted && isTv) {
+      setState(() => _isTvDevice = isTv);
+    }
   }
 
   /// Silently refresh stale content + EPG in the background so the user
@@ -299,9 +310,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   final welcomeFontSize = availableHeight < 350 ? 13.0 : 16.0;
                   final welcomeBoldFontSize =
                       availableHeight < 350 ? 15.0 : 18.0;
-                  final isTvNavigation =
-                      MediaQuery.of(context).navigationMode ==
-                      NavigationMode.directional;
 
                   return SizedBox(
                     height: availableHeight,
@@ -324,7 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         child: _GradientCard(
                                           card: entry.value,
                                           height: cardHeight,
-                                          autofocus: isTvNavigation && entry.key == 0,
+                                          autofocus: _isTvDevice && entry.key == 0,
                                           onTap: () => _navigate(
                                               context, entry.value.tag),
                                         ),
