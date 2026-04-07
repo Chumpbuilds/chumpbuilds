@@ -18,8 +18,10 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ImageButton
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.C
@@ -39,7 +41,10 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_TITLE = "title"
         const val EXTRA_CONTENT_TYPE = "contentType"
 
-        private const val CONTROLS_HIDE_DELAY_MS = 2_000L
+        private const val CONTROLS_HIDE_DELAY_MS = 5_000L
+        private const val SEEK_BAR_UPDATE_INTERVAL_MS = 500L
+        private const val SKIP_REWIND_MS = 10_000L
+        private const val SKIP_FORWARD_MS = 30_000L
         private const val PREFS_NAME = "player_prefs"
         private const val PREF_RESIZE_MODE = "resize_mode"
         private val RESIZE_MODES = listOf(
@@ -55,13 +60,26 @@ class NativePlayerActivity : Activity() {
     private lateinit var playerView: PlayerView
     private lateinit var controlsOverlay: View
     private lateinit var titleTextView: TextView
-    private lateinit var playPauseIcon: android.widget.ImageView
+    private lateinit var playPauseButton: ImageButton
+    private lateinit var seekBar: SeekBar
+    private lateinit var currentTimeText: TextView
+    private lateinit var durationText: TextView
+    private lateinit var liveIndicator: TextView
+    private lateinit var seekBarRow: android.widget.LinearLayout
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var controlsVisible = true
     private var currentResizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    private var isUserSeekingBar = false
 
     private val hideControlsRunnable = Runnable { hideControls() }
+
+    private val seekBarUpdateRunnable = object : Runnable {
+        override fun run() {
+            updateSeekBar()
+            mainHandler.postDelayed(this, SEEK_BAR_UPDATE_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -173,10 +191,12 @@ class NativePlayerActivity : Activity() {
         }
 
         scheduleHideControls()
+        mainHandler.post(seekBarUpdateRunnable)
     }
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(hideControlsRunnable)
+        mainHandler.removeCallbacks(seekBarUpdateRunnable)
         if (::player.isInitialized) {
             player.release()
         }
@@ -228,10 +248,34 @@ class NativePlayerActivity : Activity() {
                 }
                 true
             }
+            KeyEvent.KEYCODE_DPAD_LEFT -> {
+                showControls()
+                skipRewind()
+                true
+            }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                showControls()
+                skipForward()
+                true
+            }
             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
             KeyEvent.KEYCODE_MEDIA_PLAY,
             KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                 togglePlayPause()
+                showControls()
+                true
+            }
+            KeyEvent.KEYCODE_MEDIA_REWIND,
+            KeyEvent.KEYCODE_MEDIA_SKIP_BACKWARD,
+            KeyEvent.KEYCODE_MEDIA_STEP_BACKWARD -> {
+                skipRewind()
+                showControls()
+                true
+            }
+            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_SKIP_FORWARD,
+            KeyEvent.KEYCODE_MEDIA_STEP_FORWARD -> {
+                skipForward()
                 showControls()
                 true
             }
@@ -288,10 +332,12 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun updatePlayPauseIcon(isPlaying: Boolean) {
-        playPauseIcon.setImageResource(
-            if (isPlaying) android.R.drawable.ic_media_pause
-            else android.R.drawable.ic_media_play
-        )
+        if (::playPauseButton.isInitialized) {
+            playPauseButton.setImageResource(
+                if (isPlaying) android.R.drawable.ic_media_pause
+                else android.R.drawable.ic_media_play
+            )
+        }
     }
 
     // ── View construction (programmatic to avoid layout XML dependency) ───────
@@ -339,33 +385,213 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun buildControlsOverlay(): View {
-        // Bottom bar: play/pause icon + title + resize/settings/CC buttons
-        val bottomBar = android.widget.LinearLayout(this).apply {
+        // Root: FrameLayout that covers the whole screen so we can place the
+        // center transport controls and the bottom bar independently.
+        val root = android.widget.FrameLayout(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // ── Center transport controls ─────────────────────────────────────────
+        // Rewind 10s | Play/Pause (large) | Forward 30s
+        val transportRow = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = android.view.Gravity.CENTER
+            }
+        }
+
+        val largeBtnSize = dpToPx(56)
+        val transportBtnMargin = dpToPx(24)
+
+        // Rewind 10 s
+        val rewindButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_media_previous)
+            setColorFilter(android.graphics.Color.WHITE)
+            background = makeFocusDrawable()
+            layoutParams = android.widget.LinearLayout.LayoutParams(largeBtnSize, largeBtnSize).apply {
+                marginEnd = transportBtnMargin
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            contentDescription = "Rewind 10 seconds"
+            setOnClickListener {
+                skipRewind()
+                scheduleHideControls()
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        transportRow.addView(rewindButton)
+
+        // Play / Pause (large, centered, default focus)
+        val playBtnSize = dpToPx(72)
+        playPauseButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_media_pause)
+            setColorFilter(android.graphics.Color.WHITE)
+            background = makeFocusDrawable()
+            layoutParams = android.widget.LinearLayout.LayoutParams(playBtnSize, playBtnSize).apply {
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            contentDescription = "Play/Pause"
+            setOnClickListener {
+                togglePlayPause()
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        transportRow.addView(playPauseButton)
+
+        // Forward 30 s
+        val forwardButton = ImageButton(this).apply {
+            setImageResource(android.R.drawable.ic_media_next)
+            setColorFilter(android.graphics.Color.WHITE)
+            background = makeFocusDrawable()
+            layoutParams = android.widget.LinearLayout.LayoutParams(largeBtnSize, largeBtnSize).apply {
+                marginStart = transportBtnMargin
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            contentDescription = "Forward 30 seconds"
+            setOnClickListener {
+                skipForward()
+                scheduleHideControls()
+            }
+            isClickable = true
+            isFocusable = true
+        }
+        transportRow.addView(forwardButton)
+
+        root.addView(transportRow)
+
+        // ── Bottom bar ────────────────────────────────────────────────────────
+        val bottomBar = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
             setBackgroundColor(0xCC000000.toInt())
             val hPad = dpToPx(12)
-            val vPad = dpToPx(10)
+            val vPad = dpToPx(8)
             setPadding(hPad, vPad, hPad, vPad)
-            gravity = android.view.Gravity.CENTER_VERTICAL
             layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = android.view.Gravity.BOTTOM
             }
         }
 
-        // Play/pause indicator icon (small, left side)
-        playPauseIcon = android.widget.ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_media_pause)
-            setColorFilter(android.graphics.Color.WHITE)
-            val size = dpToPx(16)
-            layoutParams = android.widget.LinearLayout.LayoutParams(size, size).apply {
-                marginEnd = dpToPx(8)
-                gravity = android.view.Gravity.CENTER_VERTICAL
+        // Seek bar row: currentTime | SeekBar | duration
+        seekBarRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dpToPx(4)
             }
         }
-        bottomBar.addView(playPauseIcon)
+
+        currentTimeText = TextView(this).apply {
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 12f
+            text = "00:00:00"
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginEnd = dpToPx(8)
+            }
+        }
+        seekBarRow.addView(currentTimeText)
+
+        seekBar = SeekBar(this).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f
+            )
+            max = 1000
+            // Blue accent thumb and progress
+            progressDrawable = buildSeekBarDrawable()
+            thumb = buildSeekBarThumb()
+            isClickable = true
+            isFocusable = true
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser && ::player.isInitialized) {
+                        val duration = player.duration
+                        if (duration > 0 && duration != C.TIME_UNSET) {
+                            val seekPos = duration * progress / 1000L
+                            currentTimeText.text = formatMs(seekPos)
+                        }
+                    }
+                }
+                override fun onStartTrackingTouch(bar: SeekBar?) {
+                    isUserSeekingBar = true
+                    mainHandler.removeCallbacks(hideControlsRunnable)
+                }
+                override fun onStopTrackingTouch(bar: SeekBar?) {
+                    isUserSeekingBar = false
+                    if (::player.isInitialized) {
+                        val duration = player.duration
+                        if (duration > 0 && duration != C.TIME_UNSET) {
+                            val seekPos = duration * (bar?.progress ?: 0) / 1000L
+                            player.seekTo(seekPos)
+                        }
+                    }
+                    scheduleHideControls()
+                }
+            })
+        }
+        seekBarRow.addView(seekBar)
+
+        durationText = TextView(this).apply {
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 12f
+            text = "00:00:00"
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dpToPx(8)
+            }
+        }
+        seekBarRow.addView(durationText)
+
+        // LIVE indicator (hidden by default; shown instead of seek bar for live streams)
+        liveIndicator = TextView(this).apply {
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 12f
+            text = "● LIVE"
+            setBackgroundColor(0xFFCC0000.toInt())
+            val lp = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                marginStart = dpToPx(8)
+            }
+            layoutParams = lp
+            visibility = View.GONE
+            val livePad = dpToPx(4)
+            setPadding(livePad, dpToPx(2), livePad, dpToPx(2))
+        }
+        seekBarRow.addView(liveIndicator)
+
+        bottomBar.addView(seekBarRow)
+
+        // Info row: title + resize/settings/CC buttons
+        val infoRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
 
         // Title (fills remaining space)
         titleTextView = TextView(this).apply {
@@ -375,11 +601,11 @@ class NativePlayerActivity : Activity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 0,
-                android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f
             )
         }
-        bottomBar.addView(titleTextView)
+        infoRow.addView(titleTextView)
 
         val btnSize = dpToPx(36)
 
@@ -399,7 +625,7 @@ class NativePlayerActivity : Activity() {
             isClickable = true
             isFocusable = true
         }
-        bottomBar.addView(resizeModeButton)
+        infoRow.addView(resizeModeButton)
 
         // Settings (audio/video tracks) button
         val settingsButton = ImageButton(this).apply {
@@ -416,7 +642,7 @@ class NativePlayerActivity : Activity() {
             }
             isFocusable = true
         }
-        bottomBar.addView(settingsButton)
+        infoRow.addView(settingsButton)
 
         // Subtitles (CC) button
         val ccButton = ImageButton(this).apply {
@@ -434,9 +660,88 @@ class NativePlayerActivity : Activity() {
             isClickable = true
             isFocusable = true
         }
-        bottomBar.addView(ccButton)
+        infoRow.addView(ccButton)
 
-        return bottomBar
+        bottomBar.addView(infoRow)
+        root.addView(bottomBar)
+
+        return root
+    }
+
+    // ── Skip helpers ──────────────────────────────────────────────────────────
+
+    private fun skipRewind() {
+        if (::player.isInitialized) {
+            val newPos = (player.currentPosition - SKIP_REWIND_MS).coerceAtLeast(0L)
+            player.seekTo(newPos)
+        }
+    }
+
+    private fun skipForward() {
+        if (::player.isInitialized) {
+            val duration = player.duration
+            val newPos = if (duration != C.TIME_UNSET)
+                (player.currentPosition + SKIP_FORWARD_MS).coerceAtMost(duration)
+            else
+                player.currentPosition + SKIP_FORWARD_MS
+            player.seekTo(newPos)
+        }
+    }
+
+    // ── Seek bar update ───────────────────────────────────────────────────────
+
+    private fun updateSeekBar() {
+        if (!::player.isInitialized || isUserSeekingBar) return
+        val position = player.currentPosition
+        val duration = player.duration
+        val isLive = duration == C.TIME_UNSET || duration <= 0
+        if (isLive) {
+            seekBar.visibility = View.GONE
+            currentTimeText.visibility = View.GONE
+            durationText.visibility = View.GONE
+            liveIndicator.visibility = View.VISIBLE
+        } else {
+            seekBar.visibility = View.VISIBLE
+            currentTimeText.visibility = View.VISIBLE
+            durationText.visibility = View.VISIBLE
+            liveIndicator.visibility = View.GONE
+            seekBar.progress = ((position * 1000L) / duration).toInt().coerceIn(0, 1000)
+            currentTimeText.text = formatMs(position)
+            durationText.text = formatMs(duration)
+        }
+    }
+
+    private fun formatMs(ms: Long): String {
+        val totalSecs = ms / 1000L
+        val h = totalSecs / 3600
+        val m = (totalSecs % 3600) / 60
+        val s = totalSecs % 60
+        return "%02d:%02d:%02d".format(h, m, s)
+    }
+
+    private fun buildSeekBarDrawable(): android.graphics.drawable.Drawable {
+        val played = android.graphics.drawable.GradientDrawable().apply {
+            setColor(0xFF3498DB.toInt())
+        }
+        val bg = android.graphics.drawable.GradientDrawable().apply {
+            setColor(0x66FFFFFF.toInt())
+        }
+        val layerList = android.graphics.drawable.LayerDrawable(
+            arrayOf(bg, android.graphics.drawable.ClipDrawable(played,
+                android.view.Gravity.START, android.graphics.drawable.ClipDrawable.HORIZONTAL))
+        )
+        layerList.setId(0, android.R.id.background)
+        layerList.setId(1, android.R.id.progress)
+        return layerList
+    }
+
+    private fun buildSeekBarThumb(): android.graphics.drawable.Drawable {
+        return android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setColor(0xFF3498DB.toInt())
+            val size = dpToPx(14)
+            setSize(size, size)
+        }
     }
 
     // ── Track / resize helpers ────────────────────────────────────────────────
