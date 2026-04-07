@@ -48,6 +48,8 @@ class NativePlayerActivity : Activity() {
         private const val PREFS_NAME = "player_prefs"
         private const val PREF_RESIZE_MODE = "resize_mode"
         private const val SEEK_BAR_FOCUS_BACKGROUND_COLOR: Int = 0x333498DB
+        private const val SEEK_BAR_SCRUB_INCREMENT = 10   // 1% per D-pad press (out of max=1000)
+        private const val SEEK_COMMIT_DELAY_MS = 1_000L   // commit seek 1 second after last scrub
         private val RESIZE_MODES = listOf(
             AspectRatioFrameLayout.RESIZE_MODE_FIT to "Fit",
             AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH to "Width",
@@ -74,6 +76,7 @@ class NativePlayerActivity : Activity() {
     private var isUserSeekingBar = false
 
     private val hideControlsRunnable = Runnable { hideControls() }
+    private val seekCommitRunnable = Runnable { commitSeek() }
 
     private val seekBarUpdateRunnable = object : Runnable {
         override fun run() {
@@ -198,6 +201,7 @@ class NativePlayerActivity : Activity() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(hideControlsRunnable)
         mainHandler.removeCallbacks(seekBarUpdateRunnable)
+        mainHandler.removeCallbacks(seekCommitRunnable)
         if (::player.isInitialized) {
             player.release()
         }
@@ -254,6 +258,9 @@ class NativePlayerActivity : Activity() {
                     showControls()
                     skipRewind()
                     true
+                } else if (seekBar.hasFocus()) {
+                    scrubSeekBar(-SEEK_BAR_SCRUB_INCREMENT)
+                    true
                 } else {
                     // Let Android's focus navigation move between buttons
                     super.onKeyDown(keyCode, event)
@@ -263,6 +270,9 @@ class NativePlayerActivity : Activity() {
                 if (!controlsVisible) {
                     showControls()
                     skipForward()
+                    true
+                } else if (seekBar.hasFocus()) {
+                    scrubSeekBar(SEEK_BAR_SCRUB_INCREMENT)
                     true
                 } else {
                     // Let Android's focus navigation move between buttons
@@ -766,6 +776,41 @@ class NativePlayerActivity : Activity() {
                 player.currentPosition + SKIP_FORWARD_MS
             player.seekTo(newPos)
         }
+    }
+
+    private fun scrubSeekBar(delta: Int) {
+        if (!::player.isInitialized) return
+        val duration = player.duration
+        if (duration <= 0 || duration == C.TIME_UNSET) return
+
+        // Mark as user-seeking so updateSeekBar() doesn't override our position
+        isUserSeekingBar = true
+
+        // Adjust progress
+        val newProgress = (seekBar.progress + delta).coerceIn(0, seekBar.max)
+        seekBar.progress = newProgress
+
+        // Update time display in real-time
+        val seekPos = duration * newProgress / 1000L
+        currentTimeText.text = formatMs(seekPos)
+
+        // Cancel any previous commit, schedule a new one after 1 second
+        mainHandler.removeCallbacks(seekCommitRunnable)
+        mainHandler.postDelayed(seekCommitRunnable, SEEK_COMMIT_DELAY_MS)
+
+        // Keep controls visible while scrubbing
+        mainHandler.removeCallbacks(hideControlsRunnable)
+        scheduleHideControls()
+    }
+
+    private fun commitSeek() {
+        if (!::player.isInitialized) return
+        val duration = player.duration
+        if (duration <= 0 || duration == C.TIME_UNSET) return
+
+        val seekPos = duration * seekBar.progress / 1000L
+        player.seekTo(seekPos)
+        isUserSeekingBar = false
     }
 
     // ── Seek bar update ───────────────────────────────────────────────────────
