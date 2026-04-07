@@ -346,6 +346,17 @@ class XtreamService {
     } else {
       ext = type == 'live' ? 'm3u8' : 'mp4';
     }
+
+    // On iOS, AVPlayer cannot handle MKV/AVI/etc containers natively.
+    // Force HLS (.m3u8) for non-live content so AVPlayer can play it.
+    // Most Xtream Codes servers support on-the-fly HLS repackaging for VOD.
+    if (Platform.isIOS && type != 'live') {
+      const nativeFormats = {'mp4', 'm4v', 'mov', 'm3u8', 'ts'};
+      if (!nativeFormats.contains(ext.toLowerCase())) {
+        ext = 'm3u8';
+      }
+    }
+
     return '$baseUrl/$type/$username/$password/$streamId.$ext';
   }
 
