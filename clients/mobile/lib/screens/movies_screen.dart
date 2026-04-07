@@ -5,6 +5,7 @@ import '../screens/movie_detail_screen.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_grid_tile.dart';
+import '../widgets/focus_icon_button.dart';
 import '../widgets/focus_list_item.dart';
 import '../widgets/system_ui_wrapper.dart';
 
@@ -206,10 +207,9 @@ class _MoviesScreenState extends State<MoviesScreen> {
         backgroundColor: _bgColor,
         foregroundColor: Colors.white,
         toolbarHeight: 48,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, size: 18),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
+        leading: FocusIconButton(
+          icon: Icons.arrow_back,
+          iconSize: 18,
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: _searchVisible
@@ -232,8 +232,9 @@ class _MoviesScreenState extends State<MoviesScreen> {
               )
             : const Text('Movies', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
         actions: [
-          IconButton(
-            icon: Icon(_searchVisible ? Icons.close : Icons.search, size: 20),
+          FocusIconButton(
+            icon: _searchVisible ? Icons.close : Icons.search,
+            iconSize: 20,
             onPressed: () {
               setState(() {
                 _searchVisible = !_searchVisible;
@@ -381,11 +382,10 @@ class _MoviesScreenState extends State<MoviesScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Row(
             children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, size: 18, color: _accentColor),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'Back to categories',
+              FocusIconButton(
+                icon: Icons.arrow_back,
+                iconSize: 18,
+                iconColor: _accentColor,
                 onPressed: () {
                   setState(() {
                     _categorySelected = false;

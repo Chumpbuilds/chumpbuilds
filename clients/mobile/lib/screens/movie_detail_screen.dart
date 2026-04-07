@@ -5,6 +5,7 @@ import '../screens/android_hls_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
+import '../widgets/focus_icon_button.dart';
 import '../widgets/system_ui_wrapper.dart';
 
 /// Full-screen movie detail page — poster, description, and play actions.
@@ -180,10 +181,9 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     child: Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back, size: 20, color: Colors.white),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                        FocusIconButton(
+                          icon: Icons.arrow_back,
+                          iconSize: 20,
                           onPressed: () => Navigator.of(context).pop(),
                         ),
                         const SizedBox(width: 12),
@@ -200,14 +200,10 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
                           ),
                         ),
                         // Favorite button
-                        IconButton(
-                          icon: Icon(
-                            _isFav ? Icons.star : Icons.star_border,
-                            color: _isFav ? const Color(0xFFf39c12) : _secondaryTextColor,
-                            size: 22,
-                          ),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
+                        FocusIconButton(
+                          icon: _isFav ? Icons.star : Icons.star_border,
+                          iconSize: 22,
+                          iconColor: _isFav ? const Color(0xFFf39c12) : _secondaryTextColor,
                           onPressed: _toggleFavorite,
                         ),
                       ],
