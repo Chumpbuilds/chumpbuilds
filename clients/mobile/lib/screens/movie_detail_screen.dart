@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/android_hls_fullscreen_screen.dart';
+import '../screens/ios_vlc_fullscreen_screen.dart';
 import '../services/external_player_service.dart';
 import '../services/favorites_service.dart';
 import '../services/xtream_service.dart';
@@ -106,11 +107,17 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     final name = widget.movie['name']?.toString() ?? '';
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => AndroidHlsFullscreenScreen(
-          streamUrl: url,
-          title: name,
-          contentType: 'movie',
-        ),
+        builder: (_) => Platform.isIOS
+            ? IosVlcFullscreenScreen(
+                streamUrl: url,
+                title: name,
+                contentType: 'movie',
+              )
+            : AndroidHlsFullscreenScreen(
+                streamUrl: url,
+                title: name,
+                contentType: 'movie',
+              ),
       ),
     );
   }
