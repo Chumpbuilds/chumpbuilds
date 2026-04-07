@@ -124,12 +124,20 @@ class NativePlayerViewController: UIViewController {
         pvc.didMove(toParent: self)
         self.playerViewController = pvc
 
-        // Observe item status — on failure attempt to recover.
+        // Observe item status — auto-play when ready, recover on failure.
         itemStatusObserver = item.observe(\.status, options: [.new]) { [weak self] observedItem, _ in
             guard let self = self else { return }
-            if observedItem.status == .failed {
-                print("[NativePlayer] Item failed: \(observedItem.error?.localizedDescription ?? "unknown")")
-                DispatchQueue.main.async { self.recoverPlayback() }
+            DispatchQueue.main.async {
+                switch observedItem.status {
+                case .readyToPlay:
+                    // Item is ready — start playback now.
+                    self.player?.play()
+                case .failed:
+                    print("[NativePlayer] Item failed: \(observedItem.error?.localizedDescription ?? "unknown")")
+                    self.recoverPlayback()
+                default:
+                    break
+                }
             }
         }
 
@@ -149,8 +157,8 @@ class NativePlayerViewController: UIViewController {
             object: item
         )
 
-        // Auto-play immediately — don't wait for viewDidAppear.
-        avPlayer.play()
+        // viewDidAppear will call player?.play() as a safety net in case
+        // readyToPlay fires before the view has appeared.
     }
 
     // MARK: - Stall recovery
