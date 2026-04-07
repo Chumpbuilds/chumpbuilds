@@ -287,8 +287,8 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
                 "isPlaying": false,
                 "isBuffering": false,
                 "hasError": false,
-                "errorMessage": NSNull(),
-            ])
+                "errorMessage": "",
+            ] as [String: Any])
             return
         }
 
@@ -296,14 +296,14 @@ class IosPlayerPlatformView: NSObject, FlutterPlatformView {
         let buffering = isBuffering ?? (p.timeControlStatus == .waitingToPlayAtSpecifiedRate)
         let item = p.currentItem
         let failed = item?.status == .failed
-        let errMsg = item?.error?.localizedDescription
+        let errMsg: String = item?.error?.localizedDescription ?? ""
 
         channel.invokeMethod("onPlaybackStateChanged", arguments: [
             "isPlaying": playing,
             "isBuffering": buffering,
             "hasError": failed,
-            "errorMessage": errMsg ?? NSNull(),
-        ])
+            "errorMessage": errMsg,
+        ] as [String: Any])
     }
 
     // MARK: - Gesture
