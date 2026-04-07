@@ -36,6 +36,7 @@ class VLCPlayerViewController: UIViewController {
     private var loadingIndicator: UIActivityIndicatorView!
     private var controlsTimer: Timer?
     private var isControlsVisible = true
+    private var hasStartedPlayback = false
 
     private static let httpUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -284,6 +285,7 @@ extension VLCPlayerViewController: VLCMediaPlayerDelegate {
 
             switch player.state {
             case .playing:
+                self.hasStartedPlayback = true
                 self.loadingIndicator.stopAnimating()
                 self.playPauseButton.setImage(UIImage(systemName: "pause.fill"), for: .normal)
 
@@ -291,7 +293,7 @@ extension VLCPlayerViewController: VLCMediaPlayerDelegate {
                 self.playPauseButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
 
             case .buffering:
-                if !player.isPlaying {
+                if !self.hasStartedPlayback {
                     self.loadingIndicator.startAnimating()
                 }
 
