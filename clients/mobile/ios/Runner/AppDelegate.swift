@@ -11,6 +11,7 @@ import Flutter
         // Call super first so that Flutter's window and rootViewController are created.
         let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
         registerNativePlayerChannel()
+        registerIosPlayerPlatformView()
         return launched
     }
 
@@ -50,6 +51,15 @@ import Flutter
 
             presenter.present(playerVC, animated: true, completion: nil)
         }
+    }
+
+    // MARK: - iOS embedded player platform view
+
+    private func registerIosPlayerPlatformView() {
+        guard let flutterVC = window?.rootViewController as? FlutterViewController else { return }
+        let factory = IosPlayerPlatformViewFactory(messenger: flutterVC.binaryMessenger)
+        let registrar = flutterVC.registrar(forPlugin: "IosPlayerPlatformView")!
+        registrar.register(factory, withId: "com.x87player/ios_player_view")
     }
 }
 
