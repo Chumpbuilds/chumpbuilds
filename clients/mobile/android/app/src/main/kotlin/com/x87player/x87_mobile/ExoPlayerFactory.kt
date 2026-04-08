@@ -99,9 +99,21 @@ object ExoPlayerFactory {
             }
         }
 
+        // Read the preferred audio language from persistent storage so the
+        // choice survives app restarts.  Flutter writes to "FlutterSharedPreferences"
+        // with a "flutter." prefix; the native player prefs live in "player_prefs".
+        // We check the native prefs first, then fall back to "en".
+        val preferredLang = context
+            .getSharedPreferences("player_prefs", android.content.Context.MODE_PRIVATE)
+            .getString("preferred_audio_language", "en") ?: "en"
+
         val trackSelector = DefaultTrackSelector(context).apply {
             parameters = buildUponParameters()
                 .setTunnelingEnabled(!isTvDevice)
+                // Always prefer the user's chosen language (default: English) so
+                // ExoPlayer picks the correct audio track on multi-language streams
+                // instead of falling back to codec/channel heuristics.
+                .setPreferredAudioLanguage(preferredLang)
                 .apply {
                     if (isTvDevice) {
                         // Prefer stereo over surround — many cheap boxes/TVs can't
@@ -122,6 +134,7 @@ object ExoPlayerFactory {
 
         android.util.Log.i("ExoPlayerFactory",
             "TrackSelector config: tunneling=${!isTvDevice}, " +
+            "preferredAudioLang=$preferredLang, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
             "extensionRendererMode=ON, " +
