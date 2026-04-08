@@ -111,7 +111,11 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
         info['release_date']?.toString() ??
         widget.movie['year']?.toString() ??
         '';
-    final year = rawDate.isNotEmpty ? rawDate.substring(0, rawDate.length >= 4 ? 4 : rawDate.length) : null;
+    String? year;
+    if (rawDate.isNotEmpty) {
+      final len = rawDate.length >= 4 ? 4 : rawDate.length;
+      year = rawDate.substring(0, len);
+    }
     final tmdbId = info['tmdb_id']?.toString() ??
         info['tmdb']?.toString() ??
         widget.movie['tmdb_id']?.toString();
