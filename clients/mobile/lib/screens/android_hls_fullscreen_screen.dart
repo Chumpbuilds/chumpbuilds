@@ -17,11 +17,21 @@ class AndroidHlsFullscreenScreen extends StatefulWidget {
     required this.streamUrl,
     required this.title,
     required this.contentType,
+    this.year,
+    this.tmdbId,
   });
 
   final String streamUrl;
   final String title;
   final String contentType;
+
+  /// Optional release year — forwarded to the native player for online subtitle
+  /// searches.
+  final String? year;
+
+  /// Optional TMDb ID — forwarded to the native player for online subtitle
+  /// searches.
+  final String? tmdbId;
 
   @override
   State<AndroidHlsFullscreenScreen> createState() =>
@@ -45,6 +55,8 @@ class _AndroidHlsFullscreenScreenState
         widget.streamUrl,
         widget.title,
         widget.contentType,
+        year: widget.year,
+        tmdbId: widget.tmdbId,
       );
       if (mounted) {
         await SystemChrome.setEnabledSystemUIMode(

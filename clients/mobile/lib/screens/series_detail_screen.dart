@@ -206,16 +206,36 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
       if (epNum.isNotEmpty) 'Ep $epNum',
       if (epTitle.isNotEmpty) epTitle,
     ].join(': ');
-    final displayTitle = label.isNotEmpty
-        ? label
-        : (widget.series['name']?.toString() ?? 'Episode');
+    final seriesName = widget.series['name']?.toString() ?? '';
+    // Use series name as the search title so the subtitle API can find the show.
+    // Fall back to episode label or a generic placeholder for display.
+    final searchTitle = seriesName.isNotEmpty ? seriesName : (label.isNotEmpty ? label : 'Episode');
+
+    // Extract year and tmdbId for subtitle search context.
+    final info = _seriesInfo?['info'] is Map
+        ? Map<String, dynamic>.from(_seriesInfo!['info'] as Map)
+        : <String, dynamic>{};
+    final rawYear = info['releaseDate']?.toString() ??
+        info['release_date']?.toString() ??
+        widget.series['year']?.toString() ??
+        '';
+    String? year;
+    if (rawYear.isNotEmpty) {
+      final len = rawYear.length >= 4 ? 4 : rawYear.length;
+      year = rawYear.substring(0, len);
+    }
+    final tmdbId = info['tmdb_id']?.toString() ??
+        info['tmdb']?.toString() ??
+        widget.series['tmdb_id']?.toString();
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AndroidHlsFullscreenScreen(
           streamUrl: url,
-          title: displayTitle,
+          title: searchTitle,
           contentType: 'series',
+          year: year,
+          tmdbId: tmdbId,
         ),
       ),
     );

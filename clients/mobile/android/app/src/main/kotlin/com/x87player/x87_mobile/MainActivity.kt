@@ -69,12 +69,16 @@ class MainActivity : FlutterActivity() {
                     }
                     val title = call.argument<String>("title") ?: ""
                     val contentType = call.argument<String>("contentType") ?: "live"
+                    val year = call.argument<String>("year")
+                    val tmdbId = call.argument<String>("tmdbId")
 
                     pendingResult = result
                     val intent = Intent(this, NativePlayerActivity::class.java).apply {
                         putExtra(NativePlayerActivity.EXTRA_URL, url)
                         putExtra(NativePlayerActivity.EXTRA_TITLE, title)
                         putExtra(NativePlayerActivity.EXTRA_CONTENT_TYPE, contentType)
+                        if (year != null) putExtra(NativePlayerActivity.EXTRA_YEAR, year)
+                        if (tmdbId != null) putExtra(NativePlayerActivity.EXTRA_TMDB_ID, tmdbId)
                     }
                     startActivityForResult(intent, REQUEST_CODE_NATIVE_PLAYER)
                 } else if (call.method == "isTvDevice") {

@@ -11,6 +11,7 @@ package com.x87player.x87_mobile
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.ProgressDialog
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -26,6 +27,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
@@ -33,6 +35,10 @@ import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 class NativePlayerActivity : Activity() {
 
@@ -40,6 +46,8 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_URL = "url"
         const val EXTRA_TITLE = "title"
         const val EXTRA_CONTENT_TYPE = "contentType"
+        const val EXTRA_YEAR = "year"
+        const val EXTRA_TMDB_ID = "tmdbId"
 
         private const val CONTROLS_HIDE_DELAY_MS = 5_000L
         private const val SEEK_BAR_UPDATE_INTERVAL_MS = 500L
@@ -70,6 +78,13 @@ class NativePlayerActivity : Activity() {
     private lateinit var durationText: TextView
     private lateinit var liveIndicator: TextView
     private lateinit var seekBarRow: android.widget.LinearLayout
+
+    // Metadata used for online subtitle search
+    private var contentTitle: String = ""
+    private var contentYear: String? = null
+    private var contentTmdbId: String? = null
+    // The original stream URI (needed to rebuild MediaItem with subtitle)
+    private var streamUri: android.net.Uri? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var controlsVisible = true
@@ -120,6 +135,10 @@ class NativePlayerActivity : Activity() {
             return
         }
         val title = intent.getStringExtra(EXTRA_TITLE) ?: ""
+        contentTitle = title
+        contentYear = intent.getStringExtra(EXTRA_YEAR)
+        contentTmdbId = intent.getStringExtra(EXTRA_TMDB_ID)
+        streamUri = Uri.parse(url)
 
         titleTextView.text = title
 
@@ -961,10 +980,6 @@ class NativePlayerActivity : Activity() {
 
     private fun showSubtitlesDialog() {
         val tracks = getTracksOfType(C.TRACK_TYPE_TEXT)
-        if (tracks.isEmpty()) {
-            Toast.makeText(this, "No subtitles available", Toast.LENGTH_SHORT).show()
-            return
-        }
 
         val labels = mutableListOf("Off")
         for ((group, index) in tracks) {
@@ -974,25 +989,151 @@ class NativePlayerActivity : Activity() {
                 ?: "Track ${labels.size}"
             labels.add(label)
         }
+        labels.add("🔍 Search Online...")
 
         AlertDialog.Builder(this)
             .setTitle("Subtitles")
             .setItems(labels.toTypedArray()) { _, which ->
-                if (which == 0) {
-                    player.trackSelectionParameters = player.trackSelectionParameters
-                        .buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                        .build()
-                } else {
-                    val (group, index) = tracks[which - 1]
-                    player.trackSelectionParameters = player.trackSelectionParameters
-                        .buildUpon()
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                        .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
-                        .build()
+                when {
+                    which == 0 -> {
+                        player.trackSelectionParameters = player.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                            .build()
+                    }
+                    which == labels.size - 1 -> {
+                        searchOnlineSubtitles()
+                    }
+                    else -> {
+                        val (group, index) = tracks[which - 1]
+                        player.trackSelectionParameters = player.trackSelectionParameters
+                            .buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
+                            .build()
+                    }
                 }
             }
             .show()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun searchOnlineSubtitles() {
+        val uri = streamUri ?: run {
+            Toast.makeText(this, "No stream URL available", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Read preferred languages from SharedPreferences (Flutter writes to the
+        // default app shared preferences via the shared_preferences plugin).
+        val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+        val langsJson = flutterPrefs.getString("flutter.subtitle_languages", null)
+        val langs: List<String> = if (langsJson != null) {
+            try {
+                val arr = org.json.JSONArray(langsJson)
+                (0 until arr.length()).map { arr.getString(it) }
+            } catch (_: Exception) {
+                listOf("en")
+            }
+        } else {
+            listOf("en")
+        }
+
+        val progressDialog = ProgressDialog(this).apply {
+            setMessage("Searching for subtitles...")
+            setCancelable(false)
+            show()
+        }
+
+        Thread {
+            var foundSrt: String? = null
+            var foundLang: String? = null
+
+            for (lang in langs) {
+                try {
+                    val sb = StringBuilder("https://x87player.xyz/subtitles?")
+                    sb.append("title=").append(URLEncoder.encode(contentTitle, "UTF-8"))
+                    if (!contentYear.isNullOrBlank()) {
+                        sb.append("&year=").append(URLEncoder.encode(contentYear!!, "UTF-8"))
+                    }
+                    if (!contentTmdbId.isNullOrBlank()) {
+                        sb.append("&tmdb_id=").append(URLEncoder.encode(contentTmdbId!!, "UTF-8"))
+                    }
+                    sb.append("&lang=").append(URLEncoder.encode(lang, "UTF-8"))
+
+                    val connection = URL(sb.toString()).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 15_000
+                    connection.readTimeout = 120_000
+                    connection.requestMethod = "GET"
+
+                    val code = connection.responseCode
+                    if (code == 200) {
+                        val srt = connection.inputStream.bufferedReader().readText()
+                        if (srt.isNotBlank()) {
+                            foundSrt = srt
+                            foundLang = lang
+                            break
+                        }
+                    }
+                    connection.disconnect()
+                } catch (_: Exception) {
+                    // Try next language
+                }
+            }
+
+            runOnUiThread {
+                progressDialog.dismiss()
+                if (foundSrt != null && foundLang != null) {
+                    injectSrtSubtitle(uri, foundSrt!!, foundLang!!)
+                } else {
+                    Toast.makeText(this, "No subtitles found online", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun injectSrtSubtitle(videoUri: android.net.Uri, srtContent: String, langCode: String) {
+        try {
+            // Write SRT to a temp file in cacheDir
+            val srtFile = File(cacheDir, "subtitle_${langCode}_${System.currentTimeMillis()}.srt")
+            srtFile.writeText(srtContent)
+
+            val savedPosition = player.currentPosition
+            val wasPlaying = player.isPlaying
+
+            val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(srtFile))
+                .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+                .setLanguage(langCode)
+                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .build()
+
+            val newMediaItem = MediaItem.Builder()
+                .setUri(videoUri)
+                .setSubtitleConfigurations(listOf(subtitleConfig))
+                .build()
+
+            player.setMediaItem(newMediaItem)
+            player.prepare()
+            player.seekTo(savedPosition)
+            if (wasPlaying) player.play()
+
+            val langName = when (langCode) {
+                "en" -> "English"; "fr" -> "French"; "de" -> "German"
+                "es" -> "Spanish"; "it" -> "Italian"; "pt" -> "Portuguese"
+                "nl" -> "Dutch"; "pl" -> "Polish"; "ru" -> "Russian"
+                "ar" -> "Arabic"; "tr" -> "Turkish"; "ro" -> "Romanian"
+                "el" -> "Greek"; "hu" -> "Hungarian"; "cs" -> "Czech"
+                "sv" -> "Swedish"; "da" -> "Danish"; "no" -> "Norwegian"
+                "fi" -> "Finnish"; "hr" -> "Croatian"; "bg" -> "Bulgarian"
+                "he" -> "Hebrew"; "zh" -> "Chinese"; "ja" -> "Japanese"
+                "ko" -> "Korean"; "th" -> "Thai"; "vi" -> "Vietnamese"
+                "id" -> "Indonesian"; "ms" -> "Malay"
+                else -> langCode.uppercase()
+            }
+            Toast.makeText(this, "Subtitles loaded ($langName)", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Failed to load subtitles: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showSettingsDialog() {

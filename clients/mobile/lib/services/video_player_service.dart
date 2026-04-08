@@ -32,11 +32,16 @@ class VideoPlayerService {
 
   /// Launches [NativePlayerActivity] via the platform channel and awaits its
   /// dismissal. [_isPlaying] is true while the native activity is active.
+  ///
+  /// Optional [year] and [tmdbId] are forwarded to the native activity so it
+  /// can search for online subtitles with better context.
   Future<void> play(
     String url,
     String title,
-    String contentType,
-  ) async {
+    String contentType, {
+    String? year,
+    String? tmdbId,
+  }) async {
     if (kDebugMode) {
       debugPrint(
         '[VideoPlayerService] Launching NativePlayerActivity | '
@@ -46,11 +51,14 @@ class VideoPlayerService {
 
     _isPlaying = true;
     try {
-      await _channel.invokeMethod<void>('launchPlayer', {
+      final args = <String, dynamic>{
         'url': url,
         'title': title,
         'contentType': contentType,
-      });
+      };
+      if (year != null) args['year'] = year;
+      if (tmdbId != null) args['tmdbId'] = tmdbId;
+      await _channel.invokeMethod<void>('launchPlayer', args);
     } finally {
       _isPlaying = false;
       if (kDebugMode) {
@@ -63,9 +71,11 @@ class VideoPlayerService {
   Future<void> playFullscreenNative(
     String url,
     String title,
-    String contentType,
-  ) =>
-      play(url, title, contentType);
+    String contentType, {
+    String? year,
+    String? tmdbId,
+  }) =>
+      play(url, title, contentType, year: year, tmdbId: tmdbId);
 
   // ─── Embedded player state tracking ──────────────────────────────────────
 

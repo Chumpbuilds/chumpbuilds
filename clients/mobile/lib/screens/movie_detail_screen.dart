@@ -104,12 +104,30 @@ class _MovieDetailScreenState extends State<MovieDetailScreen> {
     final url = widget.xtream.getStreamUrl(streamId, 'movie', streamData: widget.movie);
     if (url.isEmpty) return;
     final name = widget.movie['name']?.toString() ?? '';
+
+    // Extract year from vodInfo (if loaded) or fall back to the movie map.
+    final info = _vodInfo?['info'] as Map<String, dynamic>? ?? {};
+    final rawDate = info['releasedate']?.toString() ??
+        info['release_date']?.toString() ??
+        widget.movie['year']?.toString() ??
+        '';
+    String? year;
+    if (rawDate.isNotEmpty) {
+      final len = rawDate.length >= 4 ? 4 : rawDate.length;
+      year = rawDate.substring(0, len);
+    }
+    final tmdbId = info['tmdb_id']?.toString() ??
+        info['tmdb']?.toString() ??
+        widget.movie['tmdb_id']?.toString();
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AndroidHlsFullscreenScreen(
           streamUrl: url,
           title: name,
           contentType: 'movie',
+          year: year,
+          tmdbId: tmdbId,
         ),
       ),
     );

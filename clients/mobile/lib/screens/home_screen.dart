@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/device_type_service.dart';
 import '../services/epg_service.dart';
 import '../services/license_service.dart';
+import '../services/subtitle_service.dart';
 import '../services/xtream_cache_service.dart';
 import '../services/xtream_service.dart';
 import '../widgets/focus_icon_button.dart';
@@ -891,6 +892,78 @@ class _SettingsScreenState extends State<_SettingsScreen> {
   static const Color _borderColor = Color(0xFF3D3D3D);
   static const Color _descColor = Color(0xFFB0B0B0);
 
+  List<String> _selectedLangs = ['en'];
+
+  @override
+  void initState() {
+    super.initState();
+    SubtitleService.instance.getPreferredLanguages().then((langs) {
+      if (mounted) setState(() => _selectedLangs = langs);
+    });
+  }
+
+  Future<void> _saveSelectedLangs(List<String> langs) async {
+    await SubtitleService.instance.setPreferredLanguages(langs);
+    if (mounted) setState(() => _selectedLangs = langs);
+  }
+
+  Future<void> _showAddLanguageDialog() async {
+    final temp = List<String>.from(_selectedLangs);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => AlertDialog(
+          backgroundColor: _surfaceColor,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: const BorderSide(color: _borderColor),
+          ),
+          title: const Text('Add Language',
+              style: TextStyle(color: Colors.white)),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: SubtitleService.availableLanguages.entries.map((e) {
+                final selected = temp.contains(e.key);
+                return CheckboxListTile(
+                  value: selected,
+                  title: Text(e.value,
+                      style: const TextStyle(color: Colors.white, fontSize: 13)),
+                  activeColor: _primaryColor,
+                  checkColor: Colors.white,
+                  dense: true,
+                  onChanged: (checked) {
+                    setDialogState(() {
+                      if (checked == true) {
+                        if (!temp.contains(e.key)) temp.add(e.key);
+                      } else {
+                        temp.remove(e.key);
+                      }
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(),
+              child: const Text('Cancel', style: TextStyle(color: _descColor)),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogCtx).pop();
+                _saveSelectedLangs(temp.isEmpty ? ['en'] : temp);
+              },
+              child: const Text('Save', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Clears all saved IPTV credentials, favorites, and cache,
   /// then logs out of the XtreamService in-memory state.
   Future<void> _performLogout() async {
@@ -1000,6 +1073,81 @@ class _SettingsScreenState extends State<_SettingsScreen> {
                             : Colors.orange),
                     const SizedBox(height: 8),
                     _infoRow('Expires', expDate),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // Subtitle Languages card
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _surfaceColor,
+                  border: Border.all(color: _borderColor),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(Icons.subtitles, color: _primaryColor, size: 18),
+                        SizedBox(width: 8),
+                        Text(
+                          'Subtitle Languages',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        ..._selectedLangs.map((code) {
+                          final name =
+                              SubtitleService.availableLanguages[code] ?? code.toUpperCase();
+                          return Chip(
+                            label: Text(
+                              name,
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 12),
+                            ),
+                            backgroundColor: _primaryColor,
+                            deleteIcon: const Icon(Icons.close,
+                                size: 14, color: Colors.white70),
+                            onDeleted: () {
+                              final updated = List<String>.from(_selectedLangs)
+                                ..remove(code);
+                              _saveSelectedLangs(
+                                  updated.isEmpty ? ['en'] : updated);
+                            },
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 0),
+                          );
+                        }),
+                        ActionChip(
+                          label: const Text(
+                            '+ Add Language',
+                            style: TextStyle(
+                                color: _primaryColor, fontSize: 12),
+                          ),
+                          backgroundColor: _surfaceColor,
+                          side: const BorderSide(color: _primaryColor),
+                          onPressed: _showAddLanguageDialog,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 0),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
