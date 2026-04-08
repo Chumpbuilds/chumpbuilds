@@ -1,14 +1,15 @@
 # X87 Server
 
-All server-side code for the X87 Player platform. Three Flask services run behind an Nginx reverse proxy on a CentOS/RHEL Linux server.
+All server-side code for the X87 Player platform. Three Flask services and one FastAPI service run behind an Nginx reverse proxy on a CentOS/RHEL Linux server.
 
 ## Services
 
-| Service | Entry file | Port | URL | systemd unit |
-|---------|-----------|------|-----|--------------|
-| Admin Panel | `admin/admin_main.py` | 5000 | https://admin.x87player.xyz | `x87-admin` |
-| Customer Portal | `portal/portal_main.py` | 5001 | https://portal.x87player.xyz | `x87-portal` |
-| Home Page | `home/main.py` | 5002 | https://x87player.xyz | `x87-home` |
+| Service | Entry file | Port | URL | systemd unit | Framework |
+|---------|-----------|------|-----|--------------|-----------|
+| Admin Panel | `admin/admin_main.py` | 5000 | https://admin.x87player.xyz | `x87-admin` | Flask |
+| Customer Portal | `portal/portal_main.py` | 5001 | https://portal.x87player.xyz | `x87-portal` | Flask |
+| Home Page | `home/main.py` | 5002 | https://x87player.xyz | `x87-home` | Flask |
+| Subtitle Service | `subtitles/subtitle_server.py` | 8642 | https://x87player.xyz/subtitles | `x87-subtitles` | FastAPI |
 
 ## Directory Structure
 
@@ -20,6 +21,8 @@ server/
 │   └── portal_main.py           # Entry point (port 5001)
 ├── home/                        # Public Home Page Flask app
 │   └── main.py                  # Entry point (port 5002)
+├── subtitles/                   # Subtitle search FastAPI service
+│   └── subtitle_server.py       # Entry point (port 8642)
 ├── instance/                    # Flask instance folder (database, config — gitignored on prod)
 ├── tests/                       # Server-side tests
 ├── license_manager.py           # Shared license management logic
@@ -43,12 +46,12 @@ All service paths reference `/opt/iptv-panel/server/...`.
 ### Common commands
 
 ```bash
-# Check status
-systemctl status x87-admin x87-portal x87-home
+# Check status of all services
+systemctl status x87-admin x87-portal x87-home x87-subtitles
 
-# Start / restart
-systemctl start x87-admin x87-portal x87-home
-systemctl restart x87-admin x87-portal x87-home
+# Start / restart all services
+systemctl start x87-admin x87-portal x87-home x87-subtitles
+systemctl restart x87-admin x87-portal x87-home x87-subtitles
 
 # Reload after unit file changes
 systemctl daemon-reload
@@ -71,15 +74,143 @@ systemctl reload nginx
 cd /opt/iptv-panel
 git checkout -- .        # discard local changes (.pyc, cache, etc.)
 git pull
-systemctl restart x87-admin x87-portal x87-home
+systemctl restart x87-admin x87-portal x87-home x87-subtitles
 ```
+
+---
+
+## Subtitle Service
+
+The subtitle service provides on-demand SRT subtitle fetching for the X87 desktop player. It is a standalone **FastAPI** app served by **uvicorn** on port **8642** (localhost only), exposed publicly via Nginx at `https://x87player.xyz/subtitles`.
+
+### How it works
+
+1. The desktop app sends a GET request with the movie/show title, year, and language.
+2. The service searches free subtitle providers via the **subliminal** library.
+3. The best-matching SRT is returned as plain text and cached to disk.
+4. Subsequent requests for the same title/language are served instantly from cache.
+
+### Providers
+
+The service uses the following subtitle providers (no API key required):
+
+- `opensubtitles` (XML-RPC — primary, best results)
+- `podnapisi`
+- `gestdown`
+- `tvsubtitles`
+
+### API
+
+**Endpoint:** `GET /subtitles`
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `title` | string | yes | Movie or episode title |
+| `year` | int | no | Release year |
+| `tmdb_id` | int | no | TMDb ID (improves matching) |
+| `imdb_id` | string | no | IMDb ID, e.g. `tt1234567` |
+| `season` | int | no | Season number (for TV shows) |
+| `episode` | int | no | Episode number (for TV shows) |
+| `lang` | string | no | Language code, default `en` |
+
+**Examples:**
+
+```bash
+# Movie
+curl "https://x87player.xyz/subtitles?title=The%20Matrix&year=1999&lang=en"
+
+# TV episode
+curl "https://x87player.xyz/subtitles?title=Breaking%20Bad&season=1&episode=1&lang=en"
+
+# With TMDb ID for better matching
+curl "https://x87player.xyz/subtitles?title=Inception&year=2010&tmdb_id=27205&lang=en"
+```
+
+**Responses:**
+
+| Status | Body | Meaning |
+|--------|------|---------|
+| 200 | SRT text | Subtitle found and returned |
+| 404 | `No subtitles found` | No match from any provider |
+| 500 | `Error: ...` | Server-side error |
+
+**Health check:** `GET /health`
+
+```bash
+curl "https://x87player.xyz/subtitles/../health"
+# or directly:
+curl "http://127.0.0.1:8642/health"
+```
+
+### Cache
+
+- Cached SRT files are stored in `/opt/iptv-panel/subtitle_cache/`
+- Each file is named by an MD5 hash of the query parameters
+- Cache is permanent — delete files manually to force a re-fetch:
+
+```bash
+# View cached files
+ls -la /opt/iptv-panel/subtitle_cache/
+
+# Clear all cached subtitles
+rm -f /opt/iptv-panel/subtitle_cache/*.srt
+```
+
+### Dependencies
+
+Installed via pip3 (system-wide):
+
+- `fastapi`
+- `uvicorn`
+- `subliminal` (includes `babelfish`, `dogpile.cache`, `guessit`, etc.)
+
+### Service management
+
+```bash
+# Status / logs
+systemctl status x87-subtitles
+journalctl -u x87-subtitles -f        # live logs
+
+# Restart
+systemctl restart x87-subtitles
+
+# Unit file location
+/etc/systemd/system/x87-subtitles.service
+```
+
+### Firewall
+
+Port 8642/tcp is open in firewalld (added permanently):
+
+```bash
+firewall-cmd --list-ports              # verify
+firewall-cmd --permanent --add-port=8642/tcp  # (already done)
+```
+
+> **Note:** The service binds to `127.0.0.1` only — external access goes through Nginx on port 443. The firewall rule is a safety net in case the bind address changes.
+
+### Nginx routing
+
+The subtitle location block was added to the main `x87player.xyz` server block in `x87player.conf`:
+
+```nginx
+location /subtitles {
+    proxy_pass http://127.0.0.1:8642/subtitles;
+    proxy_read_timeout 120s;
+    ...
+}
+```
+
+The 120s timeout accommodates slow provider searches on first requests (before caching).
+
+---
 
 ## Troubleshooting
 
-**502 Bad Gateway** — Flask services aren't running or systemd can't find the working directory:
+**502 Bad Gateway** — Flask/FastAPI services aren't running or systemd can't find the working directory:
 
 ```bash
-systemctl status x87-admin x87-portal x87-home
+systemctl status x87-admin x87-portal x87-home x87-subtitles
 ```
 
 If you see `status=200/CHDIR`, the `WorkingDirectory` in the unit file is wrong. Check:
@@ -87,8 +218,13 @@ If you see `status=200/CHDIR`, the `WorkingDirectory` in the unit file is wrong.
 - `/etc/systemd/system/x87-admin.service`
 - `/etc/systemd/system/x87-portal.service`
 - `/etc/systemd/system/x87-home.service`
+- `/etc/systemd/system/x87-subtitles.service`
 
-Fix paths, then `systemctl daemon-reload && systemctl restart x87-admin x87-portal x87-home`.
+Fix paths, then `systemctl daemon-reload && systemctl restart x87-admin x87-portal x87-home x87-subtitles`.
+
+**Subtitles returning 404 for new movies** — Free providers may not have subtitles for very recent releases. The `opensubtitles` XML-RPC API has the largest catalog but still lags on brand-new titles.
+
+**Subtitles slow on first request** — First requests search multiple providers (up to ~30-60s). Subsequent requests for the same title are instant from cache.
 
 ## Full Setup
 
