@@ -206,16 +206,32 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
       if (epNum.isNotEmpty) 'Ep $epNum',
       if (epTitle.isNotEmpty) epTitle,
     ].join(': ');
-    final displayTitle = label.isNotEmpty
-        ? label
-        : (widget.series['name']?.toString() ?? 'Episode');
+    final seriesName = widget.series['name']?.toString() ?? '';
+    final displayTitle = label.isNotEmpty ? label : (seriesName.isNotEmpty ? seriesName : 'Episode');
+
+    // Extract year and tmdbId for subtitle search context.
+    final info = _seriesInfo?['info'] is Map
+        ? Map<String, dynamic>.from(_seriesInfo!['info'] as Map)
+        : <String, dynamic>{};
+    final rawYear = info['releaseDate']?.toString() ??
+        info['release_date']?.toString() ??
+        widget.series['year']?.toString() ??
+        '';
+    final year = rawYear.isNotEmpty
+        ? rawYear.substring(0, rawYear.length >= 4 ? 4 : rawYear.length)
+        : null;
+    final tmdbId = info['tmdb_id']?.toString() ??
+        info['tmdb']?.toString() ??
+        widget.series['tmdb_id']?.toString();
 
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AndroidHlsFullscreenScreen(
           streamUrl: url,
-          title: displayTitle,
+          title: seriesName.isNotEmpty ? seriesName : displayTitle,
           contentType: 'series',
+          year: year,
+          tmdbId: tmdbId,
         ),
       ),
     );
