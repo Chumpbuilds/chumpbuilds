@@ -966,6 +966,20 @@ class NativePlayerActivity : Activity() {
         return result
     }
 
+    /** Returns ALL tracks of [type], including those ExoPlayer considers unsupported.
+     *  The Boolean in each Triple is true when the track is supported, false otherwise. */
+    private fun getAllTracksOfType(type: Int): List<Triple<Tracks.Group, Int, Boolean>> {
+        val result = mutableListOf<Triple<Tracks.Group, Int, Boolean>>()
+        for (group in player.currentTracks.groups) {
+            if (group.type == type) {
+                for (i in 0 until group.length) {
+                    result.add(Triple(group, i, group.isTrackSupported(i)))
+                }
+            }
+        }
+        return result
+    }
+
     private fun cycleResizeMode() {
         val currentIndex = RESIZE_MODES.indexOfFirst { it.first == currentResizeMode }
         val next = RESIZE_MODES[(currentIndex + 1) % RESIZE_MODES.size]
@@ -1138,7 +1152,7 @@ class NativePlayerActivity : Activity() {
 
     private fun showSettingsDialog() {
         val videoTracks = getTracksOfType(C.TRACK_TYPE_VIDEO)
-        val audioTracks = getTracksOfType(C.TRACK_TYPE_AUDIO)
+        val allAudioTracks = getAllTracksOfType(C.TRACK_TYPE_AUDIO)
 
         val items = mutableListOf<String>()
         val actions = mutableListOf<() -> Unit>()
@@ -1165,14 +1179,33 @@ class NativePlayerActivity : Activity() {
 
         items.add("── Audio ──")
         actions.add({})
-        if (audioTracks.isEmpty()) {
+        // "Auto" resets any manual override and re-applies the saved language
+        // preference (default: English), exactly like XCIPTV's Auto button.
+        val savedAudioLang = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString("preferred_audio_language", "en") ?: "en"
+        val autoLabel = when (savedAudioLang) {
+            "en" -> "English"; "fr" -> "French"; "de" -> "German"
+            "es" -> "Spanish"; "it" -> "Italian"; "pt" -> "Portuguese"
+            "nl" -> "Dutch"; "pl" -> "Polish"; "ru" -> "Russian"
+            "ar" -> "Arabic"; "tr" -> "Turkish"; "ro" -> "Romanian"
+            else -> savedAudioLang.uppercase()
+        }
+        items.add("  Auto ($autoLabel)")
+        actions.add {
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .setPreferredAudioLanguage(savedAudioLang)
+                .build()
+        }
+        if (allAudioTracks.isEmpty()) {
             items.add("  (none)")
             actions.add({})
         } else {
-            for ((group, index) in audioTracks) {
+            for ((group, index, supported) in allAudioTracks) {
                 val format = group.getTrackFormat(index)
                 val lang = format.label ?: format.language ?: "Unknown"
-                val codec = format.codecs ?: "Unknown"
+                val codec = format.codecs ?: format.sampleMimeType ?: "Unknown"
                 val channels = when (format.channelCount) {
                     1 -> "Mono"
                     2 -> "Stereo"
@@ -1180,7 +1213,10 @@ class NativePlayerActivity : Activity() {
                     8 -> "7.1"
                     else -> if (format.channelCount > 0) "${format.channelCount}ch" else "Unknown"
                 }
-                items.add("  $lang - $codec - $channels")
+                val isSelected = group.isTrackSelected(index)
+                val prefix = if (isSelected) "▶ " else "  "
+                val suffix = if (!supported) " ⚠️" else ""
+                items.add("$prefix$lang - $codec - $channels$suffix")
                 actions.add {
                     player.trackSelectionParameters = player.trackSelectionParameters
                         .buildUpon()
