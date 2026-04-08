@@ -1179,14 +1179,23 @@ class NativePlayerActivity : Activity() {
 
         items.add("── Audio ──")
         actions.add({})
-        // "Auto (English)" resets any manual override and re-applies the English
-        // language preference, exactly like XCIPTV's Auto button.
-        items.add("  Auto (English)")
+        // "Auto" resets any manual override and re-applies the saved language
+        // preference (default: English), exactly like XCIPTV's Auto button.
+        val savedAudioLang = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getString("preferred_audio_language", "en") ?: "en"
+        val autoLabel = when (savedAudioLang) {
+            "en" -> "English"; "fr" -> "French"; "de" -> "German"
+            "es" -> "Spanish"; "it" -> "Italian"; "pt" -> "Portuguese"
+            "nl" -> "Dutch"; "pl" -> "Polish"; "ru" -> "Russian"
+            "ar" -> "Arabic"; "tr" -> "Turkish"; "ro" -> "Romanian"
+            else -> savedAudioLang.uppercase()
+        }
+        items.add("  Auto ($autoLabel)")
         actions.add {
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
-                .setPreferredAudioLanguage("en")
+                .setPreferredAudioLanguage(savedAudioLang)
                 .build()
         }
         if (allAudioTracks.isEmpty()) {
