@@ -1,0 +1,407 @@
+"""
+X87 Subtitle Service — FastAPI app on port 8642.
+
+Primary provider: OpenSubtitles VIP REST API (vip-api.opensubtitles.com).
+Fallback provider: subliminal (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles).
+
+Environment variables (all optional — omit to use subliminal-only mode):
+    OPENSUBTITLES_API_KEY     Consumer API key
+    OPENSUBTITLES_USERNAME    Account username
+    OPENSUBTITLES_PASSWORD    Account password
+
+A .env file at the same directory as this script is loaded automatically if
+python-dotenv is installed.
+"""
+
+import hashlib
+import logging
+import os
+import time
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI, Query
+from fastapi.responses import PlainTextResponse
+
+# ---------------------------------------------------------------------------
+# Load .env from the same directory as this script (best-effort)
+# ---------------------------------------------------------------------------
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("subtitle_server")
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+CACHE_DIR = Path("/opt/iptv-panel/subtitle_cache")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+VIP_BASE = "https://vip-api.opensubtitles.com/api/v1"
+USER_AGENT = "X87Player v1.0"
+
+API_KEY = os.getenv("OPENSUBTITLES_API_KEY", "")
+OS_USERNAME = os.getenv("OPENSUBTITLES_USERNAME", "")
+OS_PASSWORD = os.getenv("OPENSUBTITLES_PASSWORD", "")
+
+# In-memory JWT token store
+_jwt_token: str = ""
+_jwt_expires: float = 0.0  # epoch seconds; 0 means unknown / not yet fetched
+
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+app = FastAPI(title="X87 Subtitle Service")
+
+
+# ---------------------------------------------------------------------------
+# OpenSubtitles VIP REST client helpers
+# ---------------------------------------------------------------------------
+
+def _vip_headers() -> dict:
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Api-Key": API_KEY,
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if _jwt_token:
+        headers["Authorization"] = f"Bearer {_jwt_token}"
+    return headers
+
+
+def _vip_login() -> bool:
+    """Login to the VIP API and store the JWT token. Returns True on success."""
+    global _jwt_token, _jwt_expires
+    if not API_KEY or not OS_USERNAME or not OS_PASSWORD:
+        logger.warning("OpenSubtitles VIP credentials not configured — skipping login")
+        return False
+    try:
+        logger.info("OpenSubtitles VIP: logging in as %s", OS_USERNAME)
+        resp = httpx.post(
+            f"{VIP_BASE}/login",
+            json={"username": OS_USERNAME, "password": OS_PASSWORD},
+            headers={"User-Agent": USER_AGENT, "Api-Key": API_KEY, "Content-Type": "application/json"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        _jwt_token = data.get("token", "")
+        # OpenSubtitles tokens expire after 24 h; store expiry as now + 23 h
+        _jwt_expires = time.time() + 23 * 3600
+        logger.info("OpenSubtitles VIP: login successful")
+        return True
+    except Exception as exc:
+        logger.error("OpenSubtitles VIP: login failed — %s", exc)
+        _jwt_token = ""
+        return False
+
+
+def _ensure_authenticated() -> bool:
+    """Ensure we have a valid JWT. Returns True if authenticated."""
+    global _jwt_token, _jwt_expires
+    if not API_KEY:
+        return False
+    if _jwt_token and time.time() < _jwt_expires:
+        return True
+    return _vip_login()
+
+
+def _vip_search_subtitles(
+    title: str,
+    lang: str,
+    year: int | None,
+    tmdb_id: int | None,
+    imdb_id: str | None,
+    season: int | None,
+    episode: int | None,
+) -> list[dict]:
+    """Search VIP API. Returns list of subtitle result dicts from the `data` array."""
+    params: dict = {"query": title, "languages": lang}
+    if tmdb_id:
+        params["tmdb_id"] = tmdb_id
+    if imdb_id:
+        # Strip 'tt' prefix if present — the API wants the numeric ID
+        numeric = imdb_id.lstrip("t")
+        if numeric:
+            params["imdb_id"] = numeric
+    if year:
+        params["year"] = year
+    if season:
+        params["season_number"] = season
+    if episode:
+        params["episode_number"] = episode
+
+    resp = httpx.get(
+        f"{VIP_BASE}/subtitles",
+        params=params,
+        headers=_vip_headers(),
+        timeout=20,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data", [])
+
+
+def _vip_download_subtitle(file_id: int) -> str:
+    """Download a subtitle by file_id. Returns the SRT text."""
+    resp = httpx.post(
+        f"{VIP_BASE}/download",
+        json={"file_id": file_id},
+        headers=_vip_headers(),
+        timeout=20,
+    )
+    resp.raise_for_status()
+    link = resp.json().get("link", "")
+    if not link:
+        raise ValueError("VIP download response contained no link")
+    srt_resp = httpx.get(link, timeout=30)
+    srt_resp.raise_for_status()
+    return srt_resp.text
+
+
+def _fetch_via_vip(
+    title: str,
+    lang: str,
+    year: int | None,
+    tmdb_id: int | None,
+    imdb_id: str | None,
+    season: int | None,
+    episode: int | None,
+) -> str | None:
+    """Try to fetch subtitle via VIP API. Returns SRT text or None."""
+    if not _ensure_authenticated():
+        logger.info("OpenSubtitles VIP: not configured or auth failed — skipping")
+        return None
+
+    try:
+        results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            logger.warning("OpenSubtitles VIP: 401 on search — refreshing token")
+            if not _vip_login():
+                return None
+            try:
+                results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+            except Exception as exc2:
+                logger.error("OpenSubtitles VIP: search failed after token refresh — %s", exc2)
+                return None
+        else:
+            logger.error("OpenSubtitles VIP: search HTTP error — %s", exc)
+            return None
+    except Exception as exc:
+        logger.error("OpenSubtitles VIP: search error — %s", exc)
+        return None
+
+    if not results:
+        logger.info("OpenSubtitles VIP: no results for '%s' (%s)", title, lang)
+        return None
+
+    # Pick best result: highest download_count, or first entry
+    best = max(
+        results,
+        key=lambda r: r.get("attributes", {}).get("download_count", 0),
+    )
+    files = best.get("attributes", {}).get("files", [])
+    if not files:
+        logger.warning("OpenSubtitles VIP: chosen result has no files")
+        return None
+    file_id = files[0].get("file_id")
+    if not file_id:
+        logger.warning("OpenSubtitles VIP: file entry has no file_id")
+        return None
+
+    logger.info("OpenSubtitles VIP: downloading file_id=%s", file_id)
+    try:
+        srt_text = _vip_download_subtitle(file_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            logger.warning("OpenSubtitles VIP: 401 on download — refreshing token")
+            if not _vip_login():
+                return None
+            try:
+                srt_text = _vip_download_subtitle(file_id)
+            except Exception as exc2:
+                logger.error("OpenSubtitles VIP: download failed after token refresh — %s", exc2)
+                return None
+        else:
+            logger.error("OpenSubtitles VIP: download HTTP error — %s", exc)
+            return None
+    except Exception as exc:
+        logger.error("OpenSubtitles VIP: download error — %s", exc)
+        return None
+
+    logger.info("OpenSubtitles VIP: subtitle fetched successfully for '%s'", title)
+    return srt_text
+
+
+# ---------------------------------------------------------------------------
+# Subliminal fallback
+# ---------------------------------------------------------------------------
+
+def _fetch_via_subliminal(
+    title: str,
+    lang: str,
+    year: int | None,
+    season: int | None,
+    episode: int | None,
+) -> str | None:
+    """Search subtitle providers via subliminal. Returns SRT text or None."""
+    try:
+        import babelfish
+        import subliminal
+    except ImportError:
+        logger.error("subliminal is not installed — cannot use fallback")
+        return None
+
+    try:
+        lang_obj = babelfish.Language(lang)
+    except Exception:
+        logger.warning("subliminal: unrecognised language '%s', defaulting to English", lang)
+        lang_obj = babelfish.Language("eng")
+
+    providers = ["opensubtitles", "podnapisi", "gestdown", "tvsubtitles"]
+
+    try:
+        if season is not None and episode is not None:
+            video = subliminal.Episode(title, season, episode, year=year)
+        else:
+            video = subliminal.Movie(title, year=year)
+    except Exception as exc:
+        logger.error("subliminal: failed to build video object — %s", exc)
+        return None
+
+    try:
+        subtitles = subliminal.download_best_subtitles(
+            [video],
+            {lang_obj},
+            providers=providers,
+        )
+    except Exception as exc:
+        logger.error("subliminal: download_best_subtitles failed — %s", exc)
+        return None
+
+    video_subs = subtitles.get(video, [])
+    if not video_subs:
+        logger.info("subliminal: no subtitles found for '%s'", title)
+        return None
+
+    try:
+        subliminal.save_subtitles(video, video_subs)
+        srt_file = Path(str(video.name) + ".srt")
+        if srt_file.exists():
+            text = srt_file.read_text(errors="replace")
+            srt_file.unlink(missing_ok=True)
+            logger.info("subliminal: subtitle found for '%s'", title)
+            return text
+        # If save_subtitles wrote content directly, try composing from subtitle object
+        srt_content = video_subs[0].content
+        if isinstance(srt_content, bytes):
+            return srt_content.decode("utf-8", errors="replace")
+        if isinstance(srt_content, str):
+            return srt_content
+    except Exception as exc:
+        logger.error("subliminal: failed to retrieve subtitle content — %s", exc)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Cache helpers
+# ---------------------------------------------------------------------------
+
+def _cache_key(
+    title: str,
+    lang: str,
+    year: int | None,
+    tmdb_id: int | None,
+    imdb_id: str | None,
+    season: int | None,
+    episode: int | None,
+) -> str:
+    raw = f"{title}|{lang}|{year}|{tmdb_id}|{imdb_id}|{season}|{episode}"
+    return hashlib.md5(raw.encode()).hexdigest()
+
+
+def _cache_read(key: str) -> str | None:
+    path = CACHE_DIR / f"{key}.srt"
+    if path.exists():
+        return path.read_text(errors="replace")
+    return None
+
+
+def _cache_write(key: str, content: str) -> None:
+    path = CACHE_DIR / f"{key}.srt"
+    path.write_text(content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/subtitles", response_class=PlainTextResponse)
+async def get_subtitles(
+    title: str = Query(..., description="Movie or episode title"),
+    year: int | None = Query(None),
+    tmdb_id: int | None = Query(None),
+    imdb_id: str | None = Query(None),
+    season: int | None = Query(None),
+    episode: int | None = Query(None),
+    lang: str = Query("en"),
+) -> PlainTextResponse:
+    key = _cache_key(title, lang, year, tmdb_id, imdb_id, season, episode)
+    cached = _cache_read(key)
+    if cached:
+        logger.info("Cache hit for '%s' (%s)", title, lang)
+        return PlainTextResponse(cached, status_code=200)
+
+    # --- Primary: OpenSubtitles VIP REST API ---
+    srt_text = _fetch_via_vip(title, lang, year, tmdb_id, imdb_id, season, episode)
+    provider_used = "OpenSubtitles VIP"
+
+    # --- Fallback: subliminal ---
+    if srt_text is None:
+        logger.info("Falling back to subliminal for '%s' (%s)", title, lang)
+        srt_text = _fetch_via_subliminal(title, lang, year, season, episode)
+        provider_used = "subliminal"
+
+    if srt_text is None:
+        logger.info("No subtitles found for '%s' (%s)", title, lang)
+        return PlainTextResponse("No subtitles found", status_code=404)
+
+    logger.info("Subtitle fetched via %s for '%s' (%s)", provider_used, title, lang)
+    _cache_write(key, srt_text)
+    return PlainTextResponse(srt_text, status_code=200)
+
+
+@app.get("/health")
+async def health() -> dict:
+    vip_configured = bool(API_KEY and OS_USERNAME and OS_PASSWORD)
+    vip_authenticated = bool(_jwt_token and time.time() < _jwt_expires)
+    return {
+        "status": "ok",
+        "opensubtitles_vip": {
+            "configured": vip_configured,
+            "authenticated": vip_authenticated,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("subtitle_server:app", host="127.0.0.1", port=8642, reload=False)
