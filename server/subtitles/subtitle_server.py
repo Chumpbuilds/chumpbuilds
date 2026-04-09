@@ -13,6 +13,8 @@ A .env file at the same directory as this script is loaded automatically if
 python-dotenv is installed.
 """
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import os
