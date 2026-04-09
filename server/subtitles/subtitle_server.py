@@ -96,6 +96,7 @@ def _vip_login() -> bool:
             json={"username": OS_USERNAME, "password": OS_PASSWORD},
             headers={"User-Agent": USER_AGENT, "Api-Key": API_KEY, "Content-Type": "application/json"},
             timeout=15,
+            follow_redirects=True,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -150,6 +151,7 @@ def _vip_search_subtitles(
         params=params,
         headers=_vip_headers(),
         timeout=20,
+        follow_redirects=True,
     )
     resp.raise_for_status()
     return resp.json().get("data", [])
@@ -162,12 +164,13 @@ def _vip_download_subtitle(file_id: int) -> str:
         json={"file_id": file_id},
         headers=_vip_headers(),
         timeout=20,
+        follow_redirects=True,
     )
     resp.raise_for_status()
     link = resp.json().get("link", "")
     if not link:
         raise ValueError("VIP download response contained no link")
-    srt_resp = httpx.get(link, timeout=30)
+    srt_resp = httpx.get(link, timeout=30, follow_redirects=True)
     srt_resp.raise_for_status()
     return srt_resp.text
 
