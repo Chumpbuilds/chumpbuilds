@@ -108,12 +108,8 @@ class NativePlayerActivity : Activity() {
         }
     }
 
-    // One-shot listener registered during subtitle injection to explicitly select
-    // the text track once ExoPlayer has loaded the new MediaItem's track groups.
-    private var subtitleTrackListener: Player.Listener? = null
-
-    // Safety-timeout runnable cancelled when the injected SRT track is found.
-    private var subtitleTimeoutRunnable: Runnable? = null
+    // Delayed runnable that force-selects the injected SRT track after prepare().
+    private var subtitleSelectionRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -245,11 +241,9 @@ class NativePlayerActivity : Activity() {
         mainHandler.removeCallbacks(seekBarUpdateRunnable)
         mainHandler.removeCallbacks(seekCommitRunnable)
         mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
-        subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
-        subtitleTimeoutRunnable = null
+        subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
+        subtitleSelectionRunnable = null
         if (::player.isInitialized) {
-            subtitleTrackListener?.let { player.removeListener(it) }
-            subtitleTrackListener = null
             player.release()
         }
         super.onDestroy()
@@ -1189,10 +1183,9 @@ class NativePlayerActivity : Activity() {
                 .setSubtitleConfigurations(listOf(subtitleConfig))
                 .build()
 
-            // Remove any previously registered one-shot listener before adding a new one
-            // so that repeated subtitle injections don't accumulate stale listeners.
-            subtitleTrackListener?.let { player.removeListener(it) }
-            subtitleTrackListener = null
+            // Cancel any pending subtitle selection from a previous injection.
+            subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
+            subtitleSelectionRunnable = null
 
             // Clear any stale text track overrides and hint the preferred language before
             // prepare() so ExoPlayer's automatic selection already favours the injected track.
@@ -1208,187 +1201,12 @@ class NativePlayerActivity : Activity() {
             player.seekTo(savedPosition)
             if (wasPlaying) player.play()
 
-            // Register a persistent onTracksChanged listener to explicitly select the injected
-            // SRT track via TrackSelectionOverride once ExoPlayer has finished loading the new
-            // MediaItem's track groups.  This is the safety-net for streams that also carry
-            // embedded provider subtitle tracks (e.g. English DVB/WebVTT) which ExoPlayer
-            // might otherwise prefer over the injected sidecar SRT.
-            //
-            // IMPORTANT: ExoPlayer's MergingMediaSource does NOT propagate the custom
-            // SubtitleConfiguration.id to Format.id.  Instead it assigns index-based IDs like
-            // "0:0" (main source, track 0) or "1:0" (sidecar source, track 0).  The sidecar
-            // subtitle source always gets the highest source index because it is added via
-            // setSubtitleConfigurations() after the main stream source.
-            //
-            // Identification strategy (in order):
-            //   1. Language match: if exactly one text group has a track whose format.language
-            //      equals langCode, that is the injected sidecar SRT.
-            //   2. Language + source-index disambiguation: when multiple groups share the same
-            //      language (e.g. user picks English and the stream also embeds English), select
-            //      the group whose format.id has the highest source-index prefix ("N:M" → N).
-            //   3. Source-index fallback: no language match — pick the group with the highest
-            //      source-index prefix (≥ 1 means it comes from the sidecar source).
-            //      If the highest source-index is 0 (only main stream present), return null to
-            //      wait for the next onTracksChanged when the sidecar has merged in.
-
-            fun findSidecarGroup(tracks: Tracks): Pair<Tracks.Group, Int>? {
-                val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-                if (textGroups.isEmpty()) return null
-
-                android.util.Log.d(
-                    "NativePlayerActivity",
-                    "onTracksChanged: ${textGroups.size} text group(s) found"
-                )
-                textGroups.forEachIndexed { idx, group ->
-                    for (i in 0 until group.length) {
-                        val fmt = group.getTrackFormat(i)
-                        android.util.Log.d(
-                            "NativePlayerActivity",
-                            "  textGroup[$idx] track[$i]: id=${fmt.id} lang=${fmt.language}" +
-                                " mime=${fmt.sampleMimeType} label=${fmt.label}" +
-                                " trackCount=${group.length}"
-                        )
-                    }
-                }
-
-                // Strategy 1: language match
-                val langMatches = textGroups.filter { group ->
-                    (0 until group.length).any { i -> group.getTrackFormat(i).language == langCode }
-                }
-
-                if (langMatches.size == 1) {
-                    val group = langMatches[0]
-                    val trackIndex = (0 until group.length)
-                        .firstOrNull { i -> group.getTrackFormat(i).language == langCode } ?: 0
-                    android.util.Log.d(
-                        "NativePlayerActivity",
-                        "SRT track identified via language match:" +
-                            " id=${group.getTrackFormat(trackIndex).id}"
-                    )
-                    return Pair(group, trackIndex)
-                }
-
-                if (langMatches.size > 1) {
-                    // Strategy 2: multiple groups share the language — pick highest source index.
-                    val best = langMatches.maxByOrNull { group ->
-                        (0 until group.length).maxOfOrNull { i ->
-                            parseSourceIndex(group.getTrackFormat(i).id)
-                        } ?: -1
-                    }!!
-                    val trackIndex = (0 until best.length)
-                        .firstOrNull { i -> best.getTrackFormat(i).language == langCode } ?: 0
-                    android.util.Log.d(
-                        "NativePlayerActivity",
-                        "SRT track identified via language+source-index disambiguation:" +
-                            " id=${best.getTrackFormat(trackIndex).id}"
-                    )
-                    return Pair(best, trackIndex)
-                }
-
-                // Strategy 3: no language match — pick group with highest source-index prefix.
-                val highestSourceGroup = textGroups.maxByOrNull { group ->
-                    (0 until group.length).maxOfOrNull { i ->
-                        parseSourceIndex(group.getTrackFormat(i).id)
-                    } ?: -1
-                }!!
-                val highestSourceIndex = (0 until highestSourceGroup.length).maxOfOrNull { i ->
-                    parseSourceIndex(highestSourceGroup.getTrackFormat(i).id)
-                } ?: -1
-                if (highestSourceIndex >= 1) {
-                    android.util.Log.d(
-                        "NativePlayerActivity",
-                        "SRT track identified via highest source-index fallback:" +
-                            " id=${highestSourceGroup.getTrackFormat(0).id}"
-                    )
-                    return Pair(highestSourceGroup, 0)
-                }
-
-                // Sidecar not yet merged — return null to wait for next onTracksChanged.
-                android.util.Log.d(
-                    "NativePlayerActivity",
-                    "SRT sidecar not yet merged (highest source-index=$highestSourceIndex) — waiting"
-                )
-                return null
-            }
-
-            val listener = object : Player.Listener {
-                override fun onTracksChanged(tracks: Tracks) {
-                    // Skip the initial empty-tracks event fired at the start of prepare();
-                    // wait until ExoPlayer has resolved the actual stream track groups.
-                    if (tracks.groups.isEmpty()) return
-
-                    val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-                    // If no text groups are present yet (e.g. the sidecar SRT MediaSource
-                    // hasn't merged in yet), keep listening.
-                    if (textGroups.isEmpty()) return
-
-                    val match = findSidecarGroup(tracks) ?: return
-
-                    // Found it — force-select the injected SRT and cancel the safety timeout.
-                    val (targetGroup, targetIndex) = match
-                    android.util.Log.i(
-                        "NativePlayerActivity",
-                        "Forcing text track selection: group trackCount=${targetGroup.length}" +
-                            " trackIndex=$targetIndex" +
-                            " id=${targetGroup.getTrackFormat(targetIndex).id}" +
-                            " lang=${targetGroup.getTrackFormat(targetIndex).language}"
-                    )
-                    player.trackSelectionParameters = player.trackSelectionParameters
-                        .buildUpon()
-                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                        .setOverrideForType(
-                            TrackSelectionOverride(targetGroup.mediaTrackGroup, listOf(targetIndex))
-                        )
-                        .build()
-
-                    subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
-                    subtitleTimeoutRunnable = null
-                    player.removeListener(this)
-                    subtitleTrackListener = null
-                }
-            }
-            subtitleTrackListener = listener
-            player.addListener(listener)
-
-            // Safety timeout: if the listener never fires a usable match within 5 seconds
-            // (e.g. ExoPlayer fails to merge the sidecar MediaSource), try one final time
-            // with the same strategy, then fall back to preferred-language auto-selection.
-            subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
-            subtitleTimeoutRunnable = Runnable {
-                subtitleTrackListener?.let { player.removeListener(it) }
-                subtitleTrackListener = null
-                subtitleTimeoutRunnable = null
-
-                val currentTracks = player.currentTracks
-                val fallbackMatch = findSidecarGroup(currentTracks)
-                if (fallbackMatch != null) {
-                    val (targetGroup, targetIndex) = fallbackMatch
-                    android.util.Log.w(
-                        "NativePlayerActivity",
-                        "SRT timeout — forcing track selection:" +
-                            " id=${targetGroup.getTrackFormat(targetIndex).id}"
-                    )
-                    player.trackSelectionParameters = player.trackSelectionParameters
-                        .buildUpon()
-                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                        .setOverrideForType(
-                            TrackSelectionOverride(targetGroup.mediaTrackGroup, listOf(targetIndex))
-                        )
-                        .build()
-                } else {
-                    android.util.Log.w(
-                        "NativePlayerActivity",
-                        "SRT track selection timed out — falling back to preferred language: $langCode"
-                    )
-                    player.trackSelectionParameters = player.trackSelectionParameters
-                        .buildUpon()
-                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                        .setPreferredTextLanguage(langCode)
-                        .build()
-                }
-            }
-            subtitleTimeoutRunnable?.let { mainHandler.postDelayed(it, 5_000L) }
+            // Schedule a delayed forced track selection.  By 2 seconds after prepare(),
+            // ExoPlayer has finished merging all sources and the sidecar SRT is present.
+            // MergingMediaSource appends the sidecar AFTER the main stream's text groups,
+            // so the LAST text group matching langCode is always the injected SRT.
+            // Max 2 retries (attempts 1, 2, 3) = up to 6 seconds total.
+            scheduleSubtitleSelection(langCode, attemptsLeft = 3)
 
             val langName = when (langCode) {
                 "en" -> "English"; "fr" -> "French"; "de" -> "German"
@@ -1409,13 +1227,66 @@ class NativePlayerActivity : Activity() {
         }
     }
 
-    /** Extracts the source index from ExoPlayer's format.id (e.g. "1:0" → 1, "0:2" → 0).
-     *  Returns -1 if the format.id is null or doesn't match the "N:M" pattern. */
-    private fun parseSourceIndex(formatId: String?): Int {
-        if (formatId == null) return -1
-        val colonIndex = formatId.indexOf(':')
-        if (colonIndex <= 0) return -1
-        return formatId.substring(0, colonIndex).toIntOrNull() ?: -1
+    private fun scheduleSubtitleSelection(langCode: String, attemptsLeft: Int) {
+        val runnable = Runnable {
+            subtitleSelectionRunnable = null
+
+            val textGroups = player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+            if (textGroups.isEmpty()) {
+                // Tracks not resolved yet — retry if attempts remain.
+                if (attemptsLeft > 1) {
+                    android.util.Log.d(
+                        "NativePlayerActivity",
+                        "Subtitle selection: no text groups yet, retrying (attemptsLeft=${attemptsLeft - 1})"
+                    )
+                    scheduleSubtitleSelection(langCode, attemptsLeft - 1)
+                } else {
+                    android.util.Log.w(
+                        "NativePlayerActivity",
+                        "Subtitle selection: no text groups after all attempts — relying on preferred language hint"
+                    )
+                }
+                return@Runnable
+            }
+
+            // Among text groups that have a track matching langCode, pick the last one —
+            // MergingMediaSource always appends the sidecar after embedded tracks.
+            val langMatches = textGroups.filter { group ->
+                (0 until group.length).any { i -> group.getTrackFormat(i).language == langCode }
+            }
+
+            val targetGroup = if (langMatches.isNotEmpty()) {
+                langMatches.last()
+            } else {
+                // No language match — pick the last text group as a last resort.
+                android.util.Log.w(
+                    "NativePlayerActivity",
+                    "Subtitle selection: no lang=$langCode match, picking last text group"
+                )
+                textGroups.last()
+            }
+
+            val trackIndex = (0 until targetGroup.length)
+                .lastOrNull { i -> targetGroup.getTrackFormat(i).language == langCode } ?: 0
+
+            android.util.Log.i(
+                "NativePlayerActivity",
+                "Forcing text track: group=${targetGroup.length} tracks," +
+                    " trackIndex=$trackIndex," +
+                    " id=${targetGroup.getTrackFormat(trackIndex).id}," +
+                    " lang=${targetGroup.getTrackFormat(trackIndex).language}"
+            )
+
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setOverrideForType(
+                    TrackSelectionOverride(targetGroup.mediaTrackGroup, listOf(trackIndex))
+                )
+                .build()
+        }
+        subtitleSelectionRunnable = runnable
+        mainHandler.postDelayed(runnable, 2_000L)
     }
 
     private fun showSettingsDialog() {
