@@ -108,6 +108,10 @@ class NativePlayerActivity : Activity() {
         }
     }
 
+    // One-shot listener registered during subtitle injection to explicitly select
+    // the text track once ExoPlayer has loaded the new MediaItem's track groups.
+    private var subtitleTrackListener: Player.Listener? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -239,6 +243,8 @@ class NativePlayerActivity : Activity() {
         mainHandler.removeCallbacks(seekCommitRunnable)
         mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
         if (::player.isInitialized) {
+            subtitleTrackListener?.let { player.removeListener(it) }
+            subtitleTrackListener = null
             player.release()
         }
         super.onDestroy()
@@ -1176,10 +1182,57 @@ class NativePlayerActivity : Activity() {
                 .setSubtitleConfigurations(listOf(subtitleConfig))
                 .build()
 
+            // Remove any previously registered one-shot listener before adding a new one
+            // so that repeated subtitle injections don't accumulate stale listeners.
+            subtitleTrackListener?.let { player.removeListener(it) }
+            subtitleTrackListener = null
+
             player.setMediaItem(newMediaItem)
             player.prepare()
             player.seekTo(savedPosition)
             if (wasPlaying) player.play()
+
+            // 1. Re-enable the text track type in case the user had previously selected "Off".
+            // 2. Hint ExoPlayer to prefer the injected subtitle's language so it auto-selects
+            //    the correct track on streams that expose multiple text groups.
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setPreferredTextLanguage(langCode)
+                .build()
+
+            // 3. Register a one-shot onTracksChanged listener to explicitly select the text
+            //    track group via TrackSelectionOverride once ExoPlayer has finished loading
+            //    the new MediaItem's track groups.  This avoids the race condition where the
+            //    subtitle group is not yet available immediately after prepare().
+            val listener = object : Player.Listener {
+                override fun onTracksChanged(tracks: Tracks) {
+                    // Skip the initial empty-tracks event fired at the start of prepare();
+                    // wait until ExoPlayer has resolved the actual stream track groups.
+                    if (tracks.groups.isEmpty()) return
+
+                    val textGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT }
+                    if (textGroup != null) {
+                        // Prefer the track whose language matches the injected subtitle; fall
+                        // back to index 0 if no language annotation is present.
+                        val trackIndex = (0 until textGroup.length).firstOrNull { i ->
+                            textGroup.getTrackFormat(i).language == langCode
+                        } ?: 0
+                        player.trackSelectionParameters = player.trackSelectionParameters
+                            .buildUpon()
+                            .setOverrideForType(
+                                TrackSelectionOverride(textGroup.mediaTrackGroup, listOf(trackIndex))
+                            )
+                            .build()
+                    }
+                    // Remove unconditionally once real tracks are available — whether or not a
+                    // text group was found, there is nothing more this listener can do.
+                    player.removeListener(this)
+                    subtitleTrackListener = null
+                }
+            }
+            subtitleTrackListener = listener
+            player.addListener(listener)
 
             val langName = when (langCode) {
                 "en" -> "English"; "fr" -> "French"; "de" -> "German"
