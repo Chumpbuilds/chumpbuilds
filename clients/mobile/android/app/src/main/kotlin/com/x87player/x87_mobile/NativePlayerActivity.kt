@@ -112,6 +112,9 @@ class NativePlayerActivity : Activity() {
     // the text track once ExoPlayer has loaded the new MediaItem's track groups.
     private var subtitleTrackListener: Player.Listener? = null
 
+    // Safety-timeout runnable cancelled when the injected SRT track is found.
+    private var subtitleTimeoutRunnable: Runnable? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -242,6 +245,8 @@ class NativePlayerActivity : Activity() {
         mainHandler.removeCallbacks(seekBarUpdateRunnable)
         mainHandler.removeCallbacks(seekCommitRunnable)
         mainHandler.removeCallbacks(seekGuardTimeoutRunnable)
+        subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+        subtitleTimeoutRunnable = null
         if (::player.isInitialized) {
             subtitleTrackListener?.let { player.removeListener(it) }
             subtitleTrackListener = null
@@ -1201,11 +1206,17 @@ class NativePlayerActivity : Activity() {
             player.seekTo(savedPosition)
             if (wasPlaying) player.play()
 
-            // Register a one-shot onTracksChanged listener to explicitly select the injected
+            // Register a persistent onTracksChanged listener to explicitly select the injected
             // SRT track via TrackSelectionOverride once ExoPlayer has finished loading the new
             // MediaItem's track groups.  This is the safety-net for streams that also carry
             // embedded provider subtitle tracks (e.g. English DVB/WebVTT) which ExoPlayer
             // might otherwise prefer over the injected sidecar SRT.
+            //
+            // IMPORTANT: The listener ONLY commits (sets override + removes itself) when it
+            // positively identifies the injected SRT by its file:// URI.  If no URI match is
+            // found it returns early and waits for the next onTracksChanged — this prevents
+            // accidentally force-selecting an embedded English track in the race window before
+            // the sidecar SRT MediaSource has merged into ExoPlayer's track list.
             val srtFileName = srtFile.name        // e.g. "subtitle_ro_1234567890.srt"
             val srtAbsPath = srtFile.absolutePath // e.g. "/data/.../cache/subtitle_ro_...srt"
             val listener = object : Player.Listener {
@@ -1215,52 +1226,32 @@ class NativePlayerActivity : Activity() {
                     if (tracks.groups.isEmpty()) return
 
                     val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
-                    // If the stream's tracks have loaded but no text groups are present yet
-                    // (e.g. the sidecar SRT MediaSource hasn't merged in yet), keep listening.
+                    // If no text groups are present yet (e.g. the sidecar SRT MediaSource
+                    // hasn't merged in yet), keep listening — do NOT fall through to
+                    // mime-type or language-based matches which would pick embedded tracks.
                     if (textGroups.isEmpty()) return
 
-                    // Identify the injected SRT track among potentially multiple text groups.
-                    // The IPTV stream may carry its own embedded subtitle tracks (e.g. English
-                    // DVB/WebVTT). ExoPlayer exposes each text stream as a separate group, so
-                    // we must search all groups — not just the first one.
-                    //
-                    // Selection priority:
-                    //  1. URI match in format.id (file name / abs path)   → injected SRT (most reliable)
-                    //  2. APPLICATION_SUBRIP group with matching language  → injected SRT
-                    //  3. APPLICATION_SUBRIP group (any language tag)      → injected SRT
-                    //  4. Any group with a matching language tag            → language fallback
-                    //  5. First text group, first track                    → last resort
+                    // Search for the injected SRT by URI only — the file:// scheme is the
+                    // only reliable identifier since embedded stream tracks (e.g. English
+                    // WebVTT/DVB) share the same mime type and may share the same language.
                     var uriMatch: Pair<Tracks.Group, Int>? = null
-                    var srtLangMatch: Pair<Tracks.Group, Int>? = null
-                    var srtAnyLang: Pair<Tracks.Group, Int>? = null
-                    var langMatch: Pair<Tracks.Group, Int>? = null
-
                     outer@ for (group in textGroups) {
                         for (i in 0 until group.length) {
-                            val fmt = group.getTrackFormat(i)
-                            // URI-based identification: ExoPlayer includes the sidecar file URI
-                            // in the track's format ID. The injected SRT always lives in cacheDir
-                            // (file:// scheme), while embedded provider tracks come from HTTP.
-                            val fmtId = fmt.id ?: ""
+                            val fmtId = group.getTrackFormat(i).id ?: ""
                             val isUriMatch = fmtId.contains(srtFileName) ||
                                 fmtId.contains(srtAbsPath) ||
                                 (fmtId.startsWith("file://") && fmtId.endsWith(".srt"))
-                            val isSrt = fmt.sampleMimeType == MimeTypes.APPLICATION_SUBRIP
-                            val isLang = fmt.language == langCode
                             if (isUriMatch) { uriMatch = Pair(group, i); break@outer }
-                            if (isSrt && isLang && srtLangMatch == null) { srtLangMatch = Pair(group, i); break@outer }
-                            if (isSrt && srtAnyLang == null) srtAnyLang = Pair(group, i)
-                            if (isLang && langMatch == null) langMatch = Pair(group, i)
                         }
                     }
 
-                    val (targetGroup, targetIndex) = uriMatch
-                        ?: srtLangMatch
-                        ?: srtAnyLang
-                        ?: langMatch
-                        ?: Pair(textGroups[0], 0)
+                    // If the injected SRT track hasn't merged yet, wait for the next event.
+                    // Do NOT fall through to mime-type or language-based matches — those will
+                    // incorrectly select the embedded stream tracks.
+                    if (uriMatch == null) return
 
-                    // Clear any auto-selected overrides first, then force the injected track.
+                    // Found it — force-select the injected SRT and cancel the safety timeout.
+                    val (targetGroup, targetIndex) = uriMatch!!
                     player.trackSelectionParameters = player.trackSelectionParameters
                         .buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -1269,12 +1260,35 @@ class NativePlayerActivity : Activity() {
                         )
                         .build()
 
+                    subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+                    subtitleTimeoutRunnable = null
                     player.removeListener(this)
                     subtitleTrackListener = null
                 }
             }
             subtitleTrackListener = listener
             player.addListener(listener)
+
+            // Safety timeout: if the SRT track never appears (e.g. ExoPlayer fails to merge
+            // the sidecar MediaSource), clear overrides after 5 s and let ExoPlayer's
+            // preferred-language auto-selection pick the best available text track.
+            subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+            subtitleTimeoutRunnable = Runnable {
+                subtitleTrackListener?.let { player.removeListener(it) }
+                subtitleTrackListener = null
+                subtitleTimeoutRunnable = null
+                player.trackSelectionParameters = player.trackSelectionParameters
+                    .buildUpon()
+                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                    .setPreferredTextLanguage(langCode)
+                    .build()
+                android.util.Log.w(
+                    "NativePlayerActivity",
+                    "SRT track selection timed out — falling back to preferred language: $langCode"
+                )
+            }
+            subtitleTimeoutRunnable?.let { mainHandler.postDelayed(it, 5_000L) }
 
             val langName = when (langCode) {
                 "en" -> "English"; "fr" -> "French"; "de" -> "German"
