@@ -1187,24 +1187,27 @@ class NativePlayerActivity : Activity() {
             subtitleTrackListener?.let { player.removeListener(it) }
             subtitleTrackListener = null
 
+            // Clear any stale text track overrides and hint the preferred language before
+            // prepare() so ExoPlayer's automatic selection already favours the injected track.
+            player.trackSelectionParameters = player.trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setPreferredTextLanguage(langCode)
+                .build()
+
             player.setMediaItem(newMediaItem)
             player.prepare()
             player.seekTo(savedPosition)
             if (wasPlaying) player.play()
 
-            // 1. Re-enable the text track type in case the user had previously selected "Off".
-            // 2. Hint ExoPlayer to prefer the injected subtitle's language so it auto-selects
-            //    the correct track on streams that expose multiple text groups.
-            player.trackSelectionParameters = player.trackSelectionParameters
-                .buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                .setPreferredTextLanguage(langCode)
-                .build()
-
-            // 3. Register a one-shot onTracksChanged listener to explicitly select the text
-            //    track group via TrackSelectionOverride once ExoPlayer has finished loading
-            //    the new MediaItem's track groups.  This avoids the race condition where the
-            //    subtitle group is not yet available immediately after prepare().
+            // Register a one-shot onTracksChanged listener to explicitly select the injected
+            // SRT track via TrackSelectionOverride once ExoPlayer has finished loading the new
+            // MediaItem's track groups.  This is the safety-net for streams that also carry
+            // embedded provider subtitle tracks (e.g. English DVB/WebVTT) which ExoPlayer
+            // might otherwise prefer over the injected sidecar SRT.
+            val srtFileName = srtFile.name        // e.g. "subtitle_ro_1234567890.srt"
+            val srtAbsPath = srtFile.absolutePath // e.g. "/data/.../cache/subtitle_ro_...srt"
             val listener = object : Player.Listener {
                 override fun onTracksChanged(tracks: Tracks) {
                     // Skip the initial empty-tracks event fired at the start of prepare();
@@ -1217,15 +1220,17 @@ class NativePlayerActivity : Activity() {
                     if (textGroups.isEmpty()) return
 
                     // Identify the injected SRT track among potentially multiple text groups.
-                    // The IPTV stream may carry its own embedded subtitle tracks (e.g. French
+                    // The IPTV stream may carry its own embedded subtitle tracks (e.g. English
                     // DVB/WebVTT). ExoPlayer exposes each text stream as a separate group, so
                     // we must search all groups — not just the first one.
                     //
                     // Selection priority:
-                    //  1. APPLICATION_SUBRIP group with matching language  → injected SRT
-                    //  2. APPLICATION_SUBRIP group (any language tag)      → injected SRT
-                    //  3. Any group with a matching language tag            → language fallback
-                    //  4. First text group, first track                    → last resort
+                    //  1. URI match in format.id (file name / abs path)   → injected SRT (most reliable)
+                    //  2. APPLICATION_SUBRIP group with matching language  → injected SRT
+                    //  3. APPLICATION_SUBRIP group (any language tag)      → injected SRT
+                    //  4. Any group with a matching language tag            → language fallback
+                    //  5. First text group, first track                    → last resort
+                    var uriMatch: Pair<Tracks.Group, Int>? = null
                     var srtLangMatch: Pair<Tracks.Group, Int>? = null
                     var srtAnyLang: Pair<Tracks.Group, Int>? = null
                     var langMatch: Pair<Tracks.Group, Int>? = null
@@ -1233,21 +1238,32 @@ class NativePlayerActivity : Activity() {
                     outer@ for (group in textGroups) {
                         for (i in 0 until group.length) {
                             val fmt = group.getTrackFormat(i)
+                            // URI-based identification: ExoPlayer includes the sidecar file URI
+                            // in the track's format ID. The injected SRT always lives in cacheDir
+                            // (file:// scheme), while embedded provider tracks come from HTTP.
+                            val fmtId = fmt.id ?: ""
+                            val isUriMatch = fmtId.contains(srtFileName) ||
+                                fmtId.contains(srtAbsPath) ||
+                                (fmtId.startsWith("file://") && fmtId.endsWith(".srt"))
                             val isSrt = fmt.sampleMimeType == MimeTypes.APPLICATION_SUBRIP
                             val isLang = fmt.language == langCode
-                            if (isSrt && isLang) { srtLangMatch = Pair(group, i); break@outer }
+                            if (isUriMatch) { uriMatch = Pair(group, i); break@outer }
+                            if (isSrt && isLang && srtLangMatch == null) { srtLangMatch = Pair(group, i); break@outer }
                             if (isSrt && srtAnyLang == null) srtAnyLang = Pair(group, i)
                             if (isLang && langMatch == null) langMatch = Pair(group, i)
                         }
                     }
 
-                    val (targetGroup, targetIndex) = srtLangMatch
+                    val (targetGroup, targetIndex) = uriMatch
+                        ?: srtLangMatch
                         ?: srtAnyLang
                         ?: langMatch
                         ?: Pair(textGroups[0], 0)
 
+                    // Clear any auto-selected overrides first, then force the injected track.
                     player.trackSelectionParameters = player.trackSelectionParameters
                         .buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                         .setOverrideForType(
                             TrackSelectionOverride(targetGroup.mediaTrackGroup, listOf(targetIndex))
                         )
