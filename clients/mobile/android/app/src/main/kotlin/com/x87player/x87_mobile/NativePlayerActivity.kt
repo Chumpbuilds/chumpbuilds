@@ -1211,22 +1211,48 @@ class NativePlayerActivity : Activity() {
                     // wait until ExoPlayer has resolved the actual stream track groups.
                     if (tracks.groups.isEmpty()) return
 
-                    val textGroup = tracks.groups.firstOrNull { it.type == C.TRACK_TYPE_TEXT }
-                    if (textGroup != null) {
-                        // Prefer the track whose language matches the injected subtitle; fall
-                        // back to index 0 if no language annotation is present.
-                        val trackIndex = (0 until textGroup.length).firstOrNull { i ->
-                            textGroup.getTrackFormat(i).language == langCode
-                        } ?: 0
-                        player.trackSelectionParameters = player.trackSelectionParameters
-                            .buildUpon()
-                            .setOverrideForType(
-                                TrackSelectionOverride(textGroup.mediaTrackGroup, listOf(trackIndex))
-                            )
-                            .build()
+                    val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                    // If the stream's tracks have loaded but no text groups are present yet
+                    // (e.g. the sidecar SRT MediaSource hasn't merged in yet), keep listening.
+                    if (textGroups.isEmpty()) return
+
+                    // Identify the injected SRT track among potentially multiple text groups.
+                    // The IPTV stream may carry its own embedded subtitle tracks (e.g. French
+                    // DVB/WebVTT). ExoPlayer exposes each text stream as a separate group, so
+                    // we must search all groups — not just the first one.
+                    //
+                    // Selection priority:
+                    //  1. APPLICATION_SUBRIP group with matching language  → injected SRT
+                    //  2. APPLICATION_SUBRIP group (any language tag)      → injected SRT
+                    //  3. Any group with a matching language tag            → language fallback
+                    //  4. First text group, first track                    → last resort
+                    var srtLangMatch: Pair<Tracks.Group, Int>? = null
+                    var srtAnyLang: Pair<Tracks.Group, Int>? = null
+                    var langMatch: Pair<Tracks.Group, Int>? = null
+
+                    outer@ for (group in textGroups) {
+                        for (i in 0 until group.length) {
+                            val fmt = group.getTrackFormat(i)
+                            val isSrt = fmt.sampleMimeType == MimeTypes.APPLICATION_SUBRIP
+                            val isLang = fmt.language == langCode
+                            if (isSrt && isLang) { srtLangMatch = Pair(group, i); break@outer }
+                            if (isSrt && srtAnyLang == null) srtAnyLang = Pair(group, i)
+                            if (isLang && langMatch == null) langMatch = Pair(group, i)
+                        }
                     }
-                    // Remove unconditionally once real tracks are available — whether or not a
-                    // text group was found, there is nothing more this listener can do.
+
+                    val (targetGroup, targetIndex) = srtLangMatch
+                        ?: srtAnyLang
+                        ?: langMatch
+                        ?: Pair(textGroups[0], 0)
+
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .setOverrideForType(
+                            TrackSelectionOverride(targetGroup.mediaTrackGroup, listOf(targetIndex))
+                        )
+                        .build()
+
                     player.removeListener(this)
                     subtitleTrackListener = null
                 }
