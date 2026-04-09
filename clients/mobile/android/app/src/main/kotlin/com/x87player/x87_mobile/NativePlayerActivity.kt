@@ -995,50 +995,9 @@ class NativePlayerActivity : Activity() {
     }
 
     private fun showSubtitlesDialog() {
-        val tracks = getTracksOfType(C.TRACK_TYPE_TEXT)
-
-        val labels = mutableListOf("Off")
-        for ((group, index) in tracks) {
-            val format = group.getTrackFormat(index)
-            val label = format.label
-                ?: format.language
-                ?: "Track ${labels.size}"
-            labels.add(label)
-        }
-        labels.add("🔍 Search Online...")
-
-        AlertDialog.Builder(this)
-            .setTitle("Subtitles")
-            .setItems(labels.toTypedArray()) { _, which ->
-                when {
-                    which == 0 -> {
-                        player.trackSelectionParameters = player.trackSelectionParameters
-                            .buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                            .build()
-                    }
-                    which == labels.size - 1 -> {
-                        searchOnlineSubtitles()
-                    }
-                    else -> {
-                        val (group, index) = tracks[which - 1]
-                        player.trackSelectionParameters = player.trackSelectionParameters
-                            .buildUpon()
-                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(index)))
-                            .build()
-                    }
-                }
-            }
-            .show()
-    }
-
-    @Suppress("DEPRECATION")
-    private fun searchOnlineSubtitles() {
-        val uri = streamUri ?: run {
-            Toast.makeText(this, "No stream URL available", Toast.LENGTH_SHORT).show()
-            return
-        }
+        // Pause playback immediately while the user chooses a subtitle
+        val wasPlaying = player.isPlaying
+        player.pause()
 
         // Read preferred languages from SharedPreferences (Flutter writes to the
         // default app shared preferences via the shared_preferences plugin).
@@ -1062,12 +1021,20 @@ class NativePlayerActivity : Activity() {
         }
 
         Thread {
-            var foundSrt: String? = null
-            var foundLang: String? = null
+            // Collect results for all preferred languages from the search endpoint
+            data class SubtitleResult(
+                val fileId: Int,
+                val language: String,
+                val release: String,
+                val downloadCount: Int,
+                val provider: String,
+            )
+
+            val allResults = mutableListOf<SubtitleResult>()
 
             for (lang in langs) {
                 try {
-                    val sb = StringBuilder("https://x87player.xyz/subtitles?")
+                    val sb = StringBuilder("https://x87player.xyz/subtitles/search?")
                     sb.append("title=").append(URLEncoder.encode(contentTitle, "UTF-8"))
                     if (!contentYear.isNullOrBlank()) {
                         sb.append("&year=").append(URLEncoder.encode(contentYear!!, "UTF-8"))
@@ -1079,16 +1046,24 @@ class NativePlayerActivity : Activity() {
 
                     val connection = URL(sb.toString()).openConnection() as HttpURLConnection
                     connection.connectTimeout = 15_000
-                    connection.readTimeout = 120_000
+                    connection.readTimeout = 30_000
                     connection.requestMethod = "GET"
 
                     val code = connection.responseCode
                     if (code == 200) {
-                        val srt = connection.inputStream.bufferedReader().readText()
-                        if (srt.isNotBlank()) {
-                            foundSrt = srt
-                            foundLang = lang
-                            break
+                        val body = connection.inputStream.bufferedReader().readText()
+                        val arr = org.json.JSONArray(body)
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.getJSONObject(i)
+                            allResults.add(
+                                SubtitleResult(
+                                    fileId = obj.getInt("file_id"),
+                                    language = obj.optString("language", lang),
+                                    release = obj.optString("release", ""),
+                                    downloadCount = obj.optInt("download_count", 0),
+                                    provider = obj.optString("provider", "OpenSubtitles"),
+                                )
+                            )
                         }
                     }
                     connection.disconnect()
@@ -1099,10 +1074,83 @@ class NativePlayerActivity : Activity() {
 
             runOnUiThread {
                 progressDialog.dismiss()
-                if (foundSrt != null && foundLang != null) {
-                    injectSrtSubtitle(uri, foundSrt!!, foundLang!!)
+
+                if (allResults.isEmpty()) {
+                    Toast.makeText(this, "No subtitles found", Toast.LENGTH_SHORT).show()
+                    if (wasPlaying) player.play()
+                    return@runOnUiThread
+                }
+
+                // Build dialog labels: "Off" first, then each subtitle result
+                val labels = mutableListOf("Off")
+                for (r in allResults) {
+                    val downloads = if (r.downloadCount > 0) " (↓${r.downloadCount})" else ""
+                    labels.add("[${r.language.uppercase()}] ${r.release}$downloads")
+                }
+
+                AlertDialog.Builder(this)
+                    .setTitle("Subtitles")
+                    .setItems(labels.toTypedArray()) { _, which ->
+                        if (which == 0) {
+                            // Off — disable subtitles and resume
+                            player.trackSelectionParameters = player.trackSelectionParameters
+                                .buildUpon()
+                                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .build()
+                            if (wasPlaying) player.play()
+                        } else {
+                            val selected = allResults[which - 1]
+                            downloadAndInjectSubtitle(selected.fileId, selected.language, wasPlaying)
+                        }
+                    }
+                    .setOnCancelListener {
+                        // Dialog dismissed — resume playback
+                        if (wasPlaying) player.play()
+                    }
+                    .show()
+            }
+        }.start()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun downloadAndInjectSubtitle(fileId: Int, lang: String, resumePlayback: Boolean) {
+        val uri = streamUri ?: run {
+            Toast.makeText(this, "No stream URL available", Toast.LENGTH_SHORT).show()
+            if (resumePlayback) player.play()
+            return
+        }
+
+        val progressDialog = ProgressDialog(this).apply {
+            setMessage("Downloading subtitle...")
+            setCancelable(false)
+            show()
+        }
+
+        Thread {
+            var srtText: String? = null
+            try {
+                val url = "https://x87player.xyz/subtitles/download?file_id=$fileId"
+                val connection = URL(url).openConnection() as HttpURLConnection
+                connection.connectTimeout = 15_000
+                connection.readTimeout = 60_000
+                connection.requestMethod = "GET"
+                val code = connection.responseCode
+                if (code == 200) {
+                    srtText = connection.inputStream.bufferedReader().readText()
+                }
+                connection.disconnect()
+            } catch (_: Exception) {
+                // handled below
+            }
+
+            runOnUiThread {
+                progressDialog.dismiss()
+                if (!srtText.isNullOrBlank()) {
+                    injectSrtSubtitle(uri, srtText!!, lang)
+                    if (resumePlayback) player.play()
                 } else {
-                    Toast.makeText(this, "No subtitles found online", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Failed to download subtitle", Toast.LENGTH_SHORT).show()
+                    if (resumePlayback) player.play()
                 }
             }
         }.start()

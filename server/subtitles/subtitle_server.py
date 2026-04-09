@@ -22,8 +22,8 @@ import time
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Query
-from fastapi.responses import PlainTextResponse
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
 
 # ---------------------------------------------------------------------------
 # Load .env from the same directory as this script (best-effort)
@@ -386,6 +386,99 @@ async def get_subtitles(
 
     logger.info("Subtitle fetched via %s for '%s' (%s)", provider_used, title, lang)
     _cache_write(key, srt_text)
+    return PlainTextResponse(srt_text, status_code=200)
+
+
+@app.get("/subtitles/search")
+async def search_subtitles(
+    title: str = Query(..., description="Movie or episode title"),
+    year: int | None = Query(None),
+    tmdb_id: int | None = Query(None),
+    imdb_id: str | None = Query(None),
+    season: int | None = Query(None),
+    episode: int | None = Query(None),
+    lang: str = Query("en"),
+) -> JSONResponse:
+    """Return a JSON list of subtitle results with metadata for the given content."""
+    if not _ensure_authenticated():
+        logger.info("OpenSubtitles VIP: not configured or auth failed")
+        return JSONResponse([], status_code=200)
+
+    try:
+        results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            logger.warning("OpenSubtitles VIP: 401 on search — refreshing token")
+            if not _vip_login():
+                return JSONResponse([], status_code=200)
+            try:
+                results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+            except Exception as exc2:
+                logger.error("OpenSubtitles VIP: search failed after token refresh — %s", exc2)
+                return JSONResponse([], status_code=200)
+        else:
+            logger.error("OpenSubtitles VIP: search HTTP error — %s", exc)
+            return JSONResponse([], status_code=200)
+    except Exception as exc:
+        logger.error("OpenSubtitles VIP: search error — %s", exc)
+        return JSONResponse([], status_code=200)
+
+    output = []
+    for r in results:
+        attrs = r.get("attributes", {})
+        files = attrs.get("files", [])
+        if not files:
+            continue
+        file_id = files[0].get("file_id")
+        if not file_id:
+            continue
+        output.append({
+            "file_id": file_id,
+            "language": attrs.get("language", lang),
+            "release": attrs.get("release", ""),
+            "download_count": attrs.get("download_count", 0),
+            "provider": "OpenSubtitles VIP",
+        })
+
+    logger.info("Search returned %d results for '%s' (%s)", len(output), title, lang)
+    return JSONResponse(output, status_code=200)
+
+
+@app.get("/subtitles/download", response_class=PlainTextResponse)
+async def download_subtitle(
+    file_id: int = Query(..., description="OpenSubtitles file_id to download"),
+) -> PlainTextResponse:
+    """Download a specific subtitle by file_id and return its SRT content."""
+    cache_key = f"file_{file_id}"
+    cached = _cache_read(cache_key)
+    if cached:
+        logger.info("Cache hit for file_id=%s", file_id)
+        return PlainTextResponse(cached, status_code=200)
+
+    if not _ensure_authenticated():
+        raise HTTPException(status_code=503, detail="OpenSubtitles VIP not configured or auth failed")
+
+    try:
+        srt_text = _vip_download_subtitle(file_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 401:
+            logger.warning("OpenSubtitles VIP: 401 on download — refreshing token")
+            if not _vip_login():
+                raise HTTPException(status_code=503, detail="OpenSubtitles VIP authentication failed")
+            try:
+                srt_text = _vip_download_subtitle(file_id)
+            except Exception as exc2:
+                logger.error("OpenSubtitles VIP: download failed after token refresh — %s", exc2)
+                raise HTTPException(status_code=502, detail=str(exc2))
+        else:
+            logger.error("OpenSubtitles VIP: download HTTP error — %s", exc)
+            raise HTTPException(status_code=exc.response.status_code, detail=str(exc))
+    except Exception as exc:
+        logger.error("OpenSubtitles VIP: download error — %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    _cache_write(cache_key, srt_text)
+    logger.info("Downloaded subtitle file_id=%s (%d bytes)", file_id, len(srt_text))
     return PlainTextResponse(srt_text, status_code=200)
 
 
