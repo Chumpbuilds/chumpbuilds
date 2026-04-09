@@ -86,18 +86,39 @@ The subtitle service provides on-demand SRT subtitle fetching for the X87 deskto
 ### How it works
 
 1. The desktop app sends a GET request with the movie/show title, year, and language.
-2. The service searches free subtitle providers via the **subliminal** library.
-3. The best-matching SRT is returned as plain text and cached to disk.
-4. Subsequent requests for the same title/language are served instantly from cache.
+2. The service checks the local SRT cache first — if a match exists it is returned immediately.
+3. If not cached, the service queries the **OpenSubtitles VIP REST API** (primary).
+4. If the VIP API returns no results or is not configured, the service falls back to the **subliminal** library (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles).
+5. The best-matching SRT is returned as plain text and written to the cache.
+6. Subsequent requests for the same title/language are served instantly from cache.
 
 ### Providers
 
-The service uses the following subtitle providers (no API key required):
+| Priority | Provider | Requires config |
+|----------|----------|-----------------|
+| Primary | **OpenSubtitles VIP REST API** (`vip-api.opensubtitles.com`) | Yes — see env vars below |
+| Fallback | **subliminal** (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles) | No |
 
-- `opensubtitles` (XML-RPC — primary, best results)
-- `podnapisi`
-- `gestdown`
-- `tvsubtitles`
+### Environment Variables
+
+Set these on the server to enable the VIP API. If they are absent, the service runs in subliminal-only mode.
+
+| Variable | Description |
+|----------|-------------|
+| `OPENSUBTITLES_API_KEY` | Consumer API key from your OpenSubtitles profile |
+| `OPENSUBTITLES_USERNAME` | OpenSubtitles account username |
+| `OPENSUBTITLES_PASSWORD` | OpenSubtitles account password |
+
+Copy `server/subtitles/.env.example` to `server/subtitles/.env` and fill in your values, or set the variables in the systemd unit file:
+
+```bash
+sudo systemctl edit x87-subtitles
+# Add under [Service]:
+# Environment="OPENSUBTITLES_API_KEY=your_key"
+# Environment="OPENSUBTITLES_USERNAME=your_username"
+# Environment="OPENSUBTITLES_PASSWORD=your_password"
+sudo systemctl daemon-reload && sudo systemctl restart x87-subtitles
+```
 
 ### API
 
@@ -162,7 +183,16 @@ Installed via pip3 (system-wide):
 
 - `fastapi`
 - `uvicorn`
-- `subliminal` (includes `babelfish`, `dogpile.cache`, `guessit`, etc.)
+- `httpx` (HTTP client for the OpenSubtitles VIP REST API)
+- `python-dotenv` (loads `.env` file on startup)
+- `subliminal` (fallback provider — includes `babelfish`, `dogpile.cache`, `guessit`, etc.)
+
+Install / update:
+
+```bash
+pip3 install httpx python-dotenv
+# subliminal and fastapi/uvicorn should already be installed
+```
 
 ### Service management
 
@@ -222,9 +252,9 @@ If you see `status=200/CHDIR`, the `WorkingDirectory` in the unit file is wrong.
 
 Fix paths, then `systemctl daemon-reload && systemctl restart x87-admin x87-portal x87-home x87-subtitles`.
 
-**Subtitles returning 404 for new movies** — Free providers may not have subtitles for very recent releases. The `opensubtitles` XML-RPC API has the largest catalog but still lags on brand-new titles.
+**Subtitles returning 404 for new movies** — Free providers may not have subtitles for very recent releases. With the OpenSubtitles VIP API configured, results are significantly better. Without VIP credentials the service falls back to the free XML-RPC and other subliminal providers, which may lag on brand-new titles.
 
-**Subtitles slow on first request** — First requests search multiple providers (up to ~30-60s). Subsequent requests for the same title are instant from cache.
+**Subtitles slow on first request** — First requests search the VIP API and/or multiple subliminal providers (up to ~30-60s). Subsequent requests for the same title are instant from cache.
 
 ## Full Setup
 
