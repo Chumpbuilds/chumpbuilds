@@ -9,7 +9,7 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 
 /**
  * Custom [MediaCodecSelector] that force-discovers hidden Amlogic audio decoders
- * for AC3 and EAC3 MIME types.
+ * for AC3, EAC3, and DTS MIME types.
  *
  * Many Amlogic/Droidlogic TV boxes have working hardware decoders for Dolby audio
  * (e.g. `OMX.amlogic.ac3.decoder.awesome`, `OMX.amlogic.eac3.decoder.awesome`)
@@ -17,8 +17,13 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
  * Android's standard compatibility tests. However, they work perfectly for IPTV
  * playback — apps like XCIPTV use these decoders successfully.
  *
+ * DTS streams ([MimeTypes.AUDIO_DTS], [MimeTypes.AUDIO_DTS_HD],
+ * [MimeTypes.AUDIO_DTS_EXPRESS]) are also intercepted so that the FFmpeg
+ * software decoder extension can be discovered when no hardware DTS decoder
+ * is present on the device.
+ *
  * This selector uses [MediaCodecList.ALL_CODECS] to find these hidden decoders
- * and returns them to ExoPlayer. For non-AC3/EAC3 MIME types, it falls back to
+ * and returns them to ExoPlayer. For all other MIME types it falls back to
  * [MediaCodecSelector.DEFAULT].
  */
 @UnstableApi
@@ -29,10 +34,13 @@ class AmlogicAudioCodecSelector : MediaCodecSelector {
         requiresSecureDecoder: Boolean,
         requiresTunnelingDecoder: Boolean
     ): List<MediaCodecInfo> {
-        // Only intercept AC3 and EAC3 audio
+        // Only intercept AC3, EAC3, and DTS audio
         if (mimeType != MimeTypes.AUDIO_AC3 &&
             mimeType != MimeTypes.AUDIO_E_AC3 &&
-            mimeType != MimeTypes.AUDIO_E_AC3_JOC) {
+            mimeType != MimeTypes.AUDIO_E_AC3_JOC &&
+            mimeType != MimeTypes.AUDIO_DTS &&
+            mimeType != MimeTypes.AUDIO_DTS_HD &&
+            mimeType != MimeTypes.AUDIO_DTS_EXPRESS) {
             return MediaCodecSelector.DEFAULT.getDecoderInfos(
                 mimeType, requiresSecureDecoder, requiresTunnelingDecoder
             )
@@ -108,6 +116,17 @@ class AmlogicAudioCodecSelector : MediaCodecSelector {
                     MimeTypes.AUDIO_AC3, requiresSecureDecoder, requiresTunnelingDecoder
                 )
                 result.addAll(ac3Decoders)
+            }
+
+            // Last resort: if the MIME is DTS-HD or DTS-Express, try finding a
+            // base DTS decoder since DTS-HD carries a backward-compatible DTS core.
+            if (mimeType == MimeTypes.AUDIO_DTS_HD || mimeType == MimeTypes.AUDIO_DTS_EXPRESS) {
+                android.util.Log.i("AmlogicCodecSelector",
+                    "Trying DTS decoders as fallback for $mimeType...")
+                val dtsDecoders = getDecoderInfos(
+                    MimeTypes.AUDIO_DTS, requiresSecureDecoder, requiresTunnelingDecoder
+                )
+                result.addAll(dtsDecoders)
             }
         }
 

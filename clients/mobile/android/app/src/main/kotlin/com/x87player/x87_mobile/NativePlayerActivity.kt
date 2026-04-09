@@ -182,12 +182,14 @@ class NativePlayerActivity : Activity() {
                     }
 
                     override fun onTracksChanged(tracks: Tracks) {
-                        var hasAudio = false
-                        var hasUnsupportedAudio = false
+                        var hasAnyAudioTrack = false
+                        var hasPlayableAudio = false
                         val unsupportedCodecs = mutableListOf<String>()
 
                         for (group in tracks.groups) {
                             if (group.type == C.TRACK_TYPE_AUDIO) {
+                                // At least one audio group exists — the stream has audio
+                                hasAnyAudioTrack = true
                                 for (i in 0 until group.length) {
                                     val format = group.getTrackFormat(i)
                                     val selected = group.isTrackSelected(i)
@@ -199,22 +201,22 @@ class NativePlayerActivity : Activity() {
                                         "sampleRate=${format.sampleRate} " +
                                         "lang=${format.language ?: "?"} " +
                                         "selected=$selected supported=$supported")
-                                    if (selected) {
-                                        hasAudio = true
-                                        if (!supported) {
-                                            hasUnsupportedAudio = true
-                                            unsupportedCodecs.add(codec)
-                                        }
+
+                                    if (selected && supported) {
+                                        // A selected+supported track means audio will actually play
+                                        hasPlayableAudio = true
+                                    } else if (!supported) {
+                                        // Unsupported track (whether selected or not) — record it
+                                        unsupportedCodecs.add(codec)
                                     }
                                 }
                             }
                         }
 
-                        // Auto-launch VLC when ExoPlayer cannot decode the selected
-                        // audio track (e.g. EAC3 on Amlogic boxes with no Dolby decoder).
-                        if (hasAudio && hasUnsupportedAudio) {
+                        // Trigger VLC fallback if the stream has audio but none of it is playable
+                        if (hasAnyAudioTrack && !hasPlayableAudio) {
                             android.util.Log.w("NativePlayerActivity",
-                                "Unsupported audio codec(s): ${unsupportedCodecs.joinToString()} — launching VLC")
+                                "No playable audio track found. Unsupported codec(s): ${unsupportedCodecs.joinToString()} — launching VLC")
                             launchVlcFallback()
                         }
                     }
