@@ -1176,10 +1176,12 @@ class NativePlayerActivity : Activity() {
             val savedPosition = player.currentPosition
             val wasPlaying = player.isPlaying
 
-            val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(srtFile))
+            val srtUri = Uri.fromFile(srtFile)
+            val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(srtUri)
                 .setMimeType(MimeTypes.APPLICATION_SUBRIP)
                 .setLanguage(langCode)
                 .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+                .setId(srtUri.toString())
                 .build()
 
             val newMediaItem = MediaItem.Builder()
@@ -1219,6 +1221,7 @@ class NativePlayerActivity : Activity() {
             // the sidecar SRT MediaSource has merged into ExoPlayer's track list.
             val srtFileName = srtFile.name        // e.g. "subtitle_ro_1234567890.srt"
             val srtAbsPath = srtFile.absolutePath // e.g. "/data/.../cache/subtitle_ro_...srt"
+            val srtUriString = srtUri.toString()  // e.g. "file:///data/.../cache/subtitle_ro_...srt"
             val listener = object : Player.Listener {
                 override fun onTracksChanged(tracks: Tracks) {
                     // Skip the initial empty-tracks event fired at the start of prepare();
@@ -1240,6 +1243,7 @@ class NativePlayerActivity : Activity() {
                             val fmtId = group.getTrackFormat(i).id ?: ""
                             val isUriMatch = fmtId.contains(srtFileName) ||
                                 fmtId.contains(srtAbsPath) ||
+                                fmtId == srtUriString ||
                                 (fmtId.startsWith("file://") && fmtId.endsWith(".srt"))
                             if (isUriMatch) { uriMatch = Pair(group, i); break@outer }
                         }
