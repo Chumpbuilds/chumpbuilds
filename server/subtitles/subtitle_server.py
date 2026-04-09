@@ -57,7 +57,7 @@ OS_PASSWORD = os.getenv("OPENSUBTITLES_PASSWORD", "")
 
 # In-memory JWT token store
 _jwt_token: str = ""
-_jwt_expires: float = 0.0  # epoch seconds; 0 means unknown / not yet fetched
+_jwt_expires: float = -1.0  # epoch seconds; -1 means not yet authenticated
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -270,7 +270,7 @@ def _fetch_via_subliminal(
         logger.warning("subliminal: unrecognised language '%s', defaulting to English", lang)
         lang_obj = babelfish.Language("eng")
 
-    providers = ["opensubtitles", "podnapisi", "gestdown", "tvsubtitles"]
+    providers = ["opensubtitles", "podnapisi", "tvsubtitles"]
 
     try:
         if season is not None and episode is not None:
