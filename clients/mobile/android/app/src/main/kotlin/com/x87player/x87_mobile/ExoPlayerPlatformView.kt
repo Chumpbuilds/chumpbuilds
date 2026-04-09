@@ -81,12 +81,14 @@ class ExoPlayerPlatformView(
                 sendStateUpdate(hasError = true, errorMessage = error.message)
             }
             override fun onTracksChanged(tracks: Tracks) {
-                var hasAudio = false
-                var hasUnsupportedAudio = false
+                var hasAnyAudioTrack = false
+                var hasPlayableAudio = false
                 val unsupportedCodecs = mutableListOf<String>()
 
                 for (group in tracks.groups) {
                     if (group.type == C.TRACK_TYPE_AUDIO) {
+                        // At least one audio group exists — the stream has audio
+                        hasAnyAudioTrack = true
                         for (i in 0 until group.length) {
                             val format = group.getTrackFormat(i)
                             val selected = group.isTrackSelected(i)
@@ -98,22 +100,22 @@ class ExoPlayerPlatformView(
                                 "channels=${format.channelCount} " +
                                 "selected=$selected supported=$supported")
 
-                            if (selected) {
-                                hasAudio = true
-                                if (!supported) {
-                                    hasUnsupportedAudio = true
-                                    unsupportedCodecs.add(codec)
-                                }
+                            if (selected && supported) {
+                                // A selected+supported track means audio will actually play
+                                hasPlayableAudio = true
+                            } else if (!supported) {
+                                // Unsupported track (whether selected or not) — record it
+                                unsupportedCodecs.add(codec)
                             }
                         }
                     }
                 }
 
-                // If selected audio track(s) are not supported, notify Flutter
+                // If audio exists but none of it is playable, notify Flutter
                 // so it can auto-launch VLC as a fallback player.
-                if (hasAudio && hasUnsupportedAudio) {
+                if (hasAnyAudioTrack && !hasPlayableAudio) {
                     android.util.Log.w("ExoPlayerPlatformView",
-                        "Unsupported audio codec(s) detected: ${unsupportedCodecs.joinToString()}")
+                        "No playable audio track found. Unsupported codec(s): ${unsupportedCodecs.joinToString()}")
                     channel.invokeMethod("onUnsupportedAudioCodec", mapOf(
                         "codecs" to unsupportedCodecs
                     ))

@@ -50,6 +50,11 @@ flutter {
 }
 
 dependencies {
+    // FFmpeg decoder extension — provides software DTS, TrueHD, etc. decoding
+    // The AAR is checked in at app/libs/lib-decoder-ffmpeg-release.aar and was
+    // built from the AndroidX Media lib-decoder-ffmpeg module with DTS enabled.
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
+
     // Media3 ExoPlayer — native zero-copy SurfaceView rendering for NativePlayerActivity
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.5.1")

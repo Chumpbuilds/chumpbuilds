@@ -87,7 +87,10 @@ object ExoPlayerFactory {
                     .build()
             }
         }.apply {
-            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            setExtensionRendererMode(
+                if (isTvDevice) DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
+                else DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON
+            )
             setEnableDecoderFallback(true)
             if (isTvDevice) {
                 setEnableAudioTrackPlaybackParams(false)
@@ -137,7 +140,7 @@ object ExoPlayerFactory {
             "preferredAudioLang=$preferredLang, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
-            "extensionRendererMode=ON, " +
+            "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
             "codecSelector=${if (isTvDevice) "AmlogicAudioCodecSelector" else "DEFAULT"}, " +
             "audioSink=${if (isTvDevice) "no-passthrough" else "default"}")
 
