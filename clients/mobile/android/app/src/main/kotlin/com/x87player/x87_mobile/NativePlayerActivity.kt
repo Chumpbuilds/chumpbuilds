@@ -1214,20 +1214,21 @@ class NativePlayerActivity : Activity() {
             // embedded provider subtitle tracks (e.g. English DVB/WebVTT) which ExoPlayer
             // might otherwise prefer over the injected sidecar SRT.
             //
-            // IMPORTANT: ExoPlayer's MergingMediaSource does NOT reliably propagate the custom
-            // SubtitleConfiguration.id to the runtime Format.id — it often assigns index-based
-            // IDs like "0:0" or "1:0" instead of the file URI we set via .setId().
+            // IMPORTANT: ExoPlayer's MergingMediaSource does NOT propagate the custom
+            // SubtitleConfiguration.id to Format.id.  Instead it assigns index-based IDs like
+            // "0:0" (main source, track 0) or "1:0" (sidecar source, track 0).  The sidecar
+            // subtitle source always gets the highest source index because it is added via
+            // setSubtitleConfigurations() after the main stream source.
             //
-            // Primary strategy: use the last-text-group heuristic.
-            //   When ExoPlayer merges a sidecar subtitle with the main stream, the sidecar
-            //   track group is always appended AFTER the main stream's track groups.  So the
-            //   last text Tracks.Group with exactly 1 track is reliably our injected SRT.
-            //
-            // Secondary strategy: if format.id happens to contain the URI (older ExoPlayer
-            //   builds or future versions may propagate it correctly), use that match instead.
-            val srtFileName = srtFile.name        // e.g. "subtitle_ro_1234567890.srt"
-            val srtAbsPath = srtFile.absolutePath // e.g. "/data/.../cache/subtitle_ro_...srt"
-            val srtUriString = srtUri.toString()  // e.g. "file:///data/.../cache/subtitle_ro_...srt"
+            // Identification strategy (in order):
+            //   1. Language match: if exactly one text group has a track whose format.language
+            //      equals langCode, that is the injected sidecar SRT.
+            //   2. Language + source-index disambiguation: when multiple groups share the same
+            //      language (e.g. user picks English and the stream also embeds English), select
+            //      the group whose format.id has the highest source-index prefix ("N:M" → N).
+            //   3. Source-index fallback: no language match — pick the group with the highest
+            //      source-index prefix (≥ 1 means it comes from the sidecar source).
+            //   4. Last resort: pick the last text group, first track.
 
             fun findSidecarGroup(tracks: Tracks): Pair<Tracks.Group, Int>? {
                 val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
@@ -1249,49 +1250,65 @@ class NativePlayerActivity : Activity() {
                     }
                 }
 
-                // Secondary: URI-based match (works when ExoPlayer propagates the custom id)
-                var uriMatch: Pair<Tracks.Group, Int>? = null
-                outer@ for (group in textGroups) {
-                    for (i in 0 until group.length) {
-                        val fmtId = group.getTrackFormat(i).id ?: ""
-                        val isUriMatch = fmtId.contains(srtFileName) ||
-                            fmtId.contains(srtAbsPath) ||
-                            fmtId == srtUriString ||
-                            (fmtId.startsWith("file://") && fmtId.endsWith(".srt"))
-                        if (isUriMatch) { uriMatch = Pair(group, i); break@outer }
-                    }
-                }
-                if (uriMatch != null) {
-                    android.util.Log.d(
-                        "NativePlayerActivity",
-                        "SRT track identified via URI match: id=${
-                            uriMatch.first.getTrackFormat(uriMatch.second).id}"
-                    )
-                    return uriMatch
+                // Strategy 1: language match
+                val langMatches = textGroups.filter { group ->
+                    (0 until group.length).any { i -> group.getTrackFormat(i).language == langCode }
                 }
 
-                // Primary: last-text-group heuristic — the sidecar SRT is always appended
-                // after the main stream's groups and produces a single-track group.
-                // Accept the last text group if it has exactly 1 track:
-                //   - If there are multiple text groups, the last single-track one is the sidecar.
-                //   - If there is only 1 text group with 1 track, the stream has no embedded subs
-                //     so it must be the sidecar.
-                val candidate = textGroups.last()
-                if (candidate.length == 1) {
-                    val fmt = candidate.getTrackFormat(0)
+                if (langMatches.size == 1) {
+                    val group = langMatches[0]
+                    val trackIndex = (0 until group.length)
+                        .firstOrNull { i -> group.getTrackFormat(i).language == langCode } ?: 0
                     android.util.Log.d(
                         "NativePlayerActivity",
-                        "SRT track identified via last-group heuristic:" +
-                            " id=${fmt.id} lang=${fmt.language} mime=${fmt.sampleMimeType}"
+                        "SRT track identified via language match:" +
+                            " id=${group.getTrackFormat(trackIndex).id}"
                     )
-                    return Pair(candidate, 0)
+                    return Pair(group, trackIndex)
                 }
 
+                if (langMatches.size > 1) {
+                    // Strategy 2: multiple groups share the language — pick highest source index.
+                    val best = langMatches.maxByOrNull { group ->
+                        (0 until group.length).maxOfOrNull { i ->
+                            parseSourceIndex(group.getTrackFormat(i).id)
+                        } ?: -1
+                    }!!
+                    val trackIndex = (0 until best.length)
+                        .firstOrNull { i -> best.getTrackFormat(i).language == langCode } ?: 0
+                    android.util.Log.d(
+                        "NativePlayerActivity",
+                        "SRT track identified via language+source-index disambiguation:" +
+                            " id=${best.getTrackFormat(trackIndex).id}"
+                    )
+                    return Pair(best, trackIndex)
+                }
+
+                // Strategy 3: no language match — pick group with highest source-index prefix.
+                val highestSourceGroup = textGroups.maxByOrNull { group ->
+                    (0 until group.length).maxOfOrNull { i ->
+                        parseSourceIndex(group.getTrackFormat(i).id)
+                    } ?: -1
+                }!!
+                val highestSourceIndex = (0 until highestSourceGroup.length).maxOfOrNull { i ->
+                    parseSourceIndex(highestSourceGroup.getTrackFormat(i).id)
+                } ?: -1
+                if (highestSourceIndex >= 1) {
+                    android.util.Log.d(
+                        "NativePlayerActivity",
+                        "SRT track identified via highest source-index fallback:" +
+                            " id=${highestSourceGroup.getTrackFormat(0).id}"
+                    )
+                    return Pair(highestSourceGroup, 0)
+                }
+
+                // Strategy 4: last resort — last text group, first track.
+                val last = textGroups.last()
                 android.util.Log.d(
                     "NativePlayerActivity",
-                    "SRT track not yet identifiable — waiting for next onTracksChanged"
+                    "SRT track via last-resort heuristic: id=${last.getTrackFormat(0).id}"
                 )
-                return null
+                return Pair(last, 0)
             }
 
             val listener = object : Player.Listener {
@@ -1333,9 +1350,9 @@ class NativePlayerActivity : Activity() {
             subtitleTrackListener = listener
             player.addListener(listener)
 
-            // Safety timeout: if the SRT track never appears (e.g. ExoPlayer fails to merge
-            // the sidecar MediaSource), try the last-text-group heuristic one final time,
-            // then fall back to preferred-language auto-selection.
+            // Safety timeout: if the listener never fires a usable match within 5 seconds
+            // (e.g. ExoPlayer fails to merge the sidecar MediaSource), try one final time
+            // with the same strategy, then fall back to preferred-language auto-selection.
             subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
             subtitleTimeoutRunnable = Runnable {
                 subtitleTrackListener?.let { player.removeListener(it) }
@@ -1348,7 +1365,7 @@ class NativePlayerActivity : Activity() {
                     val (targetGroup, targetIndex) = fallbackMatch
                     android.util.Log.w(
                         "NativePlayerActivity",
-                        "SRT timeout — selecting via last-group heuristic:" +
+                        "SRT timeout — forcing track selection:" +
                             " id=${targetGroup.getTrackFormat(targetIndex).id}"
                     )
                     player.trackSelectionParameters = player.trackSelectionParameters
@@ -1390,6 +1407,15 @@ class NativePlayerActivity : Activity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Failed to load subtitles: ${e.message}", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Extracts the source index from ExoPlayer's format.id (e.g. "1:0" → 1, "0:2" → 0).
+     *  Returns -1 if the format.id is null or doesn't match the "N:M" pattern. */
+    private fun parseSourceIndex(formatId: String?): Int {
+        if (formatId == null) return -1
+        val colonIndex = formatId.indexOf(':')
+        if (colonIndex <= 0) return -1
+        return formatId.substring(0, colonIndex).toIntOrNull() ?: -1
     }
 
     private fun showSettingsDialog() {
