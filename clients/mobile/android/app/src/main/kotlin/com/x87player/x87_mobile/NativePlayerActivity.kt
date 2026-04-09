@@ -1228,7 +1228,8 @@ class NativePlayerActivity : Activity() {
             //      the group whose format.id has the highest source-index prefix ("N:M" → N).
             //   3. Source-index fallback: no language match — pick the group with the highest
             //      source-index prefix (≥ 1 means it comes from the sidecar source).
-            //   4. Last resort: pick the last text group, first track.
+            //      If the highest source-index is 0 (only main stream present), return null to
+            //      wait for the next onTracksChanged when the sidecar has merged in.
 
             fun findSidecarGroup(tracks: Tracks): Pair<Tracks.Group, Int>? {
                 val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
@@ -1302,13 +1303,12 @@ class NativePlayerActivity : Activity() {
                     return Pair(highestSourceGroup, 0)
                 }
 
-                // Strategy 4: last resort — last text group, first track.
-                val last = textGroups.last()
+                // Sidecar not yet merged — return null to wait for next onTracksChanged.
                 android.util.Log.d(
                     "NativePlayerActivity",
-                    "SRT track via last-resort heuristic: id=${last.getTrackFormat(0).id}"
+                    "SRT sidecar not yet merged (highest source-index=$highestSourceIndex) — waiting"
                 )
-                return Pair(last, 0)
+                return null
             }
 
             val listener = object : Player.Listener {
