@@ -1214,14 +1214,86 @@ class NativePlayerActivity : Activity() {
             // embedded provider subtitle tracks (e.g. English DVB/WebVTT) which ExoPlayer
             // might otherwise prefer over the injected sidecar SRT.
             //
-            // IMPORTANT: The listener ONLY commits (sets override + removes itself) when it
-            // positively identifies the injected SRT by its file:// URI.  If no URI match is
-            // found it returns early and waits for the next onTracksChanged — this prevents
-            // accidentally force-selecting an embedded English track in the race window before
-            // the sidecar SRT MediaSource has merged into ExoPlayer's track list.
+            // IMPORTANT: ExoPlayer's MergingMediaSource does NOT reliably propagate the custom
+            // SubtitleConfiguration.id to the runtime Format.id — it often assigns index-based
+            // IDs like "0:0" or "1:0" instead of the file URI we set via .setId().
+            //
+            // Primary strategy: use the last-text-group heuristic.
+            //   When ExoPlayer merges a sidecar subtitle with the main stream, the sidecar
+            //   track group is always appended AFTER the main stream's track groups.  So the
+            //   last text Tracks.Group with exactly 1 track is reliably our injected SRT.
+            //
+            // Secondary strategy: if format.id happens to contain the URI (older ExoPlayer
+            //   builds or future versions may propagate it correctly), use that match instead.
             val srtFileName = srtFile.name        // e.g. "subtitle_ro_1234567890.srt"
             val srtAbsPath = srtFile.absolutePath // e.g. "/data/.../cache/subtitle_ro_...srt"
             val srtUriString = srtUri.toString()  // e.g. "file:///data/.../cache/subtitle_ro_...srt"
+
+            fun findSidecarGroup(tracks: Tracks): Pair<Tracks.Group, Int>? {
+                val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                if (textGroups.isEmpty()) return null
+
+                android.util.Log.d(
+                    "NativePlayerActivity",
+                    "onTracksChanged: ${textGroups.size} text group(s) found"
+                )
+                textGroups.forEachIndexed { idx, group ->
+                    for (i in 0 until group.length) {
+                        val fmt = group.getTrackFormat(i)
+                        android.util.Log.d(
+                            "NativePlayerActivity",
+                            "  textGroup[$idx] track[$i]: id=${fmt.id} lang=${fmt.language}" +
+                                " mime=${fmt.sampleMimeType} label=${fmt.label}" +
+                                " trackCount=${group.length}"
+                        )
+                    }
+                }
+
+                // Secondary: URI-based match (works when ExoPlayer propagates the custom id)
+                var uriMatch: Pair<Tracks.Group, Int>? = null
+                outer@ for (group in textGroups) {
+                    for (i in 0 until group.length) {
+                        val fmtId = group.getTrackFormat(i).id ?: ""
+                        val isUriMatch = fmtId.contains(srtFileName) ||
+                            fmtId.contains(srtAbsPath) ||
+                            fmtId == srtUriString ||
+                            (fmtId.startsWith("file://") && fmtId.endsWith(".srt"))
+                        if (isUriMatch) { uriMatch = Pair(group, i); break@outer }
+                    }
+                }
+                if (uriMatch != null) {
+                    android.util.Log.d(
+                        "NativePlayerActivity",
+                        "SRT track identified via URI match: id=${
+                            uriMatch.first.getTrackFormat(uriMatch.second).id}"
+                    )
+                    return uriMatch
+                }
+
+                // Primary: last-text-group heuristic — the sidecar SRT is always appended
+                // after the main stream's groups and produces a single-track group.
+                // Accept the last text group if it has exactly 1 track:
+                //   - If there are multiple text groups, the last single-track one is the sidecar.
+                //   - If there is only 1 text group with 1 track, the stream has no embedded subs
+                //     so it must be the sidecar.
+                val candidate = textGroups.last()
+                if (candidate.length == 1) {
+                    val fmt = candidate.getTrackFormat(0)
+                    android.util.Log.d(
+                        "NativePlayerActivity",
+                        "SRT track identified via last-group heuristic:" +
+                            " id=${fmt.id} lang=${fmt.language} mime=${fmt.sampleMimeType}"
+                    )
+                    return Pair(candidate, 0)
+                }
+
+                android.util.Log.d(
+                    "NativePlayerActivity",
+                    "SRT track not yet identifiable — waiting for next onTracksChanged"
+                )
+                return null
+            }
+
             val listener = object : Player.Listener {
                 override fun onTracksChanged(tracks: Tracks) {
                     // Skip the initial empty-tracks event fired at the start of prepare();
@@ -1230,32 +1302,20 @@ class NativePlayerActivity : Activity() {
 
                     val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
                     // If no text groups are present yet (e.g. the sidecar SRT MediaSource
-                    // hasn't merged in yet), keep listening — do NOT fall through to
-                    // mime-type or language-based matches which would pick embedded tracks.
+                    // hasn't merged in yet), keep listening.
                     if (textGroups.isEmpty()) return
 
-                    // Search for the injected SRT by URI only — the file:// scheme is the
-                    // only reliable identifier since embedded stream tracks (e.g. English
-                    // WebVTT/DVB) share the same mime type and may share the same language.
-                    var uriMatch: Pair<Tracks.Group, Int>? = null
-                    outer@ for (group in textGroups) {
-                        for (i in 0 until group.length) {
-                            val fmtId = group.getTrackFormat(i).id ?: ""
-                            val isUriMatch = fmtId.contains(srtFileName) ||
-                                fmtId.contains(srtAbsPath) ||
-                                fmtId == srtUriString ||
-                                (fmtId.startsWith("file://") && fmtId.endsWith(".srt"))
-                            if (isUriMatch) { uriMatch = Pair(group, i); break@outer }
-                        }
-                    }
-
-                    // If the injected SRT track hasn't merged yet, wait for the next event.
-                    // Do NOT fall through to mime-type or language-based matches — those will
-                    // incorrectly select the embedded stream tracks.
-                    if (uriMatch == null) return
+                    val match = findSidecarGroup(tracks) ?: return
 
                     // Found it — force-select the injected SRT and cancel the safety timeout.
-                    val (targetGroup, targetIndex) = uriMatch!!
+                    val (targetGroup, targetIndex) = match
+                    android.util.Log.i(
+                        "NativePlayerActivity",
+                        "Forcing text track selection: group trackCount=${targetGroup.length}" +
+                            " trackIndex=$targetIndex" +
+                            " id=${targetGroup.getTrackFormat(targetIndex).id}" +
+                            " lang=${targetGroup.getTrackFormat(targetIndex).language}"
+                    )
                     player.trackSelectionParameters = player.trackSelectionParameters
                         .buildUpon()
                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
@@ -1274,23 +1334,42 @@ class NativePlayerActivity : Activity() {
             player.addListener(listener)
 
             // Safety timeout: if the SRT track never appears (e.g. ExoPlayer fails to merge
-            // the sidecar MediaSource), clear overrides after 5 s and let ExoPlayer's
-            // preferred-language auto-selection pick the best available text track.
+            // the sidecar MediaSource), try the last-text-group heuristic one final time,
+            // then fall back to preferred-language auto-selection.
             subtitleTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
             subtitleTimeoutRunnable = Runnable {
                 subtitleTrackListener?.let { player.removeListener(it) }
                 subtitleTrackListener = null
                 subtitleTimeoutRunnable = null
-                player.trackSelectionParameters = player.trackSelectionParameters
-                    .buildUpon()
-                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                    .setPreferredTextLanguage(langCode)
-                    .build()
-                android.util.Log.w(
-                    "NativePlayerActivity",
-                    "SRT track selection timed out — falling back to preferred language: $langCode"
-                )
+
+                val currentTracks = player.currentTracks
+                val fallbackMatch = findSidecarGroup(currentTracks)
+                if (fallbackMatch != null) {
+                    val (targetGroup, targetIndex) = fallbackMatch
+                    android.util.Log.w(
+                        "NativePlayerActivity",
+                        "SRT timeout — selecting via last-group heuristic:" +
+                            " id=${targetGroup.getTrackFormat(targetIndex).id}"
+                    )
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        .setOverrideForType(
+                            TrackSelectionOverride(targetGroup.mediaTrackGroup, listOf(targetIndex))
+                        )
+                        .build()
+                } else {
+                    android.util.Log.w(
+                        "NativePlayerActivity",
+                        "SRT track selection timed out — falling back to preferred language: $langCode"
+                    )
+                    player.trackSelectionParameters = player.trackSelectionParameters
+                        .buildUpon()
+                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                        .setPreferredTextLanguage(langCode)
+                        .build()
+                }
             }
             subtitleTimeoutRunnable?.let { mainHandler.postDelayed(it, 5_000L) }
 
