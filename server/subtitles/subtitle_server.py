@@ -407,6 +407,17 @@ def _extract_srt_from_zip(data: bytes) -> str:
     return raw.decode("latin-1", errors="replace")
 
 
+def _strip_bom(text: str) -> str:
+    """Remove a leading UTF-8 BOM (U+FEFF) from *text* if present.
+
+    Some subtitle files are stored with a BOM.  Certain players (e.g. Android
+    ExoPlayer) fail to parse SRT when the very first byte is ``EF BB BF``
+    rather than the ASCII digit ``1``.  Stripping it server-side keeps the
+    response format clean for all clients.
+    """
+    return text[1:] if text.startswith("\ufeff") else text
+
+
 def _subsro_download(download_url: str) -> str:
     """Download subtitle content from the URL returned by subs.ro. Returns SRT text.
 
@@ -711,6 +722,7 @@ async def get_subtitles(
             status_code=502,
         )
 
+    srt_text = _strip_bom(srt_text)
     logger.info("Subtitle fetched via %s for '%s' (%s)", provider_used, title, lang)
     _cache_write(key, srt_text)
     return PlainTextResponse(srt_text, status_code=200)
@@ -814,7 +826,7 @@ async def download_subtitle(
 
     _cache_write(cache_key, srt_text)
     logger.info("Downloaded subtitle file_id=%s (%d bytes)", file_id, len(srt_text))
-    return PlainTextResponse(srt_text, status_code=200)
+    return PlainTextResponse(_strip_bom(srt_text), status_code=200)
 
 
 @app.get("/health")

@@ -844,5 +844,46 @@ class TestCp1250Fallback(unittest.TestCase):
         self.assertIn("\u015f", result, "cp1250 character must be decoded correctly")
 
 
+class TestBomStripping(unittest.TestCase):
+    """Tests that the /subtitles endpoint strips a UTF-8 BOM from SRT responses."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+        self.srv.SUBSRO_API_KEY = "test-key-123"
+
+    def test_endpoint_strips_bom_from_srt_response(self):
+        """Response body must start with '1\\n', not the UTF-8 BOM EF BB BF."""
+        from fastapi.testclient import TestClient
+
+        # SRT content with a UTF-8 BOM prepended (as subs.ro sometimes returns)
+        srt_with_bom = "\ufeff1\n00:00:01,000 --> 00:00:03,000\nHello\n"
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=srt_with_bom),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=Hello+Movie&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        # Raw bytes must NOT start with the UTF-8 BOM (EF BB BF)
+        self.assertFalse(
+            resp.content.startswith(b"\xef\xbb\xbf"),
+            "Response body must not start with UTF-8 BOM bytes EF BB BF",
+        )
+        # Body must start with '1\n' — the first line of a well-formed SRT
+        self.assertTrue(
+            resp.text.startswith("1\n"),
+            f"Response body must start with '1\\n' but got: {resp.text[:20]!r}",
+        )
+        # Content-Type must still advertise plain text UTF-8
+        ct = resp.headers.get("content-type", "")
+        self.assertIn("text/plain", ct)
+
+
 if __name__ == "__main__":
     unittest.main()
