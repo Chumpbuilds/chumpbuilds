@@ -1170,6 +1170,24 @@ class TestSyntheticFileId(unittest.TestCase):
         self.assertIsInstance(fid, int)
         self.assertGreater(fid, 0)
 
+    def test_make_synthetic_file_id_within_int32_range(self):
+        """Regression: synthetic id must fit in signed 32-bit int (Android/iOS Int)."""
+        _INT32_MAX = 2_147_483_647
+        urls = [
+            "https://api.subs.ro/v1.0/subtitle/99/download",
+            "https://api.subs.ro/v1.0/subtitle/68323566990/download",
+            "https://api.subs.ro/v1.0/subtitle/1/download",
+            "https://api.subs.ro/v1.0/subtitle/2147483648/download",
+        ]
+        for url in urls:
+            for salt in range(3):
+                fid = self.srv._make_synthetic_file_id(url, salt=salt)
+                self.assertGreater(fid, 0, f"id must be > 0 for url={url} salt={salt}")
+                self.assertLessEqual(
+                    fid, _INT32_MAX,
+                    f"id={fid} exceeds INT32_MAX for url={url} salt={salt}",
+                )
+
     def test_make_synthetic_file_id_is_deterministic(self):
         """Same URL must always produce the same id."""
         url = "https://api.subs.ro/v1.0/subtitle/99/download"
@@ -1226,12 +1244,12 @@ class TestSyntheticFileId(unittest.TestCase):
 
     def test_map_file_is_valid_json(self):
         """The map file on disk must be valid JSON after registration."""
-        import json as _json
+        import json
         from pathlib import Path
         self.srv._register_synthetic_id("https://api.subs.ro/v1.0/subtitle/1/download")
         map_path = Path(self._tmp) / "synthetic_ids.json"
         self.assertTrue(map_path.exists())
-        data = _json.loads(map_path.read_text(encoding="utf-8"))
+        data = json.loads(map_path.read_text(encoding="utf-8"))
         self.assertIsInstance(data, dict)
         self.assertGreater(len(data), 0)
 
@@ -1342,6 +1360,128 @@ class TestSyntheticFileId(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), [], "Result with no download URL must be skipped")
+
+    def test_search_subsro_file_id_within_int32_range(self):
+        """Regression: /subtitles/search must return file_id <= 2147483647 (signed int32 max)."""
+        from fastapi.testclient import TestClient
+
+        _INT32_MAX = 2_147_483_647
+        subsro_items = [
+            {
+                "id": 68323566990,  # Large id that previously caused overflow
+                "language": "ro",
+                "title": "Pets on a Train",
+                "release": "Pets.on.a.Train.2025.BluRay",
+                "downloads": 100,
+                "url": "https://api.subs.ro/v1.0/subtitle/68323566990/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/search?title=Pets+on+a+Train&year=2025&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertGreater(len(data), 0)
+        fid = data[0]["file_id"]
+        self.assertIsInstance(fid, int)
+        self.assertGreater(fid, 0)
+        self.assertLessEqual(
+            fid, _INT32_MAX,
+            f"file_id={fid} exceeds INT32_MAX — Android/iOS clients would overflow",
+        )
+
+    def test_download_with_int32_file_id_returns_srt(self):
+        """Regression: /subtitles/download with an int32 synthetic file_id returns 200 + SRT."""
+        from fastapi.testclient import TestClient
+
+        _INT32_MAX = 2_147_483_647
+        fake_srt = "1\n00:00:01,000 --> 00:00:03,000\nHello World\n"
+        download_url = "https://api.subs.ro/v1.0/subtitle/68323566990/download"
+
+        fid = self.srv._register_synthetic_id(download_url)
+        self.assertLessEqual(fid, _INT32_MAX, "Registered id must be in int32 range")
+
+        with patch.object(self.srv, "_subsro_download", return_value=fake_srt):
+            with patch.object(self.srv, "_cache_read", return_value=None):
+                client = TestClient(self.srv.app)
+                resp = client.get(f"/subtitles/download?file_id={fid}")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.text, fake_srt)
+
+    # ------------------------------------------------------------------
+    # Migration
+    # ------------------------------------------------------------------
+
+    def test_migrate_replaces_oversized_ids(self):
+        """_migrate_synthetic_id_map must rewrite ids that exceed INT32_MAX."""
+        import json
+        from pathlib import Path
+
+        _INT32_MAX = 2_147_483_647
+        oversized_id = 68323566990  # > INT32_MAX
+        download_url = "https://api.subs.ro/v1.0/subtitle/68323566990/download"
+
+        # Write a mapping file with an out-of-range id
+        old_map = {
+            str(oversized_id): {
+                "download_url": download_url,
+                "provider": "subs.ro",
+                "language": "ro",
+            }
+        }
+        map_path = Path(self._tmp) / "synthetic_ids.json"
+        map_path.write_text(json.dumps(old_map), encoding="utf-8")
+
+        self.srv._migrate_synthetic_id_map()
+
+        new_map = json.loads(map_path.read_text(encoding="utf-8"))
+        for k in new_map:
+            new_id = int(k)
+            self.assertGreater(new_id, 0)
+            self.assertLessEqual(
+                new_id, _INT32_MAX,
+                f"Migrated id={new_id} still exceeds INT32_MAX",
+            )
+        # Entry must be preserved under a new key
+        values = list(new_map.values())
+        self.assertEqual(len(values), 1)
+        self.assertEqual(values[0]["download_url"], download_url)
+        # Old file must have been backed up
+        backup_path = Path(self._tmp) / "synthetic_ids.bak"
+        self.assertTrue(backup_path.exists(), "Backup .bak file must be created during migration")
+
+    def test_migrate_no_op_when_all_ids_in_range(self):
+        """_migrate_synthetic_id_map must not modify the file when all ids are in int32 range."""
+        import json
+        from pathlib import Path
+
+        in_range_id = 123456
+        download_url = "https://api.subs.ro/v1.0/subtitle/1/download"
+        old_map = {
+            str(in_range_id): {"download_url": download_url, "provider": "subs.ro"}
+        }
+        map_path = Path(self._tmp) / "synthetic_ids.json"
+        map_path.write_text(json.dumps(old_map), encoding="utf-8")
+        mtime_before = map_path.stat().st_mtime
+
+        self.srv._migrate_synthetic_id_map()
+
+        mtime_after = map_path.stat().st_mtime
+        self.assertEqual(mtime_before, mtime_after, "File must not be touched when no migration needed")
+        backup_path = Path(self._tmp) / "synthetic_ids.bak"
+        self.assertFalse(backup_path.exists(), "No backup should be created when migration is a no-op")
+
+    def test_migrate_no_op_when_file_absent(self):
+        """_migrate_synthetic_id_map must silently do nothing when no map file exists."""
+        from pathlib import Path
+        map_path = Path(self._tmp) / "synthetic_ids.json"
+        self.assertFalse(map_path.exists())
+        # Must not raise
+        self.srv._migrate_synthetic_id_map()
 
     # ------------------------------------------------------------------
     # /subtitles/download — synthetic id path

@@ -23,6 +23,7 @@ import io
 import json
 import logging
 import os
+import shutil
 import time
 import zipfile
 from pathlib import Path
@@ -664,10 +665,14 @@ def _cache_write(key: str, content: str) -> None:
 # Synthetic file_id helpers (subs.ro ↔ integer file_id mapping)
 # ---------------------------------------------------------------------------
 # Real OpenSubtitles file_ids are typically small integers (< ~10 million).
-# Synthetic ids are derived from SHA-256 of the subs.ro download URL, taking
-# the last 9 hex digits (max ~68 billion).  Because they are identified by
-# presence in the persistent map rather than by range, collisions with real
-# VIP ids are handled correctly: the map is checked first on download.
+# Synthetic ids are derived from the first 32 bits of SHA-256 of the subs.ro
+# download URL, masked to 31 bits so they always fit in a signed 32-bit int
+# (1..2_147_483_647).  Android Kotlin Int / iOS Swift Int JSON deserializers
+# require values within this range.  Because they are identified by presence
+# in the persistent map rather than by range, collisions with real VIP ids are
+# handled correctly: the map is checked first on download.
+
+_INT32_MAX = 2_147_483_647  # 0x7FFFFFFF — max signed 32-bit integer
 
 def _load_synthetic_id_map() -> dict[str, dict]:
     """Load the synthetic file_id → subs.ro metadata map from disk.
@@ -700,15 +705,72 @@ def _save_synthetic_id_map(mapping: dict[str, dict]) -> None:
             pass
 
 
-def _make_synthetic_file_id(download_url: str, salt: int = 0) -> int:
-    """Hash *download_url* (+optional *salt*) to a stable positive integer.
+def _migrate_synthetic_id_map() -> None:
+    """Migrate an existing map that contains out-of-range (> _INT32_MAX) ids.
 
-    Uses the last 9 hex digits of SHA-256, giving a range of 1–68 billion.
+    If all ids already fit in 1.._INT32_MAX no file is touched.  Otherwise a
+    ``.bak`` backup of the old file is kept and a new map is written atomically
+    with ids regenerated from the provider + download_url via the current hash.
+    """
+    path = CACHE_DIR / "synthetic_ids.json"
+    if not path.exists():
+        return
+    try:
+        old_map: dict[str, dict] = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("synthetic_id_map: migrate — failed to load: %s", exc)
+        return
+
+    needs_migration = any(
+        not (1 <= int(k) <= _INT32_MAX) for k in old_map if k.isdigit()
+    )
+    if not needs_migration:
+        return
+
+    logger.info(
+        "synthetic_id_map: migrating %d entries to int32 range (ids > %d found)",
+        len(old_map), _INT32_MAX,
+    )
+
+    # Backup old file
+    backup = path.with_suffix(".bak")
+    try:
+        shutil.copy2(path, backup)
+        logger.info("synthetic_id_map: old map backed up to %s", backup)
+    except Exception as exc:
+        logger.warning("synthetic_id_map: migrate — backup failed: %s", exc)
+
+    # Rebuild map with new int32 ids
+    new_map: dict[str, dict] = {}
+    for entry in old_map.values():
+        download_url = entry.get("download_url", "")
+        if not download_url:
+            continue
+        # Avoid duplicates (same URL may appear under multiple old keys)
+        if any(v.get("download_url") == download_url for v in new_map.values()):
+            continue
+        salt = 0
+        new_id = _make_synthetic_file_id(download_url, salt)
+        while str(new_id) in new_map:
+            salt += 1
+            new_id = _make_synthetic_file_id(download_url, salt)
+        new_map[str(new_id)] = entry
+
+    _save_synthetic_id_map(new_map)
+    logger.info("synthetic_id_map: migration complete (%d entries)", len(new_map))
+
+
+def _make_synthetic_file_id(download_url: str, salt: int = 0) -> int:
+    """Hash *download_url* (+optional *salt*) to a stable positive int32.
+
+    Result is always in 1.._INT32_MAX (signed 32-bit range) so Android Kotlin
+    ``Int`` / iOS Swift ``Int`` JSON deserializers accept it without overflow.
+    Uses the first 8 hex digits of SHA-256 masked to 31 bits.
     Returns 1 as a fallback if the hash produces 0 (astronomically unlikely).
     """
     raw = f"{download_url}:{salt}" if salt else download_url
     digest = hashlib.sha256(raw.encode()).hexdigest()
-    return int(digest[-9:], 16) or 1
+    return (int(digest[:8], 16) & _INT32_MAX) or 1
 
 
 def _register_synthetic_id(download_url: str, extra_metadata: dict | None = None) -> int:
@@ -748,6 +810,11 @@ def _lookup_synthetic_id(file_id: int) -> dict | None:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    """Run one-time initialisation tasks when the server starts."""
+    _migrate_synthetic_id_map()
 
 @app.api_route("/subtitles", methods=["GET", "HEAD"], response_class=PlainTextResponse)
 async def get_subtitles(
