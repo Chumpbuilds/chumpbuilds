@@ -390,9 +390,10 @@ def _extract_srt_from_zip(data: bytes) -> str:
 
         # Pick the largest uncompressed entry
         best = max(candidates, key=lambda info: info.file_size)
+        safe_name = os.path.basename(best.filename)
         logger.info(
             "subs.ro: ZIP archive detected — extracting '%s' (%d bytes)",
-            best.filename,
+            safe_name,
             best.file_size,
         )
         raw = zf.read(best.filename)
