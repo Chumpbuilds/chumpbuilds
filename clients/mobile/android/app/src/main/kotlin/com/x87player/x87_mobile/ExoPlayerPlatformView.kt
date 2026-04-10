@@ -335,7 +335,10 @@ class ExoPlayerPlatformView(
             try {
                 val arr = org.json.JSONArray(langsJson)
                 (0 until arr.length()).map { arr.getString(it) }
-            } catch (_: Exception) { listOf("en") }
+            } catch (e: Exception) {
+                android.util.Log.w("ExoPlayerPlatformView", "Failed to parse subtitle language prefs: ${e.message}")
+                listOf("en")
+            }
         } else { listOf("en") }
 
         val progressDialog = ProgressDialog(context).apply {
@@ -385,7 +388,9 @@ class ExoPlayerPlatformView(
                         }
                     }
                     connection.disconnect()
-                } catch (_: Exception) { /* try next language */ }
+                } catch (e: Exception) {
+                    android.util.Log.w("ExoPlayerPlatformView", "Subtitle search failed for lang=$lang: ${e.message}")
+                }
             }
 
             mainHandler.post {
@@ -453,7 +458,9 @@ class ExoPlayerPlatformView(
                     srtText = connection.inputStream.bufferedReader().readText()
                 }
                 connection.disconnect()
-            } catch (_: Exception) { /* handled below */ }
+            } catch (e: Exception) {
+                android.util.Log.w("ExoPlayerPlatformView", "Subtitle download failed for file_id=$fileId: ${e.message}")
+            }
 
             mainHandler.post {
                 progressDialog.dismiss()
