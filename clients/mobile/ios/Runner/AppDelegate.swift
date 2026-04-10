@@ -42,11 +42,19 @@ import Flutter
 
             let title = args["title"] as? String
             let contentType = args["contentType"] as? String ?? "live"
+            let year = args["year"] as? String
+            let tmdbId = args["tmdbId"] as? String
+            let season = args["season"] as? Int
+            let episode = args["episode"] as? Int
 
             if contentType == "movie" || contentType == "series" {
                 let vlcVC = VLCPlayerViewController()
                 vlcVC.streamURL = url
                 vlcVC.streamTitle = title
+                vlcVC.contentYear = year
+                vlcVC.contentTmdbId = tmdbId
+                vlcVC.contentSeason = season
+                vlcVC.contentEpisode = episode
                 vlcVC.modalPresentationStyle = .fullScreen
                 vlcVC.onDismissed = {
                     result("dismissed")
