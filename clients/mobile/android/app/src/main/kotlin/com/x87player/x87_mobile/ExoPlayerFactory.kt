@@ -5,6 +5,7 @@ import android.content.res.Configuration
 import android.os.Build
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -117,6 +118,14 @@ object ExoPlayerFactory {
                 // ExoPlayer picks the correct audio track on multi-language streams
                 // instead of falling back to codec/channel heuristics.
                 .setPreferredAudioLanguage(preferredLang)
+                // Set preferred text language to English as the default hint so that
+                // when a user injects an English subtitle ExoPlayer can prioritise it.
+                // Text tracks are NOT auto-enabled here — no SELECTION_FLAG_DEFAULT is
+                // set on the MediaItem, so subtitles remain off until the user picks one.
+                .setPreferredTextLanguage("en")
+                // Ensure text tracks are never globally disabled so that injected
+                // subtitle tracks (from showSubtitlePicker) can be selected at runtime.
+                .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false)
                 .apply {
                     if (isTvDevice) {
                         // Prefer stereo over surround — many cheap boxes/TVs can't
@@ -138,6 +147,7 @@ object ExoPlayerFactory {
         android.util.Log.i("ExoPlayerFactory",
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "preferredAudioLang=$preferredLang, " +
+            "preferredTextLang=en, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
             "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
@@ -150,7 +160,11 @@ object ExoPlayerFactory {
             .setReadTimeoutMs(HTTP_READ_TIMEOUT_MS)
             .setAllowCrossProtocolRedirects(true)
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
+        // Wrap the HTTP factory with DefaultDataSource.Factory so that
+        // ExoPlayer can also read local file:// URIs (subtitle sidecar files
+        // written to cacheDir) as well as HTTP/HTTPS streams.
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
         val player = ExoPlayer.Builder(context, renderersFactory)
             .setTrackSelector(trackSelector)
