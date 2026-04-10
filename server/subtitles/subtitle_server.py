@@ -285,7 +285,7 @@ def _fetch_via_subliminal(
         return None
 
     try:
-        lang_obj = babelfish.Language(lang)
+        lang_obj = babelfish.Language.fromietf(lang)
     except Exception:
         logger.warning("subliminal: unrecognised language '%s', defaulting to English", lang)
         lang_obj = babelfish.Language("eng")

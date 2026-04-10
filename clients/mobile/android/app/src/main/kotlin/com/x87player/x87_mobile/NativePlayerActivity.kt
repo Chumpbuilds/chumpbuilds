@@ -1269,6 +1269,16 @@ class NativePlayerActivity : Activity() {
     }
 
     /**
+     * Returns true if [trackLang] (from ExoPlayer's Format.language, a BCP 47 tag) matches
+     * [langCode] (a 2-letter IETF code sent by the app).  Accepts exact equality, prefix
+     * matches (e.g. "ro" matches "ro-RO"), and 2-letter truncation (e.g. "ron" → "ro").
+     */
+    private fun langMatches(trackLang: String?, langCode: String): Boolean =
+        trackLang == langCode ||
+            trackLang?.startsWith("$langCode-") == true ||
+            langCode == trackLang?.take(2)
+
+    /**
      * Finds the text track whose format ID matches [srtId] in [tracks].
      * Returns the (group, trackIndex) pair, or null if not found.
      */
@@ -1319,7 +1329,9 @@ class NativePlayerActivity : Activity() {
                 // Among text groups that have a track matching langCode, pick the last one:
                 // MergingMediaSource appends the sidecar after embedded tracks.
                 val langMatches = textGroups.filter { group ->
-                    (0 until group.length).any { i -> group.getTrackFormat(i).language == langCode }
+                    (0 until group.length).any { i ->
+                        langMatches(group.getTrackFormat(i).language, langCode)
+                    }
                 }
 
                 targetGroup = if (langMatches.isNotEmpty()) {
@@ -1334,7 +1346,9 @@ class NativePlayerActivity : Activity() {
                 }
 
                 trackIndex = (0 until targetGroup.length)
-                    .lastOrNull { i -> targetGroup.getTrackFormat(i).language == langCode } ?: 0
+                    .lastOrNull { i ->
+                        langMatches(targetGroup.getTrackFormat(i).language, langCode)
+                    } ?: 0
             }
 
             android.util.Log.i(
