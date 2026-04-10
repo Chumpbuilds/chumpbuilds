@@ -884,6 +884,80 @@ class TestBomStripping(unittest.TestCase):
         ct = resp.headers.get("content-type", "")
         self.assertIn("text/plain", ct)
 
+    def test_endpoint_strips_bom_from_bytes_provider_response(self):
+        """Response body is BOM-free when provider returns bytes starting with EF BB BF."""
+        from fastapi.testclient import TestClient
+
+        # Raw bytes with UTF-8 BOM (e.g. from a provider returning bytes directly)
+        srt_bytes_with_bom = b"\xef\xbb\xbf1\n00:00:01,000 --> 00:00:03,000\nHello\n"
+        # _strip_bom accepts bytes; convert to str via _strip_bom before provider mock
+        srt_stripped = self.srv._strip_bom(srt_bytes_with_bom)
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=srt_stripped),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=Hello+Movie&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(
+            resp.content.startswith(b"\xef\xbb\xbf"),
+            "Response body must not start with UTF-8 BOM bytes EF BB BF",
+        )
+        self.assertTrue(
+            resp.text.startswith("1\n"),
+            f"Response body must start with '1\\n' but got: {resp.text[:20]!r}",
+        )
+
+    def test_endpoint_strips_bom_from_cached_entry(self):
+        """BOM is stripped even when the data is served from the cache (regression)."""
+        from fastapi.testclient import TestClient
+
+        # Simulate a cache entry that was written before the BOM-fix (contains BOM)
+        cached_with_bom = "\ufeff1\n00:00:01,000 --> 00:00:03,000\nCached subtitle\n"
+
+        with patch.multiple(
+            self.srv,
+            _cache_read=MagicMock(return_value=cached_with_bom),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=Hello+Movie&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        # Must not start with BOM bytes EF BB BF
+        self.assertFalse(
+            resp.content.startswith(b"\xef\xbb\xbf"),
+            "Cached response body must not start with UTF-8 BOM bytes EF BB BF",
+        )
+        # Must start with '1\n'
+        self.assertTrue(
+            resp.text.startswith("1\n"),
+            f"Cached response must start with '1\\n' but got: {resp.text[:20]!r}",
+        )
+        ct = resp.headers.get("content-type", "")
+        self.assertIn("text/plain", ct)
+
+    def test_strip_bom_function_handles_bytes_with_bom(self):
+        """_strip_bom must strip 3-byte BOM prefix from bytes and return str."""
+        srt_bytes = b"\xef\xbb\xbf1\n00:00:01,000 --> 00:00:02,000\nTest\n"
+        result = self.srv._strip_bom(srt_bytes)
+        self.assertIsInstance(result, str)
+        self.assertFalse(result.startswith("\ufeff"), "BOM char must be stripped")
+        self.assertTrue(result.startswith("1\n"), f"Must start with '1\\n', got {result[:10]!r}")
+
+    def test_strip_bom_function_handles_bytes_without_bom(self):
+        """_strip_bom must decode bytes without BOM unchanged."""
+        srt_bytes = b"1\n00:00:01,000 --> 00:00:02,000\nTest\n"
+        result = self.srv._strip_bom(srt_bytes)
+        self.assertIsInstance(result, str)
+        self.assertTrue(result.startswith("1\n"))
+
 
 if __name__ == "__main__":
     unittest.main()

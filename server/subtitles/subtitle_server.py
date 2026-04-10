@@ -407,14 +407,21 @@ def _extract_srt_from_zip(data: bytes) -> str:
     return raw.decode("latin-1", errors="replace")
 
 
-def _strip_bom(text: str) -> str:
-    """Remove a leading UTF-8 BOM (U+FEFF) from *text* if present.
+def _strip_bom(text: str | bytes | bytearray) -> str:
+    """Remove a leading UTF-8 BOM from *text* if present, always returning str.
 
     Some subtitle files are stored with a BOM.  Certain players (e.g. Android
     ExoPlayer) fail to parse SRT when the very first byte is ``EF BB BF``
     rather than the ASCII digit ``1``.  Stripping it server-side keeps the
     response format clean for all clients.
+
+    Handles both raw bytes (strips the 3-byte ``\\xef\\xbb\\xbf`` sequence and
+    decodes to UTF-8) and str (strips the Unicode BOM character ``\\ufeff``).
     """
+    if isinstance(text, (bytes, bytearray)):
+        if text.startswith(b"\xef\xbb\xbf"):
+            text = text[3:]
+        return text.decode("utf-8", errors="replace")
     return text[1:] if text.startswith("\ufeff") else text
 
 
@@ -686,7 +693,7 @@ async def get_subtitles(
             )
         ep_info = f" S{season:02d}E{episode:02d}" if (season is not None and episode is not None) else ""
         logger.info("Cache hit for '%s'%s (%s)", title, ep_info, lang)
-        return PlainTextResponse(cached, status_code=200)
+        return PlainTextResponse(_strip_bom(cached), status_code=200)
 
     # --- Priority 1: subs.ro ---
     srt_text = _fetch_via_subsro(title, lang, year, imdb_id, season, episode)
