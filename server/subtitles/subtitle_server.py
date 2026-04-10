@@ -47,6 +47,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("subtitle_server")
 
+# Suppress httpx request/response logs at INFO level to prevent sensitive URLs
+# (e.g. those that might contain tokens or keys) from appearing in the log stream.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -62,7 +66,7 @@ OS_PASSWORD = os.getenv("OPENSUBTITLES_PASSWORD", "")
 
 # subs.ro — set SUBSRO_API_KEY to enable (empty string = disabled)
 SUBSRO_API_KEY = os.getenv("SUBSRO_API_KEY", "")
-SUBSRO_BASE = "https://api.subs.ro"
+SUBSRO_BASE = "https://api.subs.ro/v1.0"
 
 # In-memory JWT token store
 _jwt_token: str = ""
@@ -324,43 +328,48 @@ def _subsro_search(
     season: int | None,
     episode: int | None,
 ) -> list[dict]:
-    """Search subs.ro API. Returns list of subtitle result dicts."""
-    params: dict = {
-        "apikey": SUBSRO_API_KEY,
-        "query": title,
-        "language": lang,
-    }
-    if year:
-        params["year"] = year
+    """Search subs.ro API v1.0. Returns list of subtitle result dicts."""
+    # Choose the most specific search field available.
+    # Prefer imdbid when present; fall back to title search.
     if imdb_id:
-        params["imdb_id"] = imdb_id
-    if season is not None:
-        params["season"] = season
-    if episode is not None:
-        params["episode"] = episode
+        search_field = "imdbid"
+        search_value = imdb_id
+    else:
+        search_field = "title"
+        search_value = title
+
+    params: dict = {}
+    if lang:
+        params["language"] = lang
 
     logger.info(
-        "subs.ro search params: title='%s' lang=%s season=%s episode=%s year=%s",
-        title, lang, season, episode, year,
+        "subs.ro search: field=%s value='%s' lang=%s",
+        search_field, search_value, lang,
     )
 
     resp = httpx.get(
-        f"{SUBSRO_BASE}/subtitles",
+        f"{SUBSRO_BASE}/search/{search_field}/{search_value}",
         params=params,
+        headers={"X-Subs-Api-Key": SUBSRO_API_KEY},
         timeout=20,
         follow_redirects=True,
     )
     resp.raise_for_status()
     data = resp.json()
-    # The API may return {"subtitles": [...]} or a bare list
+    # v1.0 API returns {"status": ..., "items": [...], "count": ...}
     if isinstance(data, list):
         return data
-    return data.get("subtitles", data.get("data", []))
+    return data.get("items", data.get("subtitles", data.get("data", [])))
 
 
-def _subsro_download(download_url: str, params: dict | None = None) -> str:
+def _subsro_download(download_url: str) -> str:
     """Download subtitle content from the URL returned by subs.ro. Returns SRT text."""
-    resp = httpx.get(download_url, params=params, timeout=30, follow_redirects=True)
+    resp = httpx.get(
+        download_url,
+        headers={"X-Subs-Api-Key": SUBSRO_API_KEY},
+        timeout=30,
+        follow_redirects=True,
+    )
     resp.raise_for_status()
     return resp.text
 
@@ -433,16 +442,12 @@ def _fetch_via_subsro(
         default=filtered[0],
     )
 
-    # Resolve download URL — subs.ro may return 'url', 'download_url', or 'id'
-    download_url = best.get("url") or best.get("download_url") or ""
-    download_params: dict | None = None
+    # Resolve download URL — subs.ro v1.0 provides a downloadLink field or an id
+    download_url = best.get("downloadLink") or best.get("url") or best.get("download_url") or ""
     if not download_url:
         sub_id = best.get("id")
         if sub_id:
-            # Pass the API key via httpx params so it is never concatenated into
-            # the URL string (avoids key leakage in exception tracebacks).
-            download_url = f"{SUBSRO_BASE}/subtitles/{sub_id}/download"
-            download_params = {"apikey": SUBSRO_API_KEY}
+            download_url = f"{SUBSRO_BASE}/subtitle/{sub_id}/download"
     if not download_url:
         logger.warning("subs.ro: selected result has no download URL for '%s'", title)
         return None
@@ -453,7 +458,7 @@ def _fetch_via_subsro(
     )
 
     try:
-        srt_text = _subsro_download(download_url, params=download_params)
+        srt_text = _subsro_download(download_url)
     except Exception as exc:
         logger.error("subs.ro: download error — %s", exc)
         return None
