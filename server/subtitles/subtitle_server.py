@@ -28,7 +28,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 # ---------------------------------------------------------------------------
 # Load .env from the same directory as this script (best-effort)
@@ -397,11 +397,14 @@ def _extract_srt_from_zip(data: bytes) -> str:
         )
         raw = zf.read(best.filename)
 
-    # Decode: try UTF-8 first, fall back to latin-1
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("latin-1")
+    # Decode: try UTF-8, then cp1250 (common for Romanian/Eastern European subs), then latin-1
+    for encoding in ("utf-8", "cp1250", "latin-1"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    # latin-1 is a superset of all single bytes, so this should never be reached
+    return raw.decode("latin-1", errors="replace")
 
 
 def _subsro_download(download_url: str) -> str:
@@ -616,7 +619,18 @@ def _cache_key(
 def _cache_read(key: str) -> str | None:
     path = CACHE_DIR / f"{key}.srt"
     if path.exists():
-        return path.read_text(errors="replace")
+        content = path.read_text(errors="replace")
+        # Guard against cache entries that were written before ZIP extraction was
+        # implemented (i.e. raw ZIP bytes stored as text).  The first four
+        # characters map 1-to-1 to the ZIP local-file-header magic PK\x03\x04.
+        if content.startswith("PK\x03\x04"):
+            logger.warning(
+                "Cache file %s contains ZIP bytes — deleting poisoned entry",
+                path.name,
+            )
+            path.unlink(missing_ok=True)
+            return None
+        return content
     return None
 
 
@@ -646,6 +660,19 @@ async def get_subtitles(
     key = _cache_key(title, lang, year, tmdb_id, imdb_id, season, episode)
     cached = _cache_read(key)
     if cached:
+        # Defense-in-depth: _cache_read already evicts poisoned entries, but
+        # guard here too in case the check is bypassed (e.g. in tests or future
+        # refactors).
+        if cached.startswith("PK\x03\x04"):
+            logger.error(
+                "Cached content for '%s' (%s) starts with ZIP magic bytes — refusing",
+                title, lang,
+            )
+            return Response(
+                content="Cached subtitle data is corrupt (ZIP bytes); please retry",
+                media_type="text/plain; charset=utf-8",
+                status_code=502,
+            )
         ep_info = f" S{season:02d}E{episode:02d}" if (season is not None and episode is not None) else ""
         logger.info("Cache hit for '%s'%s (%s)", title, ep_info, lang)
         return PlainTextResponse(cached, status_code=200)
@@ -669,6 +696,20 @@ async def get_subtitles(
     if srt_text is None:
         logger.info("No subtitles found for '%s' (%s)", title, lang)
         return PlainTextResponse("No subtitles found", status_code=404)
+
+    # Safety guard: a provider must never return raw ZIP bytes.  This catches
+    # any edge case (e.g. a broken provider, or a result that slipped through
+    # the subs.ro extraction path) before the bytes reach the client or cache.
+    if srt_text.startswith("PK\x03\x04"):
+        logger.error(
+            "Provider '%s' returned ZIP bytes for '%s' (%s) — refusing to pass through",
+            provider_used, title, lang,
+        )
+        return Response(
+            content="Subtitle provider returned a ZIP archive; SRT extraction failed",
+            media_type="text/plain; charset=utf-8",
+            status_code=502,
+        )
 
     logger.info("Subtitle fetched via %s for '%s' (%s)", provider_used, title, lang)
     _cache_write(key, srt_text)
