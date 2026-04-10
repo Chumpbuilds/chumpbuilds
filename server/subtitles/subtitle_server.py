@@ -711,9 +711,13 @@ async def get_subtitles(
             status_code=502,
         )
 
+    # Strip UTF-8 BOM if present — some providers encode files with a BOM
+    # which causes Android/ExoPlayer to fail to parse the first cue index.
+    srt_text = srt_text.lstrip("\ufeff")
+
     logger.info("Subtitle fetched via %s for '%s' (%s)", provider_used, title, lang)
     _cache_write(key, srt_text)
-    return PlainTextResponse(srt_text, status_code=200)
+    return PlainTextResponse(srt_text, media_type="text/plain; charset=utf-8", status_code=200)
 
 
 @app.get("/subtitles/search")
@@ -812,9 +816,10 @@ async def download_subtitle(
         logger.error("OpenSubtitles VIP: download error — %s", exc)
         raise HTTPException(status_code=502, detail=str(exc))
 
+    srt_text = srt_text.lstrip("\ufeff")
     _cache_write(cache_key, srt_text)
     logger.info("Downloaded subtitle file_id=%s (%d bytes)", file_id, len(srt_text))
-    return PlainTextResponse(srt_text, status_code=200)
+    return PlainTextResponse(srt_text, media_type="text/plain; charset=utf-8", status_code=200)
 
 
 @app.get("/health")
