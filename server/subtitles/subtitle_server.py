@@ -212,9 +212,24 @@ def _fetch_via_vip(
         logger.info("OpenSubtitles VIP: no results for '%s' (%s)", title, lang)
         return None
 
-    # Pick best result: highest download_count, or first entry
+    # Filter results to only include the requested language
+    filtered = [
+        r for r in results
+        if r.get("attributes", {}).get("language", "").lower() == lang.lower()
+    ]
+
+    logger.info(
+        "OpenSubtitles VIP: %d total results, %d matching lang='%s' for '%s'",
+        len(results), len(filtered), lang, title,
+    )
+
+    if not filtered:
+        logger.info("OpenSubtitles VIP: no results matching language '%s' for '%s'", lang, title)
+        return None
+
+    # Pick best result from filtered list: highest download_count
     best = max(
-        results,
+        filtered,
         key=lambda r: r.get("attributes", {}).get("download_count", 0),
     )
     files = best.get("attributes", {}).get("files", [])
@@ -426,6 +441,9 @@ async def search_subtitles(
     output = []
     for r in results:
         attrs = r.get("attributes", {})
+        # Skip results that don't match the requested language
+        if attrs.get("language", "").lower() != lang.lower():
+            continue
         files = attrs.get("files", [])
         if not files:
             continue
