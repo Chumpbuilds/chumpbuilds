@@ -114,8 +114,6 @@ class NativePlayerActivity : Activity() {
     // URI string of the currently injected SRT sidecar, or null if none is active.
     // Used to re-apply the track override after ExoPlayer re-resolves tracks.
     private var injectedSrtId: String? = null
-    // Language code of the currently injected SRT sidecar (e.g. "fr", "de").
-    private var injectedSrtLang: String? = null
     // True while we are waiting for onTracksChanged to fire after injectSrtSubtitle()
     // re-prepared the player with text tracks disabled.  The listener will find the SRT
     // track, re-enable text tracks, and force-select it — then clear this flag.
@@ -272,6 +270,7 @@ class NativePlayerActivity : Activity() {
                             }
 
                             if (targetGroup != null) {
+                                val group = targetGroup
                                 if (pendingSubtitleActivation) {
                                     // Initial activation: re-enable text tracks and force-select
                                     // ONLY the injected SRT.  Text tracks were disabled before
@@ -289,11 +288,11 @@ class NativePlayerActivity : Activity() {
                                             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                                             .setOverrideForType(
                                                 TrackSelectionOverride(
-                                                    targetGroup!!.mediaTrackGroup, listOf(targetIndex)
+                                                    group.mediaTrackGroup, listOf(targetIndex)
                                                 )
                                             )
                                             .build()
-                                } else if (!targetGroup!!.isTrackSelected(targetIndex)) {
+                                } else if (!group.isTrackSelected(targetIndex)) {
                                     // Subsequent track re-resolution (HLS manifest refresh, etc.):
                                     // re-apply the override only if the SRT is no longer selected.
                                     android.util.Log.i(
@@ -306,7 +305,7 @@ class NativePlayerActivity : Activity() {
                                             .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                                             .setOverrideForType(
                                                 TrackSelectionOverride(
-                                                    targetGroup!!.mediaTrackGroup, listOf(targetIndex)
+                                                    group.mediaTrackGroup, listOf(targetIndex)
                                                 )
                                             )
                                             .build()
@@ -1191,7 +1190,6 @@ class NativePlayerActivity : Activity() {
                             // Off — clear the injected SRT state so the onTracksChanged
                             // listener stops re-applying the override, then disable subtitles.
                             injectedSrtId = null
-                            injectedSrtLang = null
                             pendingSubtitleActivation = false
                             subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
                             subtitleSelectionRunnable = null
@@ -1286,7 +1284,6 @@ class NativePlayerActivity : Activity() {
 
             // Remember the injected SRT's unique ID so onTracksChanged can identify it.
             injectedSrtId = srtUri.toString()
-            injectedSrtLang = langCode
 
             // NUCLEAR APPROACH: disable ALL text tracks before prepare() so ExoPlayer's
             // automatic track selection during prepare() cannot pick any embedded subtitle
