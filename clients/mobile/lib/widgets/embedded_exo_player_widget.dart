@@ -21,6 +21,8 @@ class EmbeddedExoPlayerWidget extends StatefulWidget {
     required this.title,
     required this.contentType,
     this.autoPlay = true,
+    this.year,
+    this.tmdbId,
     this.onStateChanged,
     this.onTapped,
     this.onUnsupportedAudioCodec,
@@ -30,6 +32,10 @@ class EmbeddedExoPlayerWidget extends StatefulWidget {
   final String title;
   final String contentType;
   final bool autoPlay;
+
+  /// Optional year and TMDB ID forwarded to the native side for subtitle search.
+  final String? year;
+  final String? tmdbId;
 
   /// Called whenever the native player reports a state change.
   final void Function({
@@ -145,6 +151,17 @@ class _EmbeddedExoPlayerWidgetState extends State<EmbeddedExoPlayerWidget> {
   Future<void> setResizeMode(int mode) =>
       _channel?.invokeMethod<void>('setResizeMode', {'mode': mode}) ?? Future.value();
 
+  /// Opens the native subtitle search + selection dialog.
+  ///
+  /// The native side searches the subtitle API using the content title, year
+  /// and TMDB ID passed via creation params. The user can pick a subtitle (or
+  /// "Off") from the list; the chosen track is downloaded and injected as an
+  /// SRT sidecar — the same flow used by the fullscreen [NativePlayerActivity].
+  /// Subtitles are NOT auto-enabled on initial playback; this must be called
+  /// explicitly (e.g. from a CC button in the parent widget).
+  Future<void> showSubtitlePicker() =>
+      _channel?.invokeMethod<void>('showSubtitlePicker') ?? Future.value();
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -164,6 +181,8 @@ class _EmbeddedExoPlayerWidgetState extends State<EmbeddedExoPlayerWidget> {
             'title': widget.title,
             'contentType': widget.contentType,
             'autoPlay': widget.autoPlay,
+            if (widget.year != null) 'year': widget.year!,
+            if (widget.tmdbId != null) 'tmdbId': widget.tmdbId!,
           },
           creationParamsCodec: const StandardMessageCodec(),
         ),
