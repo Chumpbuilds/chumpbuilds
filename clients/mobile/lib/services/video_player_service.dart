@@ -34,13 +34,17 @@ class VideoPlayerService {
   /// dismissal. [_isPlaying] is true while the native activity is active.
   ///
   /// Optional [year] and [tmdbId] are forwarded to the native activity so it
-  /// can search for online subtitles with better context.
+  /// can search for online subtitles with better context. For TV episodes,
+  /// [season] and [episode] are also forwarded so the subtitle search is
+  /// scoped to the correct episode.
   Future<void> play(
     String url,
     String title,
     String contentType, {
     String? year,
     String? tmdbId,
+    int? season,
+    int? episode,
   }) async {
     if (kDebugMode) {
       debugPrint(
@@ -58,6 +62,8 @@ class VideoPlayerService {
       };
       if (year != null) args['year'] = year;
       if (tmdbId != null) args['tmdbId'] = tmdbId;
+      if (season != null) args['season'] = season;
+      if (episode != null) args['episode'] = episode;
       await _channel.invokeMethod<void>('launchPlayer', args);
     } finally {
       _isPlaying = false;
@@ -74,8 +80,10 @@ class VideoPlayerService {
     String contentType, {
     String? year,
     String? tmdbId,
+    int? season,
+    int? episode,
   }) =>
-      play(url, title, contentType, year: year, tmdbId: tmdbId);
+      play(url, title, contentType, year: year, tmdbId: tmdbId, season: season, episode: episode);
 
   // ─── Embedded player state tracking ──────────────────────────────────────
 

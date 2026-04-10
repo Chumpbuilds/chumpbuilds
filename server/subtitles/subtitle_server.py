@@ -131,7 +131,11 @@ def _vip_search_subtitles(
     episode: int | None,
 ) -> list[dict]:
     """Search VIP API. Returns list of subtitle result dicts from the `data` array."""
+    is_episode = season is not None and episode is not None
     params: dict = {"query": title, "languages": lang}
+    if is_episode:
+        # Use episode-specific search type to avoid returning movie subtitles.
+        params["type"] = "episode"
     if tmdb_id:
         params["tmdb_id"] = tmdb_id
     if imdb_id:
@@ -145,6 +149,11 @@ def _vip_search_subtitles(
         params["season_number"] = season
     if episode:
         params["episode_number"] = episode
+
+    logger.info(
+        "VIP search params: title='%s' lang=%s season=%s episode=%s tmdb_id=%s year=%s",
+        title, lang, season, episode, tmdb_id, year,
+    )
 
     resp = httpx.get(
         f"{VIP_BASE}/subtitles",
@@ -227,12 +236,43 @@ def _fetch_via_vip(
         logger.info("OpenSubtitles VIP: no results matching language '%s' for '%s'", lang, title)
         return None
 
-    # Pick best result from filtered list: highest download_count
+    # For TV episodes, prefer results whose season/episode attributes match exactly.
+    # This avoids picking up subtitles for the wrong episode of the same series.
+    if season is not None and episode is not None:
+        episode_matches = [
+            r for r in filtered
+            if (
+                r.get("attributes", {}).get("season_number") == season
+                and r.get("attributes", {}).get("episode_number") == episode
+            )
+        ]
+        if episode_matches:
+            logger.info(
+                "OpenSubtitles VIP: %d exact S%02dE%02d matches for '%s'",
+                len(episode_matches), season, episode, title,
+            )
+            filtered = episode_matches
+        else:
+            logger.warning(
+                "OpenSubtitles VIP: no exact S%02dE%02d attribute match for '%s' — "
+                "using all %d language-filtered results (API may not return episode attrs)",
+                season, episode, title, len(filtered),
+            )
+
+    # Pick best result: highest download_count
     best = max(
         filtered,
         key=lambda r: r.get("attributes", {}).get("download_count", 0),
     )
-    files = best.get("attributes", {}).get("files", [])
+    best_attrs = best.get("attributes", {})
+    logger.info(
+        "OpenSubtitles VIP: selected release='%s' downloads=%d season_attr=%s episode_attr=%s",
+        best_attrs.get("release", ""),
+        best_attrs.get("download_count", 0),
+        best_attrs.get("season_number"),
+        best_attrs.get("episode_number"),
+    )
+    files = best_attrs.get("files", [])
     if not files:
         logger.warning("OpenSubtitles VIP: chosen result has no files")
         return None
@@ -379,10 +419,15 @@ async def get_subtitles(
     episode: int | None = Query(None),
     lang: str = Query("en"),
 ) -> PlainTextResponse:
+    logger.info(
+        "Subtitle request: title='%s' season=%s episode=%s lang=%s year=%s",
+        title, season, episode, lang, year,
+    )
     key = _cache_key(title, lang, year, tmdb_id, imdb_id, season, episode)
     cached = _cache_read(key)
     if cached:
-        logger.info("Cache hit for '%s' (%s)", title, lang)
+        ep_info = f" S{season:02d}E{episode:02d}" if (season is not None and episode is not None) else ""
+        logger.info("Cache hit for '%s'%s (%s)", title, ep_info, lang)
         return PlainTextResponse(cached, status_code=200)
 
     # --- Primary: OpenSubtitles VIP REST API ---
@@ -455,10 +500,15 @@ async def search_subtitles(
             "language": attrs.get("language", lang),
             "release": attrs.get("release", ""),
             "download_count": attrs.get("download_count", 0),
+            "season_number": attrs.get("season_number"),
+            "episode_number": attrs.get("episode_number"),
             "provider": "OpenSubtitles VIP",
         })
 
-    logger.info("Search returned %d results for '%s' (%s)", len(output), title, lang)
+    logger.info(
+        "Search returned %d results for '%s' season=%s episode=%s (%s)",
+        len(output), title, season, episode, lang,
+    )
     return JSONResponse(output, status_code=200)
 
 

@@ -228,6 +228,12 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
         info['tmdb']?.toString() ??
         widget.series['tmdb_id']?.toString();
 
+    // Extract season and episode numbers for subtitle search.
+    final seasonNum = _selectedSeason;
+    final episodeNum = ep['episode_num'] is int
+        ? ep['episode_num'] as int
+        : int.tryParse(ep['episode_num']?.toString() ?? '');
+
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AndroidHlsFullscreenScreen(
@@ -236,6 +242,8 @@ class _SeriesDetailScreenState extends State<SeriesDetailScreen> {
           contentType: 'series',
           year: year,
           tmdbId: tmdbId,
+          season: seasonNum,
+          episode: episodeNum,
         ),
       ),
     );

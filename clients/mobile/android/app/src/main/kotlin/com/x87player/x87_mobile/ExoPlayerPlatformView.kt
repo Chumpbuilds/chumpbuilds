@@ -93,6 +93,8 @@ class ExoPlayerPlatformView(
     private var contentTitle: String = ""
     private var contentYear: String? = null
     private var contentTmdbId: String? = null
+    private var contentSeason: Int? = null
+    private var contentEpisode: Int? = null
 
     // URI string of the currently injected SRT sidecar, or null if none active.
     private var injectedSrtId: String? = null
@@ -227,6 +229,8 @@ class ExoPlayerPlatformView(
         contentTitle = creationParams?.get("title") as? String ?: ""
         contentYear = creationParams?.get("year") as? String
         contentTmdbId = creationParams?.get("tmdbId") as? String
+        contentSeason = (creationParams?.get("season") as? Int)
+        contentEpisode = (creationParams?.get("episode") as? Int)
 
         // Auto-start if url + autoPlay were passed as creation params
         val url = creationParams?.get("url") as? String
@@ -372,7 +376,12 @@ class ExoPlayerPlatformView(
                     if (!contentTmdbId.isNullOrBlank()) {
                         sb.append("&tmdb_id=").append(URLEncoder.encode(contentTmdbId!!, "UTF-8"))
                     }
+                    contentSeason?.let { sb.append("&season=").append(it) }
+                    contentEpisode?.let { sb.append("&episode=").append(it) }
                     sb.append("&lang=").append(URLEncoder.encode(lang, "UTF-8"))
+
+                    android.util.Log.i("ExoPlayerPlatformView",
+                        "Subtitle search: title='$contentTitle' season=$contentSeason episode=$contentEpisode lang=$lang")
 
                     val connection = URL(sb.toString()).openConnection() as HttpURLConnection
                     connection.connectTimeout = 15_000

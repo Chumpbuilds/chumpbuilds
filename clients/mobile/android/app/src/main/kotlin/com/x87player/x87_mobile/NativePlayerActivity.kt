@@ -48,6 +48,8 @@ class NativePlayerActivity : Activity() {
         const val EXTRA_CONTENT_TYPE = "contentType"
         const val EXTRA_YEAR = "year"
         const val EXTRA_TMDB_ID = "tmdbId"
+        const val EXTRA_SEASON = "season"
+        const val EXTRA_EPISODE = "episode"
 
         private const val CONTROLS_HIDE_DELAY_MS = 5_000L
         private const val SEEK_BAR_UPDATE_INTERVAL_MS = 500L
@@ -83,6 +85,8 @@ class NativePlayerActivity : Activity() {
     private var contentTitle: String = ""
     private var contentYear: String? = null
     private var contentTmdbId: String? = null
+    private var contentSeason: Int? = null
+    private var contentEpisode: Int? = null
     // The original stream URI (needed to rebuild MediaItem with subtitle)
     private var streamUri: android.net.Uri? = null
 
@@ -150,6 +154,8 @@ class NativePlayerActivity : Activity() {
         contentTitle = title
         contentYear = intent.getStringExtra(EXTRA_YEAR)
         contentTmdbId = intent.getStringExtra(EXTRA_TMDB_ID)
+        contentSeason = intent.getOptionalIntExtra(EXTRA_SEASON)
+        contentEpisode = intent.getOptionalIntExtra(EXTRA_EPISODE)
         streamUri = Uri.parse(url)
 
         titleTextView.text = title
@@ -1124,7 +1130,12 @@ class NativePlayerActivity : Activity() {
                     if (!contentTmdbId.isNullOrBlank()) {
                         sb.append("&tmdb_id=").append(URLEncoder.encode(contentTmdbId!!, "UTF-8"))
                     }
+                    contentSeason?.let { sb.append("&season=").append(it) }
+                    contentEpisode?.let { sb.append("&episode=").append(it) }
                     sb.append("&lang=").append(URLEncoder.encode(lang, "UTF-8"))
+
+                    android.util.Log.i("NativePlayerActivity",
+                        "Subtitle search: title='$contentTitle' season=$contentSeason episode=$contentEpisode lang=$lang")
 
                     val connection = URL(sb.toString()).openConnection() as HttpURLConnection
                     connection.connectTimeout = 15_000
@@ -1424,4 +1435,11 @@ class NativePlayerActivity : Activity() {
         val density = resources.displayMetrics.density
         return (dp * density + 0.5f).toInt()
     }
+}
+
+/** Returns the Int extra for [key] if present and non-negative, otherwise null. */
+private fun android.content.Intent.getOptionalIntExtra(key: String): Int? {
+    if (!hasExtra(key)) return null
+    val value = getIntExtra(key, -1)
+    return if (value >= 0) value else null
 }

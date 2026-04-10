@@ -19,6 +19,8 @@ class AndroidHlsFullscreenScreen extends StatefulWidget {
     required this.contentType,
     this.year,
     this.tmdbId,
+    this.season,
+    this.episode,
   });
 
   final String streamUrl;
@@ -32,6 +34,14 @@ class AndroidHlsFullscreenScreen extends StatefulWidget {
   /// Optional TMDb ID — forwarded to the native player for online subtitle
   /// searches.
   final String? tmdbId;
+
+  /// Optional season number — forwarded to the native player so subtitle
+  /// searches are scoped to the correct TV season.
+  final int? season;
+
+  /// Optional episode number — forwarded to the native player so subtitle
+  /// searches are scoped to the correct episode.
+  final int? episode;
 
   @override
   State<AndroidHlsFullscreenScreen> createState() =>
@@ -57,6 +67,8 @@ class _AndroidHlsFullscreenScreenState
         widget.contentType,
         year: widget.year,
         tmdbId: widget.tmdbId,
+        season: widget.season,
+        episode: widget.episode,
       );
       if (mounted) {
         await SystemChrome.setEnabledSystemUIMode(
