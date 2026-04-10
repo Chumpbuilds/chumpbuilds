@@ -118,11 +118,13 @@ object ExoPlayerFactory {
                 // ExoPlayer picks the correct audio track on multi-language streams
                 // instead of falling back to codec/channel heuristics.
                 .setPreferredAudioLanguage(preferredLang)
-                // Set preferred text language to English as the default hint so that
-                // when a user injects an English subtitle ExoPlayer can prioritise it.
-                // Text tracks are NOT auto-enabled here — no SELECTION_FLAG_DEFAULT is
-                // set on the MediaItem, so subtitles remain off until the user picks one.
-                .setPreferredTextLanguage("en")
+                // Do NOT set a preferred text language globally.  A hardcoded language
+                // (e.g. "en") would cause ExoPlayer's auto-selection to prefer embedded
+                // stream text tracks in that language over the user's explicitly injected
+                // sidecar subtitle.  When the user selects a subtitle, injectSrtSubtitle
+                // sets preferredTextLanguage to the chosen language code and also applies
+                // a deterministic TrackSelectionOverride so the correct track is always
+                // rendered.  Until a subtitle is selected, text tracks remain off.
                 // Ensure text tracks are never globally disabled so that injected
                 // subtitle tracks (from showSubtitlePicker) can be selected at runtime.
                 .setTrackTypeDisabled(androidx.media3.common.C.TRACK_TYPE_TEXT, false)
@@ -147,7 +149,7 @@ object ExoPlayerFactory {
         android.util.Log.i("ExoPlayerFactory",
             "TrackSelector config: tunneling=${!isTvDevice}, " +
             "preferredAudioLang=$preferredLang, " +
-            "preferredTextLang=en, " +
+            "preferredTextLang=<none; set per-subtitle on injection>, " +
             "maxAudioChannels=${if (isTvDevice) 2 else "unlimited"}, " +
             "preferredAudioMime=${if (isTvDevice) MimeTypes.AUDIO_AAC else "default"}, " +
             "extensionRendererMode=${if (isTvDevice) "PREFER" else "ON"}, " +
