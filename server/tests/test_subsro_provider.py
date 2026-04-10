@@ -640,5 +640,209 @@ class TestSubsroZipExtraction(unittest.TestCase):
         self.assertIn("text/plain", ct)
 
 
+class TestCachePoisoningRejection(unittest.TestCase):
+    """Tests that ZIP bytes stored in the subtitle cache are detected and evicted."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+        self.srv.SUBSRO_API_KEY = "test-key-123"
+
+    @staticmethod
+    def _make_zip(*entries: tuple[str, bytes]) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, data in entries:
+                zf.writestr(name, data)
+        return buf.getvalue()
+
+    def test_cache_read_rejects_zip_bytes_and_deletes_file(self):
+        """_cache_read must delete and return None when cached content is ZIP bytes."""
+        import tempfile
+        from pathlib import Path
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        self.srv.CACHE_DIR = tmp_dir
+
+        # Simulate old code writing raw ZIP bytes as text to the cache
+        key = "poisoned_key"
+        zip_bytes = self._make_zip(("movie.srt", b"1\n00:00:01,000 --> 00:00:02,000\nTest\n"))
+        # Write the ZIP bytes as a text file (the bug from before the fix)
+        (tmp_dir / f"{key}.srt").write_bytes(zip_bytes)
+
+        result = self.srv._cache_read(key)
+
+        self.assertIsNone(result, "_cache_read must return None for a poisoned cache file")
+        self.assertFalse(
+            (tmp_dir / f"{key}.srt").exists(),
+            "Poisoned cache file must be deleted",
+        )
+
+    def test_cache_read_accepts_valid_srt_content(self):
+        """_cache_read must return valid SRT content unchanged."""
+        import tempfile
+        from pathlib import Path
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        self.srv.CACHE_DIR = tmp_dir
+
+        key = "valid_key"
+        srt_text = "1\n00:00:01,000 --> 00:00:03,000\nHello world\n"
+        (tmp_dir / f"{key}.srt").write_text(srt_text, encoding="utf-8")
+
+        result = self.srv._cache_read(key)
+
+        self.assertEqual(result, srt_text)
+
+    def test_endpoint_evicts_poisoned_cache_does_not_return_zip(self):
+        """When the cache contains ZIP bytes, the endpoint must not return them."""
+        from fastapi.testclient import TestClient
+
+        zip_bytes = self._make_zip(("movie.srt", b"1\n00:00:01,000 --> 00:00:02,000\nTest\n"))
+        # Simulate cache read returning ZIP bytes as a string (poisoned entry)
+        poisoned_str = zip_bytes.decode("latin-1")
+
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nFresh subtitle\n"
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=srt_content.decode("utf-8")),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=poisoned_str),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=TestMovie&lang=ro")
+
+        # Poisoned cache is bypassed; the actual content returned should NOT be ZIP
+        # NOTE: The mock _cache_read returns the poisoned str, so the endpoint
+        # returns it. This test verifies the safety guard rejects it as 502.
+        self.assertNotEqual(resp.status_code, 200, "Must not return 200 with ZIP bytes")
+        body_bytes = resp.content
+        self.assertFalse(
+            body_bytes[:4] == b"PK\x03\x04",
+            "Response body must not start with ZIP magic bytes",
+        )
+
+
+class TestZipSafetyGuard(unittest.TestCase):
+    """Tests the endpoint-level safety guard that prevents ZIP bytes reaching clients."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+
+    def test_endpoint_returns_502_when_provider_returns_zip_bytes(self):
+        """If a provider somehow returns ZIP bytes as a string, the endpoint returns 502."""
+        from fastapi.testclient import TestClient
+
+        # Simulate a broken provider returning ZIP magic bytes as a string
+        zip_magic_str = "PK\x03\x04fake zip content"
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=zip_magic_str),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=TestMovie&lang=ro")
+
+        self.assertEqual(resp.status_code, 502)
+        body_bytes = resp.content
+        self.assertFalse(
+            body_bytes[:4] == b"PK\x03\x04",
+            "Response body must not start with ZIP magic bytes",
+        )
+
+    def test_endpoint_does_not_cache_zip_bytes(self):
+        """When the safety guard fires, the ZIP string must NOT be written to cache."""
+        from fastapi.testclient import TestClient
+
+        zip_magic_str = "PK\x03\x04fake zip content"
+        mock_cache_write = MagicMock()
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=zip_magic_str),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=mock_cache_write,
+        ):
+            client = TestClient(self.srv.app)
+            client.get("/subtitles?title=TestMovie&lang=ro")
+
+        mock_cache_write.assert_not_called()
+
+    def test_corrupted_zip_yields_non_200(self):
+        """A corrupted ZIP (no valid .srt entry) causes a non-200 response."""
+        from fastapi.testclient import TestClient
+
+        # ZIP archive that contains no .srt files
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("readme.txt", b"no subtitles here")
+        corrupted_zip_bytes = buf.getvalue()
+
+        mock_resp = MagicMock()
+        mock_resp.content = corrupted_zip_bytes
+        mock_resp.text = corrupted_zip_bytes.decode("utf-8", errors="replace")
+        mock_resp.raise_for_status = MagicMock()
+
+        results = [_make_subsro_result(lang="ro")]
+
+        with patch.multiple(
+            self.srv,
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+            SUBSRO_API_KEY="test-key",
+        ):
+            with patch.object(self.srv, "_subsro_search", return_value=results):
+                with patch("httpx.get", return_value=mock_resp):
+                    with patch.multiple(
+                        self.srv,
+                        _fetch_via_vip=MagicMock(return_value=None),
+                        _fetch_via_subliminal=MagicMock(return_value=None),
+                    ):
+                        client = TestClient(self.srv.app)
+                        resp = client.get("/subtitles?title=TestMovie&lang=ro")
+
+        # subs.ro ZIP with no .srt → all providers fail → non-200
+        self.assertNotEqual(resp.status_code, 200)
+        body_bytes = resp.content
+        self.assertFalse(
+            body_bytes[:4] == b"PK\x03\x04",
+            "Response body must not start with ZIP magic bytes",
+        )
+
+
+class TestCp1250Fallback(unittest.TestCase):
+    """Tests cp1250 encoding fallback in _extract_srt_from_zip."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+
+    def test_cp1250_encoded_srt_is_decoded(self):
+        """SRT content encoded in cp1250 is decoded correctly via the fallback."""
+        # Romanian text that differs between cp1250 and latin-1:
+        # U+015F LATIN SMALL LETTER S WITH CEDILLA = 0x9F in cp1250
+        romanian_text = "1\n00:00:01,000 --> 00:00:03,000\n\u015f\n"
+        srt_bytes = romanian_text.encode("cp1250")
+        # Verify bytes are NOT valid UTF-8
+        with self.assertRaises(UnicodeDecodeError):
+            srt_bytes.decode("utf-8")
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("movie.srt", srt_bytes)
+        zip_bytes = buf.getvalue()
+
+        result = self.srv._extract_srt_from_zip(zip_bytes)
+
+        self.assertIn("\u015f", result, "cp1250 character must be decoded correctly")
+
+
 if __name__ == "__main__":
     unittest.main()
