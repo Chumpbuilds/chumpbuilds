@@ -627,7 +627,7 @@ _TRAILING_YEAR_RE = re.compile(
     r"""
     \s*          # optional leading whitespace
     (?:
-      [-–]\s*\d{4}  # dash/en-dash followed by a year, e.g. "- 2025"
+      [-–]\s*\d{4}  # dash/en dash followed by a year, e.g. "- 2025"
       |
       \(\d{4}\)     # year in parentheses, e.g. "(2025)"
       |
@@ -642,10 +642,13 @@ _TRAILING_YEAR_RE = re.compile(
 def _normalize_title(title: str) -> str:
     """Normalize a content title for subtitle searching.
 
-    - URL-decodes ``+`` signs to spaces (some clients URL-encode titles with
-      ``application/x-www-form-urlencoded`` encoding rather than pure percent-
-      encoding, so ``+`` arrives as a literal ``+`` after FastAPI decodes the
-      query parameter).
+    - Applies ``urllib.parse.unquote_plus`` to handle titles where ``+``
+      signs were used as space substitutes (``application/x-www-form-urlencoded``
+      style).  FastAPI decodes ``%20`` to spaces automatically, but a literal
+      ``+`` in a query parameter value is passed through as-is; this step
+      converts those remaining ``+`` characters to spaces.  Calling
+      ``unquote_plus`` on an already-decoded string (all spaces, no ``+``) is
+      safe and produces no change.
     - Strips a trailing year annotation in the forms ``- YYYY``, ``(YYYY)``,
       or ``[YYYY]`` that apps commonly append to disambiguate titles.
     - Collapses runs of whitespace and trims.
@@ -738,9 +741,10 @@ async def get_subtitles(
         logger.info("Cache hit for '%s'%s (%s)", title, ep_info, lang)
         clean = _strip_bom(cached)
         if request.method == "HEAD":
+            encoded = clean.encode("utf-8")
             return Response(
                 status_code=200,
-                headers={"Content-Length": str(len(clean.encode("utf-8")))},
+                headers={"Content-Length": str(len(encoded))},
                 media_type="text/plain; charset=utf-8",
             )
         return PlainTextResponse(clean, status_code=200)

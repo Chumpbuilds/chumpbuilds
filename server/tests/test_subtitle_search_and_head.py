@@ -98,9 +98,9 @@ class TestNormalizeTitle(unittest.TestCase):
         self.assertEqual(self._n("Pets on a Train"), "Pets on a Train")
 
     def test_decodes_plus_signs(self):
-        # App sends "Pets+on+a+Train+-+2025"; FastAPI decodes query params but
-        # _normalize_title is also called with the already-decoded value.
-        # Ensure urllib.parse.unquote_plus does not double-encode plain spaces.
+        # Android app sends "Pets+on+a+Train+-+2025"; FastAPI passes the raw
+        # query string value to the handler, leaving literal '+' in place.
+        # _normalize_title must convert those '+' to spaces and then strip the year.
         self.assertEqual(self._n("Pets on a Train - 2025"), "Pets on a Train")
 
     def test_collapses_extra_whitespace(self):
@@ -240,7 +240,7 @@ class TestHeadSubtitles(unittest.TestCase):
                 "/subtitles",
                 params={"title": "Pets on a Train - 2025", "lang": "ro"},
             )
-        self.assertIn(resp.status_code, (200, 204), f"HEAD returned {resp.status_code}, expected 200/204")
+        self.assertIn(resp.status_code, (200,), f"HEAD returned {resp.status_code}, expected 200")
 
     def test_head_returns_404_when_no_subtitles(self):
         """HEAD /subtitles must return 404 when no provider has a match."""
