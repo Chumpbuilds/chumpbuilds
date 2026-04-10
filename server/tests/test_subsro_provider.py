@@ -13,9 +13,11 @@ Tests cover:
 
 from __future__ import annotations
 
+import io
 import sys
 import types
 import unittest
+import zipfile
 from unittest.mock import MagicMock, patch
 
 
@@ -446,6 +448,196 @@ class TestHealthEndpoint(unittest.TestCase):
         resp = client.get("/health")
         body = resp.json()
         self.assertFalse(body["subsro"]["configured"])
+
+
+class TestSubsroZipExtraction(unittest.TestCase):
+    """Tests that _subsro_download and _extract_srt_from_zip handle ZIP archives."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+        self.srv.SUBSRO_API_KEY = "test-key-123"
+
+    # ------------------------------------------------------------------
+    # Helper: build an in-memory ZIP containing one or more .srt files
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _make_zip(*entries: tuple[str, bytes]) -> bytes:
+        """Return bytes of a ZIP archive with the given (filename, data) entries."""
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for name, data in entries:
+                zf.writestr(name, data)
+        return buf.getvalue()
+
+    # ------------------------------------------------------------------
+    # Unit tests for _extract_srt_from_zip
+    # ------------------------------------------------------------------
+
+    def test_extract_single_srt(self):
+        """A ZIP with one .srt file returns that file's text."""
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nHello world\n"
+        zip_bytes = self._make_zip(("subtitle.srt", srt_content))
+        result = self.srv._extract_srt_from_zip(zip_bytes)
+        self.assertEqual(result, srt_content.decode("utf-8"))
+
+    def test_extract_largest_srt_when_multiple(self):
+        """With multiple .srt files the largest (by uncompressed size) is chosen."""
+        small = b"1\n00:00:01,000 --> 00:00:02,000\nShort\n"
+        large = b"1\n00:00:01,000 --> 00:00:02,000\nLine one\n" + b"x" * 5000
+        zip_bytes = self._make_zip(
+            ("small.srt", small),
+            ("large.srt", large),
+        )
+        result = self.srv._extract_srt_from_zip(zip_bytes)
+        self.assertEqual(result, large.decode("utf-8"))
+
+    def test_raises_on_no_srt_in_zip(self):
+        """A ZIP with no .srt entries raises ValueError."""
+        zip_bytes = self._make_zip(("readme.txt", b"nothing here"))
+        with self.assertRaises(ValueError):
+            self.srv._extract_srt_from_zip(zip_bytes)
+
+    def test_ignores_non_srt_entries(self):
+        """Non-.srt entries in the ZIP are ignored; only the .srt is used."""
+        srt_content = b"1\n00:00:01,000 --> 00:00:02,000\nSubtitle\n"
+        zip_bytes = self._make_zip(
+            ("info.nfo", b"release info"),
+            ("movie.srt", srt_content),
+            ("cover.jpg", b"\xff\xd8\xff"),
+        )
+        result = self.srv._extract_srt_from_zip(zip_bytes)
+        self.assertEqual(result, srt_content.decode("utf-8"))
+
+    def test_srt_extension_is_case_insensitive(self):
+        """Files named .SRT (uppercase) are also picked up."""
+        srt_content = b"1\n00:00:01,000 --> 00:00:02,000\nUpper\n"
+        zip_bytes = self._make_zip(("MOVIE.SRT", srt_content))
+        result = self.srv._extract_srt_from_zip(zip_bytes)
+        self.assertEqual(result, srt_content.decode("utf-8"))
+
+    # ------------------------------------------------------------------
+    # Integration tests for _subsro_download with a mocked HTTP response
+    # ------------------------------------------------------------------
+
+    def _make_mock_response(self, body: bytes) -> MagicMock:
+        mock_resp = MagicMock()
+        mock_resp.content = body
+        mock_resp.text = body.decode("utf-8", errors="replace")
+        mock_resp.raise_for_status = MagicMock()
+        return mock_resp
+
+    def test_download_extracts_srt_from_zip_response(self):
+        """_subsro_download returns SRT text even when the server sends a ZIP."""
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nPets on a Train\n"
+        zip_bytes = self._make_zip(("subtitle.srt", srt_content))
+
+        with patch("httpx.get", return_value=self._make_mock_response(zip_bytes)):
+            result = self.srv._subsro_download("https://api.subs.ro/download/42")
+
+        self.assertEqual(result, srt_content.decode("utf-8"))
+        # Regression: must NOT start with ZIP magic bytes
+        self.assertFalse(
+            result.encode("utf-8")[:4] == b"PK\x03\x04",
+            "Response must not start with ZIP magic bytes (PK\\x03\\x04)",
+        )
+        self.assertFalse(
+            result.startswith("PK"),
+            "Response must not start with 'PK'",
+        )
+
+    def test_download_returns_plain_text_unchanged(self):
+        """_subsro_download returns plain SRT content as-is (non-ZIP)."""
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nNormal SRT\n"
+
+        with patch("httpx.get", return_value=self._make_mock_response(srt_content)):
+            result = self.srv._subsro_download("https://api.subs.ro/download/42")
+
+        self.assertIn("Normal SRT", result)
+        self.assertFalse(result.startswith("PK"))
+
+    def test_download_does_not_log_raw_binary_body(self):
+        """Logging must never contain raw binary bytes (security/logging requirement)."""
+        import logging as _logging
+
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nSecure\n"
+        zip_bytes = self._make_zip(("secure.srt", srt_content))
+
+        log_messages: list[str] = []
+
+        class CapHandler(_logging.Handler):
+            def emit(self, record):
+                log_messages.append(self.format(record))
+
+        handler = CapHandler()
+        self.srv.logger.addHandler(handler)
+        try:
+            with patch("httpx.get", return_value=self._make_mock_response(zip_bytes)):
+                self.srv._subsro_download("https://api.subs.ro/download/42")
+        finally:
+            self.srv.logger.removeHandler(handler)
+
+        for msg in log_messages:
+            self.assertNotIn(
+                repr(zip_bytes[:20]),
+                msg,
+                "Raw binary body must not appear in log output",
+            )
+
+    # ------------------------------------------------------------------
+    # End-to-end: _fetch_via_subsro returns SRT text when download is ZIP
+    # ------------------------------------------------------------------
+
+    def test_fetch_via_subsro_with_zip_returns_srt(self):
+        """Full provider path: subs.ro returns ZIP → caller receives SRT text."""
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nPets on a Train\n"
+        zip_bytes = self._make_zip(("movie.srt", srt_content))
+        results = [_make_subsro_result(lang="ro")]
+
+        mock_resp = self._make_mock_response(zip_bytes)
+
+        with patch.object(self.srv, "_subsro_search", return_value=results):
+            with patch("httpx.get", return_value=mock_resp):
+                result = self.srv._fetch_via_subsro(
+                    "Pets on a Train", "ro", 2025, None, None, None
+                )
+
+        self.assertIsNotNone(result)
+        self.assertFalse(
+            (result or "").startswith("PK"),
+            "Returned content must not start with ZIP magic 'PK'",
+        )
+        self.assertIn("Pets on a Train", result or "")
+
+    def test_endpoint_returns_srt_text_not_zip(self):
+        """HTTP endpoint /subtitles must return plain SRT, never ZIP bytes."""
+        from fastapi.testclient import TestClient
+
+        srt_content = b"1\n00:00:01,000 --> 00:00:03,000\nPets on a Train\n"
+        zip_bytes = self._make_zip(("movie.srt", srt_content))
+        results = [_make_subsro_result(lang="ro")]
+
+        mock_resp = self._make_mock_response(zip_bytes)
+
+        with patch.multiple(
+            self.srv,
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            with patch.object(self.srv, "_subsro_search", return_value=results):
+                with patch("httpx.get", return_value=mock_resp):
+                    client = TestClient(self.srv.app)
+                    resp = client.get("/subtitles?title=Pets+on+a+Train&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.text
+        self.assertFalse(
+            body.startswith("PK"),
+            "Response body must not start with ZIP magic 'PK'",
+        )
+        self.assertIn("Pets on a Train", body)
+        # Content-Type must advertise plain text
+        ct = resp.headers.get("content-type", "")
+        self.assertIn("text/plain", ct)
 
 
 if __name__ == "__main__":

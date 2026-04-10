@@ -19,9 +19,11 @@ python-dotenv is installed.
 from __future__ import annotations
 
 import hashlib
+import io
 import logging
 import os
 import time
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -362,8 +364,53 @@ def _subsro_search(
     return data.get("items", data.get("subtitles", data.get("data", [])))
 
 
+_ZIP_MAGIC = b"PK\x03\x04"
+
+
+def _extract_srt_from_zip(data: bytes) -> str:
+    """Extract the best .srt file from a ZIP archive (in-memory).
+
+    Selection rules:
+    - Only considers entries whose names end with ``.srt`` (case-insensitive).
+    - Ignores directory entries.
+    - If multiple candidates exist, picks the largest by uncompressed size
+      (most likely the main subtitle track).
+
+    Returns the decoded SRT text (UTF-8 with fallback to latin-1).
+    Raises ``zipfile.BadZipFile`` if ``data`` is not a valid ZIP.
+    Raises ``ValueError`` if no ``.srt`` entry is found.
+    """
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        candidates = [
+            info for info in zf.infolist()
+            if not info.is_dir() and info.filename.lower().endswith(".srt")
+        ]
+        if not candidates:
+            raise ValueError("ZIP archive contains no .srt file")
+
+        # Pick the largest uncompressed entry
+        best = max(candidates, key=lambda info: info.file_size)
+        logger.info(
+            "subs.ro: ZIP archive detected — extracting '%s' (%d bytes)",
+            best.filename,
+            best.file_size,
+        )
+        raw = zf.read(best.filename)
+
+    # Decode: try UTF-8 first, fall back to latin-1
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return raw.decode("latin-1")
+
+
 def _subsro_download(download_url: str) -> str:
-    """Download subtitle content from the URL returned by subs.ro. Returns SRT text."""
+    """Download subtitle content from the URL returned by subs.ro. Returns SRT text.
+
+    subs.ro occasionally returns a ZIP archive even when ``Content-Type`` is
+    ``text/plain``.  This function detects the ZIP magic bytes and transparently
+    extracts the largest ``.srt`` entry so callers always receive plain SRT text.
+    """
     resp = httpx.get(
         download_url,
         headers={"X-Subs-Api-Key": SUBSRO_API_KEY},
@@ -371,6 +418,13 @@ def _subsro_download(download_url: str) -> str:
         follow_redirects=True,
     )
     resp.raise_for_status()
+
+    raw = resp.content
+    if raw[:4] == _ZIP_MAGIC:
+        logger.info("subs.ro: response is a ZIP archive — extracting .srt")
+        return _extract_srt_from_zip(raw)
+
+    # Plain text (or other encoding) — decode via httpx charset detection
     return resp.text
 
 
