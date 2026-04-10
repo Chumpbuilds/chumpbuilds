@@ -210,47 +210,64 @@ class TestSubsroTvEpisodeFetch(unittest.TestCase):
 
 
 class TestSubsroSearchParamBuilding(unittest.TestCase):
-    """Verify _subsro_search builds the correct query parameters."""
+    """Verify _subsro_search builds the correct URL path and auth header."""
 
     def setUp(self):
         self.srv = _load_subtitle_server()
         self.srv.SUBSRO_API_KEY = "test-key"
-        self.srv.SUBSRO_BASE = "https://api.subs.ro"
+        self.srv.SUBSRO_BASE = "https://api.subs.ro/v1.0"
 
-    def test_movie_params(self):
-        import httpx
+    def test_movie_title_search_uses_title_path(self):
+        """When no imdb_id is provided, search uses /search/title/{title} path."""
         fake_response = MagicMock()
-        fake_response.json.return_value = {"subtitles": []}
+        fake_response.json.return_value = {"items": []}
+        fake_response.raise_for_status = MagicMock()
+
+        with patch("httpx.get", return_value=fake_response) as mock_get:
+            self.srv._subsro_search("Inception", "en", 2010, None, None, None)
+
+        call_url = mock_get.call_args.args[0]
+        self.assertIn("/search/title/Inception", call_url)
+        # language is passed as a query param
+        call_params = mock_get.call_args.kwargs.get("params", {})
+        self.assertEqual(call_params.get("language"), "en")
+        # API key must be in the header, NOT in the URL or query params
+        call_headers = mock_get.call_args.kwargs.get("headers", {})
+        self.assertEqual(call_headers.get("X-Subs-Api-Key"), "test-key")
+        self.assertNotIn("apikey", call_params)
+        self.assertNotIn("apiKey", call_params)
+
+    def test_imdb_search_uses_imdbid_path(self):
+        """When imdb_id is provided, search uses /search/imdbid/{imdbid} path."""
+        fake_response = MagicMock()
+        fake_response.json.return_value = {"items": []}
         fake_response.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=fake_response) as mock_get:
             self.srv._subsro_search("Inception", "en", 2010, "tt1375666", None, None)
 
-        _, kwargs = mock_get.call_args
-        params = kwargs.get("params", mock_get.call_args[0][1] if len(mock_get.call_args[0]) > 1 else {})
-        # httpx.get called with params as keyword argument
-        call_params = mock_get.call_args.kwargs.get("params", {})
-        self.assertEqual(call_params["query"], "Inception")
-        self.assertEqual(call_params["language"], "en")
-        self.assertEqual(call_params["year"], 2010)
-        self.assertEqual(call_params["imdb_id"], "tt1375666")
-        # API key must NOT be logged but must be in params
-        self.assertIn("apikey", call_params)
-        self.assertNotIn("season", call_params)
-        self.assertNotIn("episode", call_params)
+        call_url = mock_get.call_args.args[0]
+        self.assertIn("/search/imdbid/tt1375666", call_url)
+        call_headers = mock_get.call_args.kwargs.get("headers", {})
+        self.assertEqual(call_headers.get("X-Subs-Api-Key"), "test-key")
 
     def test_episode_params(self):
+        """Episode searches use title path and pass language as query param (season/episode filtered client-side)."""
         fake_response = MagicMock()
-        fake_response.json.return_value = []
+        fake_response.json.return_value = {"items": []}
         fake_response.raise_for_status = MagicMock()
 
         with patch("httpx.get", return_value=fake_response) as mock_get:
             self.srv._subsro_search("Breaking Bad", "en", None, None, 3, 7)
 
+        call_url = mock_get.call_args.args[0]
+        self.assertIn("/search/title/Breaking Bad", call_url)
         call_params = mock_get.call_args.kwargs.get("params", {})
-        self.assertEqual(call_params["season"], 3)
-        self.assertEqual(call_params["episode"], 7)
-        self.assertNotIn("year", call_params)
+        self.assertEqual(call_params.get("language"), "en")
+        # season/episode are not API params in v1.0; they are handled client-side
+        self.assertNotIn("season", call_params)
+        self.assertNotIn("episode", call_params)
+        self.assertNotIn("apikey", call_params)
 
 
 class TestSubsroApiKeyNotLogged(unittest.TestCase):
@@ -269,18 +286,43 @@ class TestSubsroApiKeyNotLogged(unittest.TestCase):
                 log_messages.append(self.format(record))
 
         handler = CapturingHandler()
+        # Capture both subtitle_server and httpx loggers
         self.srv.logger.addHandler(handler)
+        httpx_logger = logging.getLogger("httpx")
+        original_level = httpx_logger.level
+        httpx_logger.setLevel(logging.DEBUG)
+        httpx_logger.addHandler(handler)
         try:
             with patch.object(self.srv, "_subsro_search", return_value=[]):
                 self.srv._fetch_via_subsro("Inception", "en", 2010, None, None, None)
         finally:
             self.srv.logger.removeHandler(handler)
+            httpx_logger.removeHandler(handler)
+            httpx_logger.setLevel(original_level)
 
         for msg in log_messages:
             self.assertNotIn(
                 "super-secret-key-xyz", msg,
                 f"API key found in log message: {msg!r}",
             )
+
+    def test_api_key_not_in_url_params(self):
+        """API key must be sent in header only, not as a URL query parameter."""
+        fake_response = MagicMock()
+        fake_response.json.return_value = {"items": []}
+        fake_response.raise_for_status = MagicMock()
+
+        with patch("httpx.get", return_value=fake_response) as mock_get:
+            self.srv._subsro_search("Inception", "en", 2010, None, None, None)
+
+        call_params = mock_get.call_args.kwargs.get("params", {})
+        self.assertNotIn("apikey", call_params, "API key must not be in URL params")
+        self.assertNotIn("apiKey", call_params, "API key must not be in URL params")
+        call_headers = mock_get.call_args.kwargs.get("headers", {})
+        self.assertEqual(
+            call_headers.get("X-Subs-Api-Key"), "super-secret-key-xyz",
+            "API key must be in X-Subs-Api-Key header",
+        )
 
 
 class TestProviderOrdering(unittest.TestCase):

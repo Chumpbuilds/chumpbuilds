@@ -97,7 +97,7 @@ The subtitle service provides on-demand SRT subtitle fetching for the X87 deskto
 
 | Priority | Provider | Requires config |
 |----------|----------|-----------------|
-| 1 | **subs.ro REST API** (`api.subs.ro`) | Yes — `SUBSRO_API_KEY` |
+| 1 | **subs.ro REST API** (`api.subs.ro/v1.0`) | Yes — `SUBSRO_API_KEY` |
 | 2 | **OpenSubtitles VIP REST API** (`vip-api.opensubtitles.com`) | Yes — see env vars below |
 | 3 | **subliminal** (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles) | No |
 
