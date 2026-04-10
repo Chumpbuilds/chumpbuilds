@@ -711,6 +711,11 @@ async def get_subtitles(
             status_code=502,
         )
 
+    # Strip UTF-8 BOM if present — some players (e.g. Android ExoPlayer) reject
+    # SRT files whose first bytes are EF BB BF rather than '1'.
+    if srt_text.startswith("\ufeff"):
+        srt_text = srt_text[1:]
+
     logger.info("Subtitle fetched via %s for '%s' (%s)", provider_used, title, lang)
     _cache_write(key, srt_text)
     return PlainTextResponse(srt_text, status_code=200)
@@ -814,6 +819,10 @@ async def download_subtitle(
 
     _cache_write(cache_key, srt_text)
     logger.info("Downloaded subtitle file_id=%s (%d bytes)", file_id, len(srt_text))
+    # Strip UTF-8 BOM if present — some players reject SRT files that start
+    # with EF BB BF rather than the digit '1'.
+    if srt_text.startswith("\ufeff"):
+        srt_text = srt_text[1:]
     return PlainTextResponse(srt_text, status_code=200)
 
 
