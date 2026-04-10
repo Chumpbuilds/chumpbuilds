@@ -9,6 +9,8 @@ Tests cover:
 - Graceful fallback on empty results
 - Language filtering
 - Provider ordering (subs.ro → OpenSubtitles VIP → subliminal)
+- /subtitles/search returns subs.ro results when configured
+- HEAD /subtitles returns 200 (not 405)
 """
 
 from __future__ import annotations
@@ -957,6 +959,193 @@ class TestBomStripping(unittest.TestCase):
         result = self.srv._strip_bom(srt_bytes)
         self.assertIsInstance(result, str)
         self.assertTrue(result.startswith("1\n"))
+
+
+class TestSearchEndpointSubsroResults(unittest.TestCase):
+    """Tests that /subtitles/search returns subs.ro results when the provider is configured."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+        self.srv.SUBSRO_API_KEY = "test-key-123"
+
+    def test_search_returns_subsro_results_when_configured(self):
+        """/subtitles/search must return a non-empty list when subs.ro has matches."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "id": 42,
+                "language": "ro",
+                "title": "Pets on a Train",
+                "release": "Pets.on.a.Train.2025.BluRay",
+                "downloads": 200,
+                "url": "https://api.subs.ro/v1.0/subtitle/42/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get(
+                    "/subtitles/search"
+                    "?title=Pets+on+a+Train+-+2025"
+                    "&year=2025"
+                    "&tmdb_id=1107216"
+                    "&lang=ro"
+                )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIsInstance(data, list)
+        self.assertGreater(len(data), 0, "Search must return at least one result from subs.ro")
+        first = data[0]
+        self.assertEqual(first["provider"], "subs.ro")
+        self.assertEqual(first["language"], "ro")
+        self.assertIn("url", first, "Result must include a 'url' field for fetching the SRT")
+        # url should point to /subtitles endpoint
+        self.assertTrue(first["url"].startswith("/subtitles?"), f"url should start with /subtitles?, got: {first['url']!r}")
+
+    def test_search_returns_empty_when_subsro_key_missing(self):
+        """/subtitles/search returns [] when subs.ro not configured and VIP not authenticated."""
+        from fastapi.testclient import TestClient
+
+        self.srv.SUBSRO_API_KEY = ""
+
+        with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles/search?title=TestTitle&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), [])
+
+    def test_search_filters_wrong_language_from_subsro(self):
+        """subs.ro results in the wrong language are excluded from search output."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "id": 1,
+                "language": "en",  # wrong language
+                "title": "Pets on a Train",
+                "release": "Pets.on.a.Train.2025.BluRay",
+                "downloads": 100,
+                "url": "https://api.subs.ro/v1.0/subtitle/1/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/search?title=Pets+on+a+Train&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), [], "Results in wrong language must be filtered out")
+
+    def test_search_includes_url_with_all_query_params(self):
+        """The url in subs.ro results includes year, tmdb_id, season, episode when provided."""
+        from fastapi.testclient import TestClient
+        import urllib.parse
+
+        subsro_items = [
+            {
+                "id": 10,
+                "language": "ro",
+                "title": "Breaking Bad",
+                "release": "Breaking.Bad.S01E03",
+                "downloads": 50,
+                "url": "https://api.subs.ro/v1.0/subtitle/10/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get(
+                    "/subtitles/search"
+                    "?title=Breaking+Bad"
+                    "&year=2008"
+                    "&season=1"
+                    "&episode=3"
+                    "&lang=ro"
+                )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertGreater(len(data), 0)
+        url = data[0]["url"]
+        parsed = urllib.parse.urlparse(url)
+        qs = urllib.parse.parse_qs(parsed.query)
+        self.assertEqual(qs.get("season", [None])[0], "1")
+        self.assertEqual(qs.get("episode", [None])[0], "3")
+        self.assertEqual(qs.get("year", [None])[0], "2008")
+
+    def test_search_gracefully_handles_subsro_exception(self):
+        """A subs.ro search error does not crash the endpoint; returns empty or VIP-only list."""
+        from fastapi.testclient import TestClient
+        import httpx
+
+        with patch.object(self.srv, "_subsro_search", side_effect=httpx.ConnectError("timeout")):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/search?title=Inception&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsInstance(resp.json(), list)
+
+
+class TestSubtitlesHeadMethod(unittest.TestCase):
+    """Tests that HEAD /subtitles returns 200 (not 405)."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+
+    def test_head_subtitles_returns_200(self):
+        """HEAD /subtitles must return 200 so clients probing availability succeed."""
+        from fastapi.testclient import TestClient
+
+        client = TestClient(self.srv.app)
+        resp = client.head("/subtitles?title=Some+Movie&lang=en")
+
+        self.assertIn(resp.status_code, (200, 204), f"HEAD /subtitles returned {resp.status_code}, expected 200 or 204")
+
+    def test_head_subtitles_returns_no_body(self):
+        """HEAD /subtitles must return an empty body."""
+        from fastapi.testclient import TestClient
+
+        client = TestClient(self.srv.app)
+        resp = client.head("/subtitles?title=Some+Movie&lang=en")
+
+        self.assertEqual(resp.content, b"", "HEAD response must have an empty body")
+
+    def test_head_subtitles_includes_content_type_header(self):
+        """HEAD /subtitles must return a Content-Type header."""
+        from fastapi.testclient import TestClient
+
+        client = TestClient(self.srv.app)
+        resp = client.head("/subtitles?title=Some+Movie&lang=en")
+
+        ct = resp.headers.get("content-type", "")
+        self.assertIn("text/plain", ct, f"Content-Type must be text/plain, got: {ct!r}")
+
+    def test_get_subtitles_still_works_after_head_support_added(self):
+        """Adding HEAD support must not break GET /subtitles."""
+        from fastapi.testclient import TestClient
+
+        fake_srt = "1\n00:00:01,000 --> 00:00:03,000\nHello\n"
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=fake_srt),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=TestMovie&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.text, fake_srt)
 
 
 if __name__ == "__main__":
