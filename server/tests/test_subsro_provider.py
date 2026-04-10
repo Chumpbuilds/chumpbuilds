@@ -640,6 +640,58 @@ class TestSubsroZipExtraction(unittest.TestCase):
         self.assertIn("text/plain", ct)
 
 
+class TestBomStripping(unittest.TestCase):
+    """Tests that the /subtitles endpoint strips a leading UTF-8 BOM."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+
+    def test_endpoint_strips_bom_from_response(self):
+        """SRT text beginning with BOM must be returned without the BOM."""
+        from fastapi.testclient import TestClient
+
+        srt_without_bom = "1\n00:00:01,000 --> 00:00:03,000\nHello World\n"
+        srt_with_bom = "\ufeff" + srt_without_bom
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=srt_with_bom),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=TestMovie&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        body = resp.text
+        self.assertTrue(body.startswith("1\n"), f"Body must start with '1\\n', got: {body[:20]!r}")
+        self.assertNotIn("\ufeff", body, "Response must not contain BOM character")
+        ct = resp.headers.get("content-type", "")
+        self.assertIn("text/plain", ct)
+
+    def test_endpoint_preserves_content_without_bom(self):
+        """SRT text without BOM must be returned unchanged."""
+        from fastapi.testclient import TestClient
+
+        srt_text = "1\n00:00:01,000 --> 00:00:03,000\nHello World\n"
+
+        with patch.multiple(
+            self.srv,
+            _fetch_via_subsro=MagicMock(return_value=srt_text),
+            _fetch_via_vip=MagicMock(return_value=None),
+            _fetch_via_subliminal=MagicMock(return_value=None),
+            _cache_read=MagicMock(return_value=None),
+            _cache_write=MagicMock(),
+        ):
+            client = TestClient(self.srv.app)
+            resp = client.get("/subtitles?title=TestMovie&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.text, srt_text)
+
+
 class TestCachePoisoningRejection(unittest.TestCase):
     """Tests that ZIP bytes stored in the subtitle cache are detected and evicted."""
 
