@@ -543,6 +543,12 @@ class NativePlayerActivity : Activity() {
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                 android.view.ViewGroup.LayoutParams.MATCH_PARENT
             )
+            // Force subtitle rendering to be visible even with useController=false.
+            // Without this, Media3's SubtitleView can be hidden when the built-in
+            // controller is disabled, causing decoded subtitle text to never appear.
+            subtitleView?.visibility = View.VISIBLE
+            subtitleView?.setApplyEmbeddedStyles(true)
+            subtitleView?.setApplyEmbeddedFontSizes(true)
         }
         frame.addView(playerView)
 
