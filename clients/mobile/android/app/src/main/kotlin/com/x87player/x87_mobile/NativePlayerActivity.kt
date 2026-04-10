@@ -21,6 +21,9 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.graphics.Color
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.widget.ImageButton
 import android.widget.SeekBar
 import android.widget.TextView
@@ -1175,10 +1178,18 @@ class NativePlayerActivity : Activity() {
                 }
 
                 // Build dialog labels: "Off" first, then each subtitle result
-                val labels = mutableListOf("Off")
+                val labels = mutableListOf<CharSequence>("Off")
                 for (r in allResults) {
                     val downloads = if (r.downloadCount > 0) " (↓${r.downloadCount})" else ""
-                    labels.add("[${r.language.uppercase()}] ${r.release}$downloads")
+                    val text = "[${r.language.uppercase()}] ${r.release}$downloads  ${r.provider}"
+                    val spannable = SpannableString(text)
+                    val color = if (r.provider.equals("subs.ro", ignoreCase = true)) {
+                        Color.parseColor("#FFD700") // yellow for subs.ro
+                    } else {
+                        Color.parseColor("#4FC3F7") // blue for OpenSubtitles
+                    }
+                    spannable.setSpan(ForegroundColorSpan(color), 0, text.length, 0)
+                    labels.add(spannable)
                 }
 
                 AlertDialog.Builder(this)

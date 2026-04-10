@@ -361,6 +361,7 @@ class VLCPlayerViewController: UIViewController {
                 let language: String
                 let release: String
                 let downloadCount: Int
+                let provider: String
             }
 
             var allResults: [SubtitleResult] = []
@@ -393,7 +394,8 @@ class VLCPlayerViewController: UIViewController {
                             fileId: fileId,
                             language: item["language"] as? String ?? lang,
                             release: item["release"] as? String ?? "",
-                            downloadCount: item["download_count"] as? Int ?? 0
+                            downloadCount: item["download_count"] as? Int ?? 0,
+                            provider: item["provider"] as? String ?? "OpenSubtitles"
                         ))
                     }
                 }.resume()
@@ -420,7 +422,8 @@ class VLCPlayerViewController: UIViewController {
                     })
                     for r in allResults {
                         let badge = r.downloadCount > 0 ? " (↓\(r.downloadCount))" : ""
-                        let label = "[\(r.language.uppercased())] \(r.release)\(badge)"
+                        let tag = r.provider.lowercased() == "subs.ro" ? "🟨" : "🟦"
+                        let label = "\(tag) [\(r.language.uppercased())] \(r.release)\(badge)  (\(r.provider))"
                         sheet.addAction(UIAlertAction(title: label, style: .default) { [weak self] _ in
                             self?.downloadAndInjectSubtitle(
                                 fileId: r.fileId,

@@ -1586,5 +1586,88 @@ class TestSyntheticFileId(unittest.TestCase):
         self.assertEqual(resp.status_code, 502)
 
 
+class TestSearchEndpointResultOrdering(unittest.TestCase):
+    """Tests that /subtitles/search returns OpenSubtitles results before subs.ro results."""
+
+    def setUp(self):
+        self.srv = _load_subtitle_server()
+        self.srv.SUBSRO_API_KEY = "test-key-123"
+
+    def test_opensubtitles_results_before_subsro_when_both_present(self):
+        """/subtitles/search must list OpenSubtitles entries before subs.ro entries."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "id": 1,
+                "language": "en",
+                "title": "Inception",
+                "release": "Inception.2010.BluRay.subs.ro",
+                "downloads": 100,
+                "url": "https://api.subs.ro/v1.0/subtitle/1/download",
+            }
+        ]
+
+        vip_items = [
+            {
+                "attributes": {
+                    "language": "en",
+                    "release": "Inception.2010.BluRay.VIP",
+                    "download_count": 500,
+                    "files": [{"file_id": 9001}],
+                }
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=True):
+                with patch.object(self.srv, "_vip_search_subtitles", return_value=vip_items):
+                    client = TestClient(self.srv.app)
+                    resp = client.get("/subtitles/search?title=Inception&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertGreaterEqual(len(data), 2, "Expected at least 2 results (one VIP, one subs.ro)")
+
+        providers = [r["provider"] for r in data]
+        # OpenSubtitles must come before subs.ro
+        first_subsro = next((i for i, p in enumerate(providers) if p == "subs.ro"), None)
+        first_vip = next((i for i, p in enumerate(providers) if p == "OpenSubtitles"), None)
+        self.assertIsNotNone(first_vip, "Expected at least one OpenSubtitles result")
+        self.assertIsNotNone(first_subsro, "Expected at least one subs.ro result")
+        self.assertLess(first_vip, first_subsro, "OpenSubtitles results must appear before subs.ro results")
+
+    def test_opensubtitles_provider_string_is_consistent(self):
+        """/subtitles/search VIP results must use 'OpenSubtitles' as provider string."""
+        from fastapi.testclient import TestClient
+
+        vip_items = [
+            {
+                "attributes": {
+                    "language": "en",
+                    "release": "Inception.2010.BluRay.VIP",
+                    "download_count": 500,
+                    "files": [{"file_id": 9001}],
+                }
+            }
+        ]
+
+        with patch.object(self.srv, "_ensure_authenticated", return_value=True):
+            with patch.object(self.srv, "_vip_search_subtitles", return_value=vip_items):
+                # Disable subs.ro so only VIP results come back
+                self.srv.SUBSRO_API_KEY = ""
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/search?title=Inception&lang=en")
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertGreater(len(data), 0, "Expected at least one VIP result")
+        for r in data:
+            self.assertEqual(
+                r["provider"], "OpenSubtitles",
+                f"Provider should be 'OpenSubtitles', got {r['provider']!r}",
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
