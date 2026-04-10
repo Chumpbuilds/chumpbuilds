@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import logging
 import os
 import time
@@ -660,6 +661,91 @@ def _cache_write(key: str, content: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Synthetic file_id helpers (subs.ro ↔ integer file_id mapping)
+# ---------------------------------------------------------------------------
+# Real OpenSubtitles file_ids are typically small integers (< ~10 million).
+# Synthetic ids are derived from SHA-256 of the subs.ro download URL, taking
+# the last 9 hex digits (max ~68 billion).  Because they are identified by
+# presence in the persistent map rather than by range, collisions with real
+# VIP ids are handled correctly: the map is checked first on download.
+
+def _load_synthetic_id_map() -> dict[str, dict]:
+    """Load the synthetic file_id → subs.ro metadata map from disk.
+
+    The map file lives at ``CACHE_DIR / "synthetic_ids.json"`` so it follows
+    any test override of ``CACHE_DIR``.  Returns an empty dict on any error.
+    """
+    path = CACHE_DIR / "synthetic_ids.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("synthetic_id_map: failed to load — %s", exc)
+        return {}
+
+
+def _save_synthetic_id_map(mapping: dict[str, dict]) -> None:
+    """Atomically persist *mapping* to ``CACHE_DIR / "synthetic_ids.json"``."""
+    path = CACHE_DIR / "synthetic_ids.json"
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    except Exception as exc:
+        logger.error("synthetic_id_map: failed to save — %s", exc)
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _make_synthetic_file_id(download_url: str, salt: int = 0) -> int:
+    """Hash *download_url* (+optional *salt*) to a stable positive integer.
+
+    Uses the last 9 hex digits of SHA-256, giving a range of 1–68 billion.
+    Returns 1 as a fallback if the hash produces 0 (astronomically unlikely).
+    """
+    raw = f"{download_url}:{salt}" if salt else download_url
+    digest = hashlib.sha256(raw.encode()).hexdigest()
+    return int(digest[-9:], 16) or 1
+
+
+def _register_synthetic_id(download_url: str, extra_metadata: dict | None = None) -> int:
+    """Return (and persist) a stable synthetic ``file_id`` for *download_url*.
+
+    If the URL is already registered, returns its existing id without
+    re-writing the map.  Handles hash collisions by incrementing a salt
+    counter until a free slot is found.
+    """
+    mapping = _load_synthetic_id_map()
+
+    # Fast path: URL already registered → return existing id
+    for sid, entry in mapping.items():
+        if entry.get("download_url") == download_url:
+            return int(sid)
+
+    # Generate candidate id; rehash with incrementing salt on collision
+    salt = 0
+    file_id = _make_synthetic_file_id(download_url, salt)
+    while str(file_id) in mapping:
+        salt += 1
+        file_id = _make_synthetic_file_id(download_url, salt)
+
+    entry: dict = {"download_url": download_url, "provider": "subs.ro"}
+    if extra_metadata:
+        entry.update(extra_metadata)
+    mapping[str(file_id)] = entry
+    _save_synthetic_id_map(mapping)
+    return file_id
+
+
+def _lookup_synthetic_id(file_id: int) -> dict | None:
+    """Return the mapping entry for *file_id*, or ``None`` if not found."""
+    return _load_synthetic_id_map().get(str(file_id))
+
+
+# ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
@@ -766,6 +852,25 @@ async def search_subtitles(
                 r_lang = str(r.get("language", r.get("lang", ""))).lower()
                 if r_lang != lang.lower():
                     continue
+                # Resolve the subs.ro download URL for this result.
+                # Needed both for registering a synthetic file_id and for the
+                # legacy /subtitles fetch URL.
+                download_url: str = (
+                    r.get("downloadLink") or r.get("url") or r.get("download_url") or ""
+                )
+                if not download_url:
+                    sub_id = r.get("id")
+                    if sub_id:
+                        download_url = f"{SUBSRO_BASE}/subtitle/{sub_id}/download"
+                if not download_url:
+                    logger.warning("subs.ro: skipping result with no download URL for '%s'", title)
+                    continue
+                # Register (or retrieve) a stable synthetic integer file_id so
+                # Android/iOS clients can call /subtitles/download?file_id=<int>.
+                syn_file_id = _register_synthetic_id(
+                    download_url,
+                    {"language": r_lang, "release": r.get("release", r.get("title", ""))},
+                )
                 # Build a self-referencing URL so the app can fetch the SRT
                 # directly via our own /subtitles endpoint.
                 fetch_params: dict[str, str] = {"title": title, "lang": lang}
@@ -781,10 +886,11 @@ async def search_subtitles(
                     fetch_params["episode"] = str(episode)
                 fetch_url = "/subtitles?" + urllib.parse.urlencode(fetch_params)
                 output.append({
+                    "file_id": syn_file_id,
                     "provider": "subs.ro",
                     "language": r_lang,
                     "release": r.get("release", r.get("title", "")),
-                    "download_count": r.get("download_count", r.get("downloads", 0)),
+                    "download_count": int(r.get("download_count", r.get("downloads", 0)) or 0),
                     "season_number": r.get("season"),
                     "episode_number": r.get("episode"),
                     "url": fetch_url,
@@ -842,7 +948,7 @@ async def search_subtitles(
 
 @app.get("/subtitles/download", response_class=PlainTextResponse)
 async def download_subtitle(
-    file_id: int = Query(..., description="OpenSubtitles file_id to download"),
+    file_id: int = Query(..., description="OpenSubtitles file_id or synthetic subs.ro file_id"),
 ) -> PlainTextResponse:
     """Download a specific subtitle by file_id and return its SRT content."""
     cache_key = f"file_{file_id}"
@@ -851,6 +957,32 @@ async def download_subtitle(
         logger.info("Cache hit for file_id=%s", file_id)
         return PlainTextResponse(cached, status_code=200)
 
+    # --- Check synthetic subs.ro file_id first ---
+    syn_entry = _lookup_synthetic_id(file_id)
+    if syn_entry is not None:
+        download_url = syn_entry.get("download_url", "")
+        if not download_url:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Synthetic id {file_id} has no download_url in mapping",
+            )
+        logger.info("Synthetic file_id=%s → subs.ro download", file_id)
+        try:
+            srt_text = _subsro_download(download_url)
+        except Exception as exc:
+            logger.error("subs.ro: download error for synthetic id %s — %s", file_id, exc)
+            raise HTTPException(status_code=502, detail=f"subs.ro download failed: {exc}")
+        if not srt_text or not srt_text.strip():
+            raise HTTPException(status_code=404, detail="subs.ro returned empty subtitle content")
+        srt_text = _strip_bom(srt_text)
+        _cache_write(cache_key, srt_text)
+        logger.info(
+            "Downloaded subs.ro subtitle for synthetic file_id=%s (%d bytes)",
+            file_id, len(srt_text),
+        )
+        return PlainTextResponse(srt_text, status_code=200)
+
+    # --- Real OpenSubtitles VIP file_id ---
     if not _ensure_authenticated():
         raise HTTPException(status_code=503, detail="OpenSubtitles VIP not configured or auth failed")
 
