@@ -414,7 +414,7 @@ class VLCPlayerViewController: UIViewController {
                     let sheet = UIAlertController(title: "Subtitles", message: nil, preferredStyle: .actionSheet)
                     sheet.addAction(UIAlertAction(title: "Off", style: .default) { _ in
                         // Disable all subtitle tracks in VLC
-                        self.mediaPlayer?.currentSubtitleTrackIndex = -1
+                        self.mediaPlayer?.currentVideoSubTitleIndex = -1
                         if wasPlaying { self.mediaPlayer?.play() }
                         self.scheduleHideControls()
                     })
