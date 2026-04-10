@@ -1148,5 +1148,303 @@ class TestSubtitlesHeadMethod(unittest.TestCase):
         self.assertEqual(resp.text, fake_srt)
 
 
+class TestSyntheticFileId(unittest.TestCase):
+    """Tests for synthetic file_id generation, persistence, and download."""
+
+    def setUp(self):
+        import tempfile
+        self.srv = _load_subtitle_server()
+        self.srv.SUBSRO_API_KEY = "test-key-123"
+        # Each test gets its own fresh cache dir so map files don't leak
+        self._tmp = tempfile.mkdtemp()
+        from pathlib import Path
+        self.srv.CACHE_DIR = Path(self._tmp)
+
+    # ------------------------------------------------------------------
+    # _make_synthetic_file_id
+    # ------------------------------------------------------------------
+
+    def test_make_synthetic_file_id_returns_positive_int(self):
+        """Synthetic id must be a positive integer."""
+        fid = self.srv._make_synthetic_file_id("https://api.subs.ro/v1.0/subtitle/99/download")
+        self.assertIsInstance(fid, int)
+        self.assertGreater(fid, 0)
+
+    def test_make_synthetic_file_id_is_deterministic(self):
+        """Same URL must always produce the same id."""
+        url = "https://api.subs.ro/v1.0/subtitle/99/download"
+        self.assertEqual(
+            self.srv._make_synthetic_file_id(url),
+            self.srv._make_synthetic_file_id(url),
+        )
+
+    def test_make_synthetic_file_id_differs_with_salt(self):
+        """Different salt values must produce different ids (collision resolution)."""
+        url = "https://api.subs.ro/v1.0/subtitle/7/download"
+        self.assertNotEqual(
+            self.srv._make_synthetic_file_id(url, salt=0),
+            self.srv._make_synthetic_file_id(url, salt=1),
+        )
+
+    # ------------------------------------------------------------------
+    # _register_synthetic_id / _lookup_synthetic_id
+    # ------------------------------------------------------------------
+
+    def test_register_returns_int_file_id(self):
+        """_register_synthetic_id must return an int."""
+        fid = self.srv._register_synthetic_id("https://api.subs.ro/v1.0/subtitle/42/download")
+        self.assertIsInstance(fid, int)
+        self.assertGreater(fid, 0)
+
+    def test_register_same_url_returns_same_id(self):
+        """Registering the same URL twice must return the same id (idempotent)."""
+        url = "https://api.subs.ro/v1.0/subtitle/42/download"
+        fid1 = self.srv._register_synthetic_id(url)
+        fid2 = self.srv._register_synthetic_id(url)
+        self.assertEqual(fid1, fid2)
+
+    def test_lookup_returns_none_for_unknown_id(self):
+        """_lookup_synthetic_id must return None when the id is not in the map."""
+        self.assertIsNone(self.srv._lookup_synthetic_id(999999999))
+
+    def test_lookup_returns_entry_after_register(self):
+        """After registering, _lookup must find the entry."""
+        url = "https://api.subs.ro/v1.0/subtitle/77/download"
+        fid = self.srv._register_synthetic_id(url, {"language": "ro"})
+        entry = self.srv._lookup_synthetic_id(fid)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["download_url"], url)
+        self.assertEqual(entry["provider"], "subs.ro")
+
+    def test_map_persists_across_load_save_cycle(self):
+        """Map written by _register_synthetic_id is readable by _load_synthetic_id_map."""
+        url = "https://api.subs.ro/v1.0/subtitle/55/download"
+        fid = self.srv._register_synthetic_id(url)
+        loaded = self.srv._load_synthetic_id_map()
+        self.assertIn(str(fid), loaded)
+        self.assertEqual(loaded[str(fid)]["download_url"], url)
+
+    def test_map_file_is_valid_json(self):
+        """The map file on disk must be valid JSON after registration."""
+        import json as _json
+        from pathlib import Path
+        self.srv._register_synthetic_id("https://api.subs.ro/v1.0/subtitle/1/download")
+        map_path = Path(self._tmp) / "synthetic_ids.json"
+        self.assertTrue(map_path.exists())
+        data = _json.loads(map_path.read_text(encoding="utf-8"))
+        self.assertIsInstance(data, dict)
+        self.assertGreater(len(data), 0)
+
+    # ------------------------------------------------------------------
+    # /subtitles/search — file_id in subs.ro results
+    # ------------------------------------------------------------------
+
+    def test_search_subsro_result_includes_int_file_id(self):
+        """/subtitles/search must return an int file_id for every subs.ro result."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "id": 42,
+                "language": "ro",
+                "title": "Pets on a Train",
+                "release": "Pets.on.a.Train.2025.BluRay",
+                "downloads": 200,
+                "url": "https://api.subs.ro/v1.0/subtitle/42/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get(
+                    "/subtitles/search?title=Pets+on+a+Train&year=2025&lang=ro"
+                )
+
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertIsInstance(data, list)
+        self.assertGreater(len(data), 0)
+        first = data[0]
+        self.assertIn("file_id", first, "subs.ro result must include file_id")
+        self.assertIsInstance(first["file_id"], int, "file_id must be an integer")
+        self.assertGreater(first["file_id"], 0)
+
+    def test_search_subsro_result_file_id_is_stable(self):
+        """Calling /subtitles/search twice for the same item returns the same file_id."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "id": 10,
+                "language": "en",
+                "title": "Inception",
+                "release": "Inception.2010.BluRay",
+                "downloads": 1000,
+                "url": "https://api.subs.ro/v1.0/subtitle/10/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp1 = client.get("/subtitles/search?title=Inception&lang=en")
+                resp2 = client.get("/subtitles/search?title=Inception&lang=en")
+
+        fid1 = resp1.json()[0]["file_id"]
+        fid2 = resp2.json()[0]["file_id"]
+        self.assertEqual(fid1, fid2, "file_id must be stable across calls")
+
+    def test_search_subsro_result_required_fields(self):
+        """Each subs.ro search result must include file_id, language, release, download_count, provider."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "id": 5,
+                "language": "ro",
+                "release": "Some.Movie.2024",
+                "downloads": 50,
+                "url": "https://api.subs.ro/v1.0/subtitle/5/download",
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/search?title=Some+Movie&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        result = resp.json()[0]
+        for field in ("file_id", "language", "release", "download_count", "provider"):
+            self.assertIn(field, result, f"Required field '{field}' missing from subs.ro result")
+        self.assertIsInstance(result["file_id"], int)
+        self.assertIsInstance(result["download_count"], int)
+        self.assertEqual(result["provider"], "subs.ro")
+
+    def test_search_result_missing_download_url_is_skipped(self):
+        """A subs.ro result with no resolvable download URL must be omitted."""
+        from fastapi.testclient import TestClient
+
+        subsro_items = [
+            {
+                "language": "ro",
+                "release": "No.URL.Movie.2024",
+                "downloads": 10,
+                # No 'url', 'downloadLink', 'download_url', or 'id' fields
+            }
+        ]
+
+        with patch.object(self.srv, "_subsro_search", return_value=subsro_items):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/search?title=No+URL+Movie&lang=ro")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), [], "Result with no download URL must be skipped")
+
+    # ------------------------------------------------------------------
+    # /subtitles/download — synthetic id path
+    # ------------------------------------------------------------------
+
+    def test_download_by_synthetic_id_returns_srt(self):
+        """/subtitles/download?file_id=<synthetic> must return SRT text from subs.ro."""
+        from fastapi.testclient import TestClient
+
+        fake_srt = "1\n00:00:01,000 --> 00:00:03,000\nHello\n"
+        download_url = "https://api.subs.ro/v1.0/subtitle/42/download"
+
+        # Pre-register the synthetic id so the download endpoint can find it
+        fid = self.srv._register_synthetic_id(download_url)
+
+        with patch.object(self.srv, "_subsro_download", return_value=fake_srt):
+            with patch.object(self.srv, "_cache_read", return_value=None):
+                client = TestClient(self.srv.app)
+                resp = client.get(f"/subtitles/download?file_id={fid}")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.text, fake_srt)
+
+    def test_download_by_synthetic_id_strips_bom(self):
+        """/subtitles/download must strip a UTF-8 BOM from subs.ro content."""
+        from fastapi.testclient import TestClient
+
+        srt_with_bom = "\ufeff1\n00:00:01,000 --> 00:00:03,000\nHello\n"
+        expected = "1\n00:00:01,000 --> 00:00:03,000\nHello\n"
+        download_url = "https://api.subs.ro/v1.0/subtitle/33/download"
+
+        fid = self.srv._register_synthetic_id(download_url)
+
+        with patch.object(self.srv, "_subsro_download", return_value=srt_with_bom):
+            with patch.object(self.srv, "_cache_read", return_value=None):
+                client = TestClient(self.srv.app)
+                resp = client.get(f"/subtitles/download?file_id={fid}")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.text, expected)
+
+    def test_download_by_synthetic_id_caches_result(self):
+        """/subtitles/download must write the SRT to the cache after a subs.ro fetch."""
+        from fastapi.testclient import TestClient
+
+        fake_srt = "1\n00:00:01,000 --> 00:00:03,000\nCached\n"
+        download_url = "https://api.subs.ro/v1.0/subtitle/66/download"
+        fid = self.srv._register_synthetic_id(download_url)
+
+        with patch.object(self.srv, "_subsro_download", return_value=fake_srt) as mock_dl:
+            with patch.object(self.srv, "_cache_read", return_value=None):
+                with patch.object(self.srv, "_cache_write") as mock_write:
+                    client = TestClient(self.srv.app)
+                    client.get(f"/subtitles/download?file_id={fid}")
+
+        mock_write.assert_called_once()
+        call_args = mock_write.call_args[0]
+        self.assertEqual(call_args[0], f"file_{fid}")
+        self.assertEqual(call_args[1], fake_srt)
+
+    def test_download_by_synthetic_id_returns_cached_on_second_call(self):
+        """A second call for the same synthetic id is served from cache."""
+        from fastapi.testclient import TestClient
+
+        fake_srt = "1\n00:00:01,000 --> 00:00:03,000\nFrom cache\n"
+        download_url = "https://api.subs.ro/v1.0/subtitle/88/download"
+        fid = self.srv._register_synthetic_id(download_url)
+
+        with patch.object(self.srv, "_cache_read", return_value=fake_srt):
+            client = TestClient(self.srv.app)
+            resp = client.get(f"/subtitles/download?file_id={fid}")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.text, fake_srt)
+
+    def test_download_unknown_synthetic_id_falls_through_to_vip_error(self):
+        """An unknown synthetic-range id with no VIP auth returns 503."""
+        from fastapi.testclient import TestClient
+
+        # Choose an id that is NOT registered and VIP is not configured
+        with patch.object(self.srv, "_cache_read", return_value=None):
+            with patch.object(self.srv, "_ensure_authenticated", return_value=False):
+                client = TestClient(self.srv.app)
+                resp = client.get("/subtitles/download?file_id=123456789")
+
+        self.assertIn(resp.status_code, (503, 404))
+
+    def test_download_subsro_error_returns_502(self):
+        """A subs.ro download error for a synthetic id must return 502."""
+        from fastapi.testclient import TestClient
+
+        download_url = "https://api.subs.ro/v1.0/subtitle/99/download"
+        fid = self.srv._register_synthetic_id(download_url)
+
+        with patch.object(
+            self.srv, "_subsro_download", side_effect=Exception("connection refused")
+        ):
+            with patch.object(self.srv, "_cache_read", return_value=None):
+                client = TestClient(self.srv.app)
+                resp = client.get(f"/subtitles/download?file_id={fid}")
+
+        self.assertEqual(resp.status_code, 502)
+
+
 if __name__ == "__main__":
     unittest.main()
