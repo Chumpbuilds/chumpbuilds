@@ -22,12 +22,14 @@ import hashlib
 import io
 import logging
 import os
+import re
 import time
+import urllib.parse
 import zipfile
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 # ---------------------------------------------------------------------------
@@ -618,6 +620,46 @@ def _fetch_via_subliminal(
 
 
 # ---------------------------------------------------------------------------
+# Title normalization
+# ---------------------------------------------------------------------------
+
+_TRAILING_YEAR_RE = re.compile(
+    r"""
+    \s*          # optional leading whitespace
+    (?:
+      [-–]\s*\d{4}  # dash/en-dash followed by a year, e.g. "- 2025"
+      |
+      \(\d{4}\)     # year in parentheses, e.g. "(2025)"
+      |
+      \[\d{4}\]     # year in brackets, e.g. "[2025]"
+    )
+    \s*$         # optional trailing whitespace through end-of-string
+    """,
+    re.VERBOSE,
+)
+
+
+def _normalize_title(title: str) -> str:
+    """Normalize a content title for subtitle searching.
+
+    - URL-decodes ``+`` signs to spaces (some clients URL-encode titles with
+      ``application/x-www-form-urlencoded`` encoding rather than pure percent-
+      encoding, so ``+`` arrives as a literal ``+`` after FastAPI decodes the
+      query parameter).
+    - Strips a trailing year annotation in the forms ``- YYYY``, ``(YYYY)``,
+      or ``[YYYY]`` that apps commonly append to disambiguate titles.
+    - Collapses runs of whitespace and trims.
+    """
+    # Replace literal '+' that was not percent-encoded (e.g. from Android app)
+    title = urllib.parse.unquote_plus(title)
+    # Remove trailing year suffix
+    title = _TRAILING_YEAR_RE.sub("", title)
+    # Collapse internal whitespace
+    title = re.sub(r"\s+", " ", title).strip()
+    return title
+
+
+# ---------------------------------------------------------------------------
 # Cache helpers
 # ---------------------------------------------------------------------------
 
@@ -661,8 +703,9 @@ def _cache_write(key: str, content: str) -> None:
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get("/subtitles", response_class=PlainTextResponse)
+@app.api_route("/subtitles", methods=["GET", "HEAD"], response_class=PlainTextResponse)
 async def get_subtitles(
+    request: Request,
     title: str = Query(..., description="Movie or episode title"),
     year: int | None = Query(None),
     tmdb_id: int | None = Query(None),
@@ -693,7 +736,46 @@ async def get_subtitles(
             )
         ep_info = f" S{season:02d}E{episode:02d}" if (season is not None and episode is not None) else ""
         logger.info("Cache hit for '%s'%s (%s)", title, ep_info, lang)
-        return PlainTextResponse(_strip_bom(cached), status_code=200)
+        clean = _strip_bom(cached)
+        if request.method == "HEAD":
+            return Response(
+                status_code=200,
+                headers={"Content-Length": str(len(clean.encode("utf-8")))},
+                media_type="text/plain; charset=utf-8",
+            )
+        return PlainTextResponse(clean, status_code=200)
+
+    # For HEAD requests, do a lightweight existence check via subs.ro search
+    # (or VIP search) rather than downloading the full subtitle.
+    if request.method == "HEAD":
+        # Probe subs.ro first (cheap search call, no download)
+        subsro_available = False
+        if SUBSRO_API_KEY:
+            try:
+                probe = _subsro_search(title, lang, year, imdb_id, season, episode)
+                lang_hits = [
+                    r for r in probe
+                    if str(r.get("language", r.get("lang", ""))).lower() == lang.lower()
+                ]
+                subsro_available = bool(lang_hits)
+            except Exception:
+                pass
+        # Probe VIP search (no download)
+        vip_available = False
+        if not subsro_available and _ensure_authenticated():
+            try:
+                vip_results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+                vip_available = any(
+                    r.get("attributes", {}).get("language", "").lower() == lang.lower()
+                    for r in vip_results
+                )
+            except Exception:
+                pass
+        status = 200 if (subsro_available or vip_available) else 404
+        return Response(
+            status_code=status,
+            media_type="text/plain; charset=utf-8",
+        )
 
     # --- Priority 1: subs.ro ---
     srt_text = _fetch_via_subsro(title, lang, year, imdb_id, season, episode)
@@ -745,55 +827,126 @@ async def search_subtitles(
     episode: int | None = Query(None),
     lang: str = Query("en"),
 ) -> JSONResponse:
-    """Return a JSON list of subtitle results with metadata for the given content."""
-    if not _ensure_authenticated():
-        logger.info("OpenSubtitles VIP: not configured or auth failed")
-        return JSONResponse([], status_code=200)
+    """Return a JSON list of subtitle results with metadata for the given content.
 
-    try:
-        results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
-    except httpx.HTTPStatusError as exc:
-        if exc.response.status_code == 401:
-            logger.warning("OpenSubtitles VIP: 401 on search — refreshing token")
-            if not _vip_login():
-                return JSONResponse([], status_code=200)
-            try:
-                results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
-            except Exception as exc2:
-                logger.error("OpenSubtitles VIP: search failed after token refresh — %s", exc2)
-                return JSONResponse([], status_code=200)
-        else:
-            logger.error("OpenSubtitles VIP: search HTTP error — %s", exc)
-            return JSONResponse([], status_code=200)
-    except Exception as exc:
-        logger.error("OpenSubtitles VIP: search error — %s", exc)
-        return JSONResponse([], status_code=200)
+    Results always include a ``url`` field pointing to ``/subtitles?...`` so
+    that callers can retrieve the SRT regardless of which backend provider
+    matched.  OpenSubtitles VIP results additionally carry a ``file_id`` that
+    can be used with ``/subtitles/download``.
 
-    output = []
-    for r in results:
-        attrs = r.get("attributes", {})
-        # Skip results that don't match the requested language
-        if attrs.get("language", "").lower() != lang.lower():
-            continue
-        files = attrs.get("files", [])
-        if not files:
-            continue
-        file_id = files[0].get("file_id")
-        if not file_id:
-            continue
-        output.append({
-            "file_id": file_id,
-            "language": attrs.get("language", lang),
-            "release": attrs.get("release", ""),
-            "download_count": attrs.get("download_count", 0),
-            "season_number": attrs.get("season_number"),
-            "episode_number": attrs.get("episode_number"),
-            "provider": "OpenSubtitles VIP",
-        })
+    Title normalization: the incoming title is first cleaned up (``+`` decoded,
+    trailing ``- YYYY`` / ``(YYYY)`` / ``[YYYY]`` stripped) before being sent
+    to providers, so titles such as ``"Pets on a Train - 2025"`` match entries
+    stored as ``"Pets on a Train"``.
+    """
+    # Normalize the incoming title once; pass the clean version to all providers
+    normalized = _normalize_title(title)
+    logger.info(
+        "Search request: raw_title='%s' normalized='%s' year=%s tmdb_id=%s lang=%s",
+        title, normalized, year, tmdb_id, lang,
+    )
+
+    output: list[dict] = []
+
+    # ------------------------------------------------------------------
+    # Provider 1: subs.ro (preferred; does not require OAuth)
+    # ------------------------------------------------------------------
+    if SUBSRO_API_KEY:
+        try:
+            subsro_results = _subsro_search(normalized, lang, year, imdb_id, season, episode)
+        except Exception as exc:
+            logger.error("subs.ro: search error in /subtitles/search — %s", exc)
+            subsro_results = []
+
+        for r in subsro_results:
+            item_lang = str(r.get("language", r.get("lang", ""))).lower()
+            if item_lang != lang.lower():
+                continue
+            # Build a direct /subtitles URL so the app can fetch regardless of
+            # which provider matched.  Use the normalized title for consistency.
+            fetch_url = (
+                f"/subtitles?title={urllib.parse.quote(normalized)}"
+                f"&lang={urllib.parse.quote(lang)}"
+            )
+            if year:
+                fetch_url += f"&year={year}"
+            if season is not None:
+                fetch_url += f"&season={season}"
+            if episode is not None:
+                fetch_url += f"&episode={episode}"
+            output.append({
+                "id": str(r.get("id", "")),
+                "language": item_lang or lang,
+                "release": r.get("release", r.get("title", "")),
+                "download_count": r.get("download_count", r.get("downloads", 0)),
+                "season_number": r.get("season", r.get("season_number")),
+                "episode_number": r.get("episode", r.get("episode_number")),
+                "provider": "subs.ro",
+                "url": fetch_url,
+            })
+
+    # ------------------------------------------------------------------
+    # Provider 2: OpenSubtitles VIP (requires OAuth token)
+    # ------------------------------------------------------------------
+    if _ensure_authenticated():
+        try:
+            vip_results = _vip_search_subtitles(normalized, lang, year, tmdb_id, imdb_id, season, episode)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                logger.warning("OpenSubtitles VIP: 401 on search — refreshing token")
+                if _vip_login():
+                    try:
+                        vip_results = _vip_search_subtitles(normalized, lang, year, tmdb_id, imdb_id, season, episode)
+                    except Exception as exc2:
+                        logger.error("OpenSubtitles VIP: search failed after token refresh — %s", exc2)
+                        vip_results = []
+                else:
+                    vip_results = []
+            else:
+                logger.error("OpenSubtitles VIP: search HTTP error — %s", exc)
+                vip_results = []
+        except Exception as exc:
+            logger.error("OpenSubtitles VIP: search error — %s", exc)
+            vip_results = []
+
+        for r in vip_results:
+            attrs = r.get("attributes", {})
+            if attrs.get("language", "").lower() != lang.lower():
+                continue
+            files = attrs.get("files", [])
+            if not files:
+                continue
+            file_id = files[0].get("file_id")
+            if not file_id:
+                continue
+            fetch_url = (
+                f"/subtitles?title={urllib.parse.quote(normalized)}"
+                f"&lang={urllib.parse.quote(lang)}"
+            )
+            if year:
+                fetch_url += f"&year={year}"
+            if tmdb_id:
+                fetch_url += f"&tmdb_id={tmdb_id}"
+            if season is not None:
+                fetch_url += f"&season={season}"
+            if episode is not None:
+                fetch_url += f"&episode={episode}"
+            output.append({
+                "file_id": file_id,
+                "language": attrs.get("language", lang),
+                "release": attrs.get("release", ""),
+                "download_count": attrs.get("download_count", 0),
+                "season_number": attrs.get("season_number"),
+                "episode_number": attrs.get("episode_number"),
+                "provider": "OpenSubtitles VIP",
+                "url": fetch_url,
+            })
+    else:
+        logger.info("OpenSubtitles VIP: not configured or auth failed — skipping in search")
 
     logger.info(
-        "Search returned %d results for '%s' season=%s episode=%s (%s)",
-        len(output), title, season, episode, lang,
+        "Search returned %d results for '%s' (normalized='%s') season=%s episode=%s (%s)",
+        len(output), title, normalized, season, episode, lang,
     )
     return JSONResponse(output, status_code=200)
 
