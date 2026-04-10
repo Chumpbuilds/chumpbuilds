@@ -1,13 +1,16 @@
 """
 X87 Subtitle Service — FastAPI app on port 8642.
 
-Primary provider: OpenSubtitles VIP REST API (vip-api.opensubtitles.com).
-Fallback provider: subliminal (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles).
+Provider priority (highest first):
+  1. subs.ro REST API            (requires SUBSRO_API_KEY)
+  2. OpenSubtitles VIP REST API  (requires OPENSUBTITLES_API_KEY + credentials)
+  3. subliminal fallback          (always available when subliminal is installed)
 
-Environment variables (all optional — omit to use subliminal-only mode):
-    OPENSUBTITLES_API_KEY     Consumer API key
-    OPENSUBTITLES_USERNAME    Account username
-    OPENSUBTITLES_PASSWORD    Account password
+Environment variables (all optional — omit providers to skip them):
+    SUBSRO_API_KEY            subs.ro API key
+    OPENSUBTITLES_API_KEY     OpenSubtitles consumer API key
+    OPENSUBTITLES_USERNAME    OpenSubtitles account username
+    OPENSUBTITLES_PASSWORD    OpenSubtitles account password
 
 A .env file at the same directory as this script is loaded automatically if
 python-dotenv is installed.
@@ -56,6 +59,10 @@ USER_AGENT = "X87Player v1.0"
 API_KEY = os.getenv("OPENSUBTITLES_API_KEY", "")
 OS_USERNAME = os.getenv("OPENSUBTITLES_USERNAME", "")
 OS_PASSWORD = os.getenv("OPENSUBTITLES_PASSWORD", "")
+
+# subs.ro — set SUBSRO_API_KEY to enable (empty string = disabled)
+SUBSRO_API_KEY = os.getenv("SUBSRO_API_KEY", "")
+SUBSRO_BASE = "https://api.subs.ro"
 
 # In-memory JWT token store
 _jwt_token: str = ""
@@ -306,6 +313,160 @@ def _fetch_via_vip(
 
 
 # ---------------------------------------------------------------------------
+# subs.ro provider
+# ---------------------------------------------------------------------------
+
+def _subsro_search(
+    title: str,
+    lang: str,
+    year: int | None,
+    imdb_id: str | None,
+    season: int | None,
+    episode: int | None,
+) -> list[dict]:
+    """Search subs.ro API. Returns list of subtitle result dicts."""
+    params: dict = {
+        "apikey": SUBSRO_API_KEY,
+        "query": title,
+        "language": lang,
+    }
+    if year:
+        params["year"] = year
+    if imdb_id:
+        params["imdb_id"] = imdb_id
+    if season is not None:
+        params["season"] = season
+    if episode is not None:
+        params["episode"] = episode
+
+    logger.info(
+        "subs.ro search params: title='%s' lang=%s season=%s episode=%s year=%s",
+        title, lang, season, episode, year,
+    )
+
+    resp = httpx.get(
+        f"{SUBSRO_BASE}/subtitles",
+        params=params,
+        timeout=20,
+        follow_redirects=True,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    # The API may return {"subtitles": [...]} or a bare list
+    if isinstance(data, list):
+        return data
+    return data.get("subtitles", data.get("data", []))
+
+
+def _subsro_download(download_url: str, params: dict | None = None) -> str:
+    """Download subtitle content from the URL returned by subs.ro. Returns SRT text."""
+    resp = httpx.get(download_url, params=params, timeout=30, follow_redirects=True)
+    resp.raise_for_status()
+    return resp.text
+
+
+def _fetch_via_subsro(
+    title: str,
+    lang: str,
+    year: int | None,
+    imdb_id: str | None,
+    season: int | None,
+    episode: int | None,
+) -> str | None:
+    """Try to fetch subtitle via subs.ro. Returns SRT text or None."""
+    if not SUBSRO_API_KEY:
+        logger.info("subs.ro: SUBSRO_API_KEY not configured — skipping")
+        return None
+
+    try:
+        results = _subsro_search(title, lang, year, imdb_id, season, episode)
+    except Exception as exc:
+        logger.error("subs.ro: search error — %s", exc)
+        return None
+
+    if not results:
+        logger.info("subs.ro: no results for '%s' (%s)", title, lang)
+        return None
+
+    # Normalise language field: filter to requested language
+    filtered = [
+        r for r in results
+        if str(r.get("language", r.get("lang", ""))).lower() == lang.lower()
+    ]
+
+    logger.info(
+        "subs.ro: %d total results, %d matching lang='%s' for '%s'",
+        len(results), len(filtered), lang, title,
+    )
+
+    if not filtered:
+        logger.info("subs.ro: no results matching language '%s' for '%s'", lang, title)
+        return None
+
+    # For TV episodes, prefer exact season/episode attribute match
+    if season is not None and episode is not None:
+        episode_matches = [
+            r for r in filtered
+            if (
+                r.get("season") == season or r.get("season_number") == season
+            ) and (
+                r.get("episode") == episode or r.get("episode_number") == episode
+            )
+        ]
+        if episode_matches:
+            logger.info(
+                "subs.ro: %d exact S%02dE%02d matches for '%s'",
+                len(episode_matches), season, episode, title,
+            )
+            filtered = episode_matches
+        else:
+            logger.warning(
+                "subs.ro: no exact S%02dE%02d attribute match for '%s' — "
+                "using all %d language-filtered results",
+                season, episode, title, len(filtered),
+            )
+
+    # Pick best result: prefer highest download count, then first result
+    best = max(
+        filtered,
+        key=lambda r: r.get("download_count", r.get("downloads", 0)),
+        default=filtered[0],
+    )
+
+    # Resolve download URL — subs.ro may return 'url', 'download_url', or 'id'
+    download_url = best.get("url") or best.get("download_url") or ""
+    download_params: dict | None = None
+    if not download_url:
+        sub_id = best.get("id")
+        if sub_id:
+            # Pass the API key via httpx params so it is never concatenated into
+            # the URL string (avoids key leakage in exception tracebacks).
+            download_url = f"{SUBSRO_BASE}/subtitles/{sub_id}/download"
+            download_params = {"apikey": SUBSRO_API_KEY}
+    if not download_url:
+        logger.warning("subs.ro: selected result has no download URL for '%s'", title)
+        return None
+
+    logger.info(
+        "subs.ro: downloading subtitle for '%s' (release='%s')",
+        title, best.get("release", best.get("title", "")),
+    )
+
+    try:
+        srt_text = _subsro_download(download_url, params=download_params)
+    except Exception as exc:
+        logger.error("subs.ro: download error — %s", exc)
+        return None
+
+    if not srt_text or not srt_text.strip():
+        logger.warning("subs.ro: empty subtitle content for '%s'", title)
+        return None
+
+    logger.info("subs.ro: subtitle fetched successfully for '%s'", title)
+    return srt_text
+
+
+# ---------------------------------------------------------------------------
 # Subliminal fallback
 # ---------------------------------------------------------------------------
 
@@ -430,11 +591,17 @@ async def get_subtitles(
         logger.info("Cache hit for '%s'%s (%s)", title, ep_info, lang)
         return PlainTextResponse(cached, status_code=200)
 
-    # --- Primary: OpenSubtitles VIP REST API ---
-    srt_text = _fetch_via_vip(title, lang, year, tmdb_id, imdb_id, season, episode)
-    provider_used = "OpenSubtitles VIP"
+    # --- Priority 1: subs.ro ---
+    srt_text = _fetch_via_subsro(title, lang, year, imdb_id, season, episode)
+    provider_used = "subs.ro"
 
-    # --- Fallback: subliminal ---
+    # --- Priority 2: OpenSubtitles VIP REST API ---
+    if srt_text is None:
+        logger.info("Falling back to OpenSubtitles VIP for '%s' (%s)", title, lang)
+        srt_text = _fetch_via_vip(title, lang, year, tmdb_id, imdb_id, season, episode)
+        provider_used = "OpenSubtitles VIP"
+
+    # --- Priority 3: subliminal ---
     if srt_text is None:
         logger.info("Falling back to subliminal for '%s' (%s)", title, lang)
         srt_text = _fetch_via_subliminal(title, lang, year, season, episode)
@@ -554,8 +721,12 @@ async def download_subtitle(
 async def health() -> dict:
     vip_configured = bool(API_KEY and OS_USERNAME and OS_PASSWORD)
     vip_authenticated = bool(_jwt_token and time.time() < _jwt_expires)
+    subsro_configured = bool(SUBSRO_API_KEY)
     return {
         "status": "ok",
+        "subsro": {
+            "configured": subsro_configured,
+        },
         "opensubtitles_vip": {
             "configured": vip_configured,
             "authenticated": vip_authenticated,

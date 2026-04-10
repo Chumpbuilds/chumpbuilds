@@ -87,38 +87,44 @@ The subtitle service provides on-demand SRT subtitle fetching for the X87 deskto
 
 1. The desktop app sends a GET request with the movie/show title, year, and language.
 2. The service checks the local SRT cache first — if a match exists it is returned immediately.
-3. If not cached, the service queries the **OpenSubtitles VIP REST API** (primary).
-4. If the VIP API returns no results or is not configured, the service falls back to the **subliminal** library (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles).
-5. The best-matching SRT is returned as plain text and written to the cache.
-6. Subsequent requests for the same title/language are served instantly from cache.
+3. If not cached, the service queries **subs.ro** (priority 1).
+4. If subs.ro returns no results or is not configured, the service queries the **OpenSubtitles VIP REST API** (priority 2).
+5. If the VIP API returns no results or is not configured, the service falls back to the **subliminal** library (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles).
+6. The best-matching SRT is returned as plain text and written to the cache.
+7. Subsequent requests for the same title/language are served instantly from cache.
 
 ### Providers
 
 | Priority | Provider | Requires config |
 |----------|----------|-----------------|
-| Primary | **OpenSubtitles VIP REST API** (`vip-api.opensubtitles.com`) | Yes — see env vars below |
-| Fallback | **subliminal** (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles) | No |
+| 1 | **subs.ro REST API** (`api.subs.ro`) | Yes — `SUBSRO_API_KEY` |
+| 2 | **OpenSubtitles VIP REST API** (`vip-api.opensubtitles.com`) | Yes — see env vars below |
+| 3 | **subliminal** (opensubtitles XML-RPC, podnapisi, gestdown, tvsubtitles) | No |
 
 ### Environment Variables
 
-Set these on the server to enable the VIP API. If they are absent, the service runs in subliminal-only mode.
+Set these on the server to enable providers. Any provider whose credentials are absent is silently skipped.
 
-| Variable | Description |
-|----------|-------------|
-| `OPENSUBTITLES_API_KEY` | Consumer API key from your OpenSubtitles profile |
-| `OPENSUBTITLES_USERNAME` | OpenSubtitles account username |
-| `OPENSUBTITLES_PASSWORD` | OpenSubtitles account password |
+| Variable | Provider | Description |
+|----------|----------|-------------|
+| `SUBSRO_API_KEY` | subs.ro | API key from your subs.ro account (account → API) |
+| `OPENSUBTITLES_API_KEY` | OpenSubtitles VIP | Consumer API key from your OpenSubtitles profile |
+| `OPENSUBTITLES_USERNAME` | OpenSubtitles VIP | OpenSubtitles account username |
+| `OPENSUBTITLES_PASSWORD` | OpenSubtitles VIP | OpenSubtitles account password |
 
 Copy `server/subtitles/.env.example` to `server/subtitles/.env` and fill in your values, or set the variables in the systemd unit file:
 
 ```bash
 sudo systemctl edit x87-subtitles
 # Add under [Service]:
+# Environment="SUBSRO_API_KEY=your_subsro_key"
 # Environment="OPENSUBTITLES_API_KEY=your_key"
 # Environment="OPENSUBTITLES_USERNAME=your_username"
 # Environment="OPENSUBTITLES_PASSWORD=your_password"
 sudo systemctl daemon-reload && sudo systemctl restart x87-subtitles
 ```
+
+> **Security note:** Never hardcode the API key in client/mobile app source. All provider keys are read exclusively from server-side environment variables and are never included in responses or logs.
 
 ### API
 
