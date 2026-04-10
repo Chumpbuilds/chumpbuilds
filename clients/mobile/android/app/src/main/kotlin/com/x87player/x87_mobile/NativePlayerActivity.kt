@@ -114,6 +114,9 @@ class NativePlayerActivity : Activity() {
     // URI string of the currently injected SRT sidecar, or null if none is active.
     // Used to re-apply the track override after ExoPlayer re-resolves tracks.
     private var injectedSrtId: String? = null
+    // Language code of the currently injected SRT sidecar (e.g. "fr", "de").
+    // Used as a MIME-type-aware fallback when the ID match fails after track re-resolution.
+    private var injectedSrtLang: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -251,6 +254,43 @@ class NativePlayerActivity : Activity() {
                                                 )
                                             )
                                             .build()
+                                }
+                            } else {
+                                // ID match failed (e.g. after HLS manifest refresh) — fall back to
+                                // MIME-type-aware matching so we don't silently select an embedded
+                                // stream subtitle with the same language code instead of the SRT.
+                                val injectedLang = injectedSrtLang
+                                if (injectedLang != null) {
+                                    val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+                                    val candidateGroup = textGroups.lastOrNull { group ->
+                                        (0 until group.length).any { i ->
+                                            isSrtTrackForLang(group.getTrackFormat(i), injectedLang)
+                                        }
+                                    }
+                                    if (candidateGroup != null) {
+                                        val candidateIndex = (0 until candidateGroup.length)
+                                            .lastOrNull { i ->
+                                                isSrtTrackForLang(candidateGroup.getTrackFormat(i), injectedLang)
+                                            } ?: 0
+                                        if (!candidateGroup.isTrackSelected(candidateIndex)) {
+                                            android.util.Log.i(
+                                                "NativePlayerActivity",
+                                                "onTracksChanged: re-applying SRT via MIME fallback " +
+                                                    "(lang=$injectedLang, mime=${MimeTypes.APPLICATION_SUBRIP})"
+                                            )
+                                            player.trackSelectionParameters =
+                                                player.trackSelectionParameters
+                                                    .buildUpon()
+                                                    .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                                    .setOverrideForType(
+                                                        TrackSelectionOverride(
+                                                            candidateGroup.mediaTrackGroup,
+                                                            listOf(candidateIndex)
+                                                        )
+                                                    )
+                                                    .build()
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1132,6 +1172,7 @@ class NativePlayerActivity : Activity() {
                             // Off — clear the injected SRT state so the onTracksChanged
                             // listener stops re-applying the override, then disable subtitles.
                             injectedSrtId = null
+                            injectedSrtLang = null
                             subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
                             subtitleSelectionRunnable = null
                             player.trackSelectionParameters = player.trackSelectionParameters
@@ -1227,6 +1268,7 @@ class NativePlayerActivity : Activity() {
             // the onTracksChanged listener can identify it unambiguously even when the
             // supplier stream contains embedded text tracks with the same language code.
             injectedSrtId = srtUri.toString()
+            injectedSrtLang = langCode
 
             // Clear any stale text track overrides and hint the preferred language before
             // prepare() so ExoPlayer's automatic selection already favours the injected track.
@@ -1279,6 +1321,14 @@ class NativePlayerActivity : Activity() {
             langCode == trackLang?.take(2)
 
     /**
+     * Returns true when [fmt] is an SRT track whose language matches [langCode].
+     * Used to discriminate the injected sidecar (always application/x-subrip) from
+     * embedded stream subtitles (typically WebVTT or TTML).
+     */
+    private fun isSrtTrackForLang(fmt: androidx.media3.common.Format, langCode: String): Boolean =
+        langMatches(fmt.language, langCode) && fmt.sampleMimeType == MimeTypes.APPLICATION_SUBRIP
+
+    /**
      * Finds the text track whose format ID matches [srtId] in [tracks].
      * Returns the (group, trackIndex) pair, or null if not found.
      */
@@ -1325,30 +1375,39 @@ class NativePlayerActivity : Activity() {
                 targetGroup = idMatch.first
                 trackIndex = idMatch.second
             } else {
-                // ID match failed — fall back to language-based matching.
-                // Among text groups that have a track matching langCode, pick the last one:
-                // MergingMediaSource appends the sidecar after embedded tracks.
-                val langMatches = textGroups.filter { group ->
-                    (0 until group.length).any { i ->
-                        langMatches(group.getTrackFormat(i).language, langCode)
+                // ID match failed — fall back to matching by BOTH language AND SRT MIME type.
+                // The injected sidecar is always application/x-subrip, while embedded stream
+                // subtitles are typically WebVTT or TTML. This avoids selecting the wrong track.
+                val langAndMimeMatches = textGroups.filter { group ->
+                    (0 until group.length).any { i -> isSrtTrackForLang(group.getTrackFormat(i), langCode) }
+                }
+
+                targetGroup = if (langAndMimeMatches.isNotEmpty()) {
+                    langAndMimeMatches.last()
+                } else {
+                    // No MIME+lang match — try language only (legacy fallback)
+                    val langOnlyMatches = textGroups.filter { group ->
+                        (0 until group.length).any { i ->
+                            langMatches(group.getTrackFormat(i).language, langCode)
+                        }
+                    }
+                    if (langOnlyMatches.isNotEmpty()) {
+                        langOnlyMatches.last()
+                    } else {
+                        // No language match — pick the last text group as a last resort.
+                        android.util.Log.w(
+                            "NativePlayerActivity",
+                            "Subtitle selection: no lang=$langCode match, picking last text group"
+                        )
+                        textGroups.last()
                     }
                 }
 
-                targetGroup = if (langMatches.isNotEmpty()) {
-                    langMatches.last()
-                } else {
-                    // No language match — pick the last text group as a last resort.
-                    android.util.Log.w(
-                        "NativePlayerActivity",
-                        "Subtitle selection: no lang=$langCode match, picking last text group"
-                    )
-                    textGroups.last()
-                }
-
                 trackIndex = (0 until targetGroup.length)
-                    .lastOrNull { i ->
-                        langMatches(targetGroup.getTrackFormat(i).language, langCode)
-                    } ?: 0
+                    .lastOrNull { i -> isSrtTrackForLang(targetGroup.getTrackFormat(i), langCode) }
+                    ?: (0 until targetGroup.length)
+                        .lastOrNull { i -> langMatches(targetGroup.getTrackFormat(i).language, langCode) }
+                    ?: 0
             }
 
             android.util.Log.i(
