@@ -3,9 +3,12 @@ package com.x87player.x87_mobile
 import android.app.AlertDialog
 import android.app.ProgressDialog
 import android.content.Context
+import android.graphics.Color
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.view.View
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -362,6 +365,7 @@ class ExoPlayerPlatformView(
                 val language: String,
                 val release: String,
                 val downloadCount: Int,
+                val provider: String,
             )
 
             val allResults = mutableListOf<SubtitleResult>()
@@ -398,6 +402,7 @@ class ExoPlayerPlatformView(
                                 language = obj.optString("language", lang),
                                 release = obj.optString("release", ""),
                                 downloadCount = obj.optInt("download_count", 0),
+                                provider = obj.optString("provider", "OpenSubtitles"),
                             ))
                         }
                     }
@@ -414,10 +419,18 @@ class ExoPlayerPlatformView(
                     return@post
                 }
 
-                val labels = mutableListOf("Off")
+                val labels = mutableListOf<CharSequence>("Off")
                 for (r in allResults) {
                     val downloads = if (r.downloadCount > 0) " (↓${r.downloadCount})" else ""
-                    labels.add("[${r.language.uppercase()}] ${r.release}$downloads")
+                    val text = "[${r.language.uppercase()}] ${r.release}$downloads  ${r.provider}"
+                    val spannable = SpannableString(text)
+                    val color = if (r.provider.equals("subs.ro", ignoreCase = true)) {
+                        Color.parseColor("#FFD700") // yellow for subs.ro
+                    } else {
+                        Color.parseColor("#4FC3F7") // blue for OpenSubtitles
+                    }
+                    spannable.setSpan(ForegroundColorSpan(color), 0, text.length, 0)
+                    labels.add(spannable)
                 }
 
                 AlertDialog.Builder(context)

@@ -909,9 +909,51 @@ async def search_subtitles(
     lang: str = Query("en"),
 ) -> JSONResponse:
     """Return a JSON list of subtitle results with metadata for the given content."""
-    output: list[dict] = []
+    vip_output: list[dict] = []
+    subsro_output: list[dict] = []
 
-    # --- Provider 1: subs.ro ---
+    # --- Provider 1: OpenSubtitles VIP (listed first in results) ---
+    if _ensure_authenticated():
+        vip_results: list[dict] = []
+        try:
+            vip_results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 401:
+                logger.warning("OpenSubtitles VIP: 401 on search — refreshing token")
+                if _vip_login():
+                    try:
+                        vip_results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
+                    except Exception as exc2:
+                        logger.error("OpenSubtitles VIP: search failed after token refresh — %s", exc2)
+            else:
+                logger.error("OpenSubtitles VIP: search HTTP error — %s", exc)
+        except Exception as exc:
+            logger.error("OpenSubtitles VIP: search error — %s", exc)
+
+        for r in vip_results:
+            attrs = r.get("attributes", {})
+            # Skip results that don't match the requested language
+            if attrs.get("language", "").lower() != lang.lower():
+                continue
+            files = attrs.get("files", [])
+            if not files:
+                continue
+            file_id = files[0].get("file_id")
+            if not file_id:
+                continue
+            vip_output.append({
+                "file_id": file_id,
+                "language": attrs.get("language", lang),
+                "release": attrs.get("release", ""),
+                "download_count": attrs.get("download_count", 0),
+                "season_number": attrs.get("season_number"),
+                "episode_number": attrs.get("episode_number"),
+                "provider": "OpenSubtitles",
+            })
+    else:
+        logger.info("OpenSubtitles VIP: not configured or auth failed — skipping in search")
+
+    # --- Provider 2: subs.ro ---
     if SUBSRO_API_KEY:
         try:
             subsro_results = _subsro_search(title, lang, year, imdb_id, season, episode)
@@ -952,7 +994,7 @@ async def search_subtitles(
                 if episode is not None:
                     fetch_params["episode"] = str(episode)
                 fetch_url = "/subtitles?" + urllib.parse.urlencode(fetch_params)
-                output.append({
+                subsro_output.append({
                     "file_id": syn_file_id,
                     "provider": "subs.ro",
                     "language": r_lang,
@@ -965,46 +1007,8 @@ async def search_subtitles(
         except Exception as exc:
             logger.error("subs.ro: search error in /subtitles/search — %s", exc)
 
-    # --- Provider 2: OpenSubtitles VIP ---
-    if _ensure_authenticated():
-        vip_results: list[dict] = []
-        try:
-            vip_results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 401:
-                logger.warning("OpenSubtitles VIP: 401 on search — refreshing token")
-                if _vip_login():
-                    try:
-                        vip_results = _vip_search_subtitles(title, lang, year, tmdb_id, imdb_id, season, episode)
-                    except Exception as exc2:
-                        logger.error("OpenSubtitles VIP: search failed after token refresh — %s", exc2)
-            else:
-                logger.error("OpenSubtitles VIP: search HTTP error — %s", exc)
-        except Exception as exc:
-            logger.error("OpenSubtitles VIP: search error — %s", exc)
-
-        for r in vip_results:
-            attrs = r.get("attributes", {})
-            # Skip results that don't match the requested language
-            if attrs.get("language", "").lower() != lang.lower():
-                continue
-            files = attrs.get("files", [])
-            if not files:
-                continue
-            file_id = files[0].get("file_id")
-            if not file_id:
-                continue
-            output.append({
-                "file_id": file_id,
-                "language": attrs.get("language", lang),
-                "release": attrs.get("release", ""),
-                "download_count": attrs.get("download_count", 0),
-                "season_number": attrs.get("season_number"),
-                "episode_number": attrs.get("episode_number"),
-                "provider": "OpenSubtitles VIP",
-            })
-    else:
-        logger.info("OpenSubtitles VIP: not configured or auth failed — skipping in search")
+    # OpenSubtitles results first, then subs.ro
+    output = vip_output + subsro_output
 
     logger.info(
         "Search returned %d results for '%s' season=%s episode=%s (%s)",
