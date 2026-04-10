@@ -430,7 +430,6 @@ def _fetch_via_subsro(
     best = max(
         filtered,
         key=lambda r: r.get("download_count", r.get("downloads", 0)),
-        default=filtered[0],
     )
 
     # Resolve download URL — subs.ro may return 'url', 'download_url', or 'id'

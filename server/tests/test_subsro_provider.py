@@ -227,7 +227,6 @@ class TestSubsroSearchParamBuilding(unittest.TestCase):
             self.srv._subsro_search("Inception", "en", 2010, "tt1375666", None, None)
 
         _, kwargs = mock_get.call_args
-        params = kwargs.get("params", mock_get.call_args[0][1] if len(mock_get.call_args[0]) > 1 else {})
         # httpx.get called with params as keyword argument
         call_params = mock_get.call_args.kwargs.get("params", {})
         self.assertEqual(call_params["query"], "Inception")
