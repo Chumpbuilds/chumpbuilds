@@ -114,10 +114,6 @@ class NativePlayerActivity : Activity() {
     // URI string of the currently injected SRT sidecar, or null if none is active.
     // Used to re-apply the track override after ExoPlayer re-resolves tracks.
     private var injectedSrtId: String? = null
-    // True while we are waiting for onTracksChanged to fire after injectSrtSubtitle()
-    // re-prepared the player with text tracks disabled.  The listener will find the SRT
-    // track, re-enable text tracks, and force-select it — then clear this flag.
-    private var pendingSubtitleActivation = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -233,11 +229,8 @@ class NativePlayerActivity : Activity() {
 
                         // Re-apply the injected SRT override if ExoPlayer re-resolved tracks
                         // (e.g. after an HLS manifest refresh) while we still have an active
-                        // sidecar subtitle.  Uses a nuclear approach: when pendingSubtitleActivation
-                        // is true (immediately after injectSrtSubtitle re-prepared the player with
-                        // all text tracks disabled), find the SRT track, re-enable text tracks, and
-                        // force-select it.  NEVER fall back to language-based matching — that is what
-                        // keeps selecting embedded stream tracks instead of the injected SRT.
+                        // sidecar subtitle.  NEVER fall back to language-based matching — that
+                        // is what keeps selecting embedded stream tracks instead of the SRT.
                         val srtId = injectedSrtId
                         if (srtId != null) {
                             val textGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
@@ -269,47 +262,27 @@ class NativePlayerActivity : Activity() {
                                 }
                             }
 
-                            if (targetGroup != null) {
-                                val group = targetGroup
-                                if (pendingSubtitleActivation) {
-                                    // Initial activation: re-enable text tracks and force-select
-                                    // ONLY the injected SRT.  Text tracks were disabled before
-                                    // prepare() to block ExoPlayer's auto-selection of embedded subs.
-                                    pendingSubtitleActivation = false
-                                    android.util.Log.i(
-                                        "NativePlayerActivity",
-                                        "onTracksChanged: activating SRT sidecar " +
-                                            "(id=$srtId, index=$targetIndex)"
-                                    )
-                                    player.trackSelectionParameters =
-                                        player.trackSelectionParameters
-                                            .buildUpon()
-                                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                                            .setOverrideForType(
-                                                TrackSelectionOverride(
-                                                    group.mediaTrackGroup, listOf(targetIndex)
-                                                )
+                            if (targetGroup != null && !targetGroup.isTrackSelected(targetIndex)) {
+                                // SRT track found but not yet selected — force-select it.
+                                // Ensure text tracks are enabled and override to the SRT.
+                                android.util.Log.i(
+                                    "NativePlayerActivity",
+                                    "onTracksChanged: force-selecting SRT sidecar (id=$srtId, index=$targetIndex)"
+                                )
+                                player.trackSelectionParameters =
+                                    player.trackSelectionParameters
+                                        .buildUpon()
+                                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                        .setOverrideForType(
+                                            TrackSelectionOverride(
+                                                targetGroup.mediaTrackGroup, listOf(targetIndex)
                                             )
-                                            .build()
-                                } else if (!group.isTrackSelected(targetIndex)) {
-                                    // Subsequent track re-resolution (HLS manifest refresh, etc.):
-                                    // re-apply the override only if the SRT is no longer selected.
-                                    android.util.Log.i(
-                                        "NativePlayerActivity",
-                                        "onTracksChanged: re-applying SRT override (id=$srtId)"
-                                    )
-                                    player.trackSelectionParameters =
-                                        player.trackSelectionParameters
-                                            .buildUpon()
-                                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                                            .setOverrideForType(
-                                                TrackSelectionOverride(
-                                                    group.mediaTrackGroup, listOf(targetIndex)
-                                                )
-                                            )
-                                            .build()
-                                }
+                                        )
+                                        .build()
+                                // Ensure the subtitle rendering surface is visible now that
+                                // the SRT track has been selected and the pipeline is active.
+                                playerView.subtitleView?.visibility = View.VISIBLE
                             }
                         }
                     }
@@ -1196,7 +1169,6 @@ class NativePlayerActivity : Activity() {
                             // Off — clear the injected SRT state so the onTracksChanged
                             // listener stops re-applying the override, then disable subtitles.
                             injectedSrtId = null
-                            pendingSubtitleActivation = false
                             subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
                             subtitleSelectionRunnable = null
                             player.trackSelectionParameters = player.trackSelectionParameters
@@ -1291,15 +1263,14 @@ class NativePlayerActivity : Activity() {
             // Remember the injected SRT's unique ID so onTracksChanged can identify it.
             injectedSrtId = srtUri.toString()
 
-            // NUCLEAR APPROACH: disable ALL text tracks before prepare() so ExoPlayer's
-            // automatic track selection during prepare() cannot pick any embedded subtitle
-            // (neither the service provider's WebVTT/TTML tracks nor anything else).
-            // The onTracksChanged listener will re-enable text tracks and force-select
-            // only the injected SRT once tracks are resolved.
-            pendingSubtitleActivation = true
+            // Ensure text tracks are enabled and clear stale overrides so ExoPlayer
+            // resolves all tracks (including the injected SRT) normally.
+            // Do NOT set preferred language — that can cause language-based selection of
+            // embedded stream tracks.  The onTracksChanged listener will force-select the
+            // SRT by ID/MIME type once tracks are resolved.
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
-                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
                 .build()
 
