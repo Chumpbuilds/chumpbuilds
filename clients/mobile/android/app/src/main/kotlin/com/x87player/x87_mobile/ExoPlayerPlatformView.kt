@@ -97,6 +97,11 @@ class ExoPlayerPlatformView(
     // URI string of the currently injected SRT sidecar, or null if none active.
     private var injectedSrtId: String? = null
 
+    // Language code (e.g. "ro", "en") of the currently injected SRT, or null.
+    // Kept in sync with injectedSrtId so onTracksChanged can set a matching
+    // preferredTextLanguage alongside the explicit TrackSelectionOverride.
+    private var injectedSrtLang: String? = null
+
     // Deferred runnable used to force-select the SRT track after prepare().
     private var subtitleSelectionRunnable: Runnable? = null
 
@@ -196,13 +201,16 @@ class ExoPlayerPlatformView(
                     if (targetGroup != null && !targetGroup.isTrackSelected(targetIndex)) {
                         android.util.Log.i(
                             "ExoPlayerPlatformView",
-                            "onTracksChanged: force-selecting SRT sidecar (id=$srtId, index=$targetIndex)"
+                            "onTracksChanged: force-selecting SRT sidecar (id=$srtId, lang=$injectedSrtLang, index=$targetIndex)"
                         )
                         player.trackSelectionParameters =
                             player.trackSelectionParameters
                                 .buildUpon()
                                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                // Align preferred language with the injected sidecar so that
+                                // ExoPlayer's language-based ranking also points at this track.
+                                .setPreferredTextLanguage(injectedSrtLang)
                                 .setOverrideForType(
                                     TrackSelectionOverride(
                                         targetGroup.mediaTrackGroup, listOf(targetIndex)
@@ -409,11 +417,16 @@ class ExoPlayerPlatformView(
                         if (which == 0) {
                             // Off — disable subtitles
                             injectedSrtId = null
+                            injectedSrtLang = null
                             subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
                             subtitleSelectionRunnable = null
                             player.trackSelectionParameters = player.trackSelectionParameters
                                 .buildUpon()
                                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                // Remove language preference so a later subtitle inject
+                                // starts from a clean slate rather than an "en" default.
+                                .setPreferredTextLanguage(null)
                                 .build()
                             if (wasPlaying) player.play()
                         } else {
@@ -494,11 +507,20 @@ class ExoPlayerPlatformView(
             subtitleSelectionRunnable = null
 
             injectedSrtId = srtUri.toString()
+            // Store the language code so onTracksChanged can align preferredTextLanguage
+            // with the injected track, preventing ExoPlayer from preferring an embedded
+            // stream track in a different language.
+            injectedSrtLang = langCode
 
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                // Prime ExoPlayer's language-based selector to match the injected sidecar
+                // language.  This prevents embedded stream text tracks (e.g. English CC)
+                // from being auto-selected before onTracksChanged fires the explicit
+                // TrackSelectionOverride below.
+                .setPreferredTextLanguage(langCode)
                 .build()
 
             player.setMediaItem(newMediaItem)

@@ -115,6 +115,11 @@ class NativePlayerActivity : Activity() {
     // Used to re-apply the track override after ExoPlayer re-resolves tracks.
     private var injectedSrtId: String? = null
 
+    // Language code (e.g. "ro", "en") of the currently injected SRT, or null.
+    // Kept in sync with injectedSrtId so onTracksChanged can set a matching
+    // preferredTextLanguage alongside the explicit TrackSelectionOverride.
+    private var injectedSrtLang: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -267,13 +272,16 @@ class NativePlayerActivity : Activity() {
                                 // Ensure text tracks are enabled and override to the SRT.
                                 android.util.Log.i(
                                     "NativePlayerActivity",
-                                    "onTracksChanged: force-selecting SRT sidecar (id=$srtId, index=$targetIndex)"
+                                    "onTracksChanged: force-selecting SRT sidecar (id=$srtId, lang=$injectedSrtLang, index=$targetIndex)"
                                 )
                                 player.trackSelectionParameters =
                                     player.trackSelectionParameters
                                         .buildUpon()
                                         .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                                         .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                        // Align preferred language with the injected sidecar so that
+                                        // ExoPlayer's language-based ranking also points at this track.
+                                        .setPreferredTextLanguage(injectedSrtLang)
                                         .setOverrideForType(
                                             TrackSelectionOverride(
                                                 targetGroup.mediaTrackGroup, listOf(targetIndex)
@@ -1169,11 +1177,16 @@ class NativePlayerActivity : Activity() {
                             // Off — clear the injected SRT state so the onTracksChanged
                             // listener stops re-applying the override, then disable subtitles.
                             injectedSrtId = null
+                            injectedSrtLang = null
                             subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
                             subtitleSelectionRunnable = null
                             player.trackSelectionParameters = player.trackSelectionParameters
                                 .buildUpon()
                                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                // Remove language preference so a later subtitle inject
+                                // starts from a clean slate rather than an "en" default.
+                                .setPreferredTextLanguage(null)
                                 .build()
                             if (wasPlaying) player.play()
                         } else {
@@ -1260,18 +1273,22 @@ class NativePlayerActivity : Activity() {
             subtitleSelectionRunnable?.let { mainHandler.removeCallbacks(it) }
             subtitleSelectionRunnable = null
 
-            // Remember the injected SRT's unique ID so onTracksChanged can identify it.
+            // Remember the injected SRT's unique ID and language so onTracksChanged
+            // can identify and force-select it with the correct language preference.
             injectedSrtId = srtUri.toString()
+            injectedSrtLang = langCode
 
             // Ensure text tracks are enabled and clear stale overrides so ExoPlayer
             // resolves all tracks (including the injected SRT) normally.
-            // Do NOT set preferred language — that can cause language-based selection of
-            // embedded stream tracks.  The onTracksChanged listener will force-select the
-            // SRT by ID/MIME type once tracks are resolved.
+            // Also set preferredTextLanguage to the injected sidecar's language so that
+            // ExoPlayer's natural language-based selection prefers it over embedded stream
+            // tracks in other languages (e.g. English CC) before onTracksChanged fires the
+            // explicit TrackSelectionOverride.
             player.trackSelectionParameters = player.trackSelectionParameters
                 .buildUpon()
                 .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
                 .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                .setPreferredTextLanguage(langCode)
                 .build()
 
             player.setMediaItem(newMediaItem)
