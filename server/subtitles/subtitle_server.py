@@ -336,21 +336,27 @@ def _subsro_search(
 ) -> list[dict]:
     """Search subs.ro API v1.0. Returns list of subtitle result dicts."""
     # Choose the most specific search field available.
-    # Prefer imdbid when present; fall back to title search.
-    if imdb_id:
+    # For TV episodes (season + episode provided), prefer a title search with
+    # S##E## appended so subs.ro returns season-specific results — the IMDB ID
+    # search only returns generic/season-1 results for series.
+    if imdb_id and not (season is not None and episode is not None):
+        # Use IMDB ID for movies or when no specific episode is requested
         search_field = "imdbid"
         search_value = imdb_id
     else:
         search_field = "title"
-        search_value = title
+        if season is not None and episode is not None:
+            search_value = f"{title} S{season:02d}E{episode:02d}"
+        else:
+            search_value = title
 
     params: dict = {}
     if lang:
         params["language"] = lang
 
     logger.info(
-        "subs.ro search: field=%s value='%s' lang=%s",
-        search_field, search_value, lang,
+        "subs.ro search: field=%s value='%s' lang=%s season=%s episode=%s",
+        search_field, search_value, lang, season, episode,
     )
 
     resp = httpx.get(
