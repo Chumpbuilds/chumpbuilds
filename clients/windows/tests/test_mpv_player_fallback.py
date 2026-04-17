@@ -107,6 +107,28 @@ class TestEmbeddedMPVFallback(unittest.TestCase):
                 'http://example.com/live', 'Live', 'live'
             )
 
+    def test_play_updates_overlay_title_when_overlay_exists(self):
+        with patch.object(mpv_player, '_MPV_AVAILABLE', True), \
+             patch.object(mpv_player, 'PlayerControlsOverlay', None):
+            player = mpv_player.EmbeddedMPVPlayer(video_frame=object())
+            player._controls_overlay = MagicMock()
+            with patch.object(player, '_create_and_attach_player'):
+                player.play('http://example.com/live', 'Overlay Title', 'live')
+
+            player._controls_overlay.set_stream_title.assert_called_with('Overlay Title')
+
+    def test_go_fullscreen_toggles_off_when_dialog_visible(self):
+        with patch.object(mpv_player, '_MPV_AVAILABLE', True), \
+             patch.object(mpv_player, 'PlayerControlsOverlay', None):
+            player = mpv_player.EmbeddedMPVPlayer(video_frame=object())
+            dialog = MagicMock()
+            dialog.isVisible.return_value = True
+            player._fullscreen_dialog = dialog
+
+            player.go_fullscreen()
+
+            dialog.close.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()
