@@ -129,6 +129,34 @@ class TestEmbeddedMPVFallback(unittest.TestCase):
 
             dialog.close.assert_called_once()
 
+    def test_attach_overlay_logs_when_overlay_import_unavailable(self):
+        frame = MagicMock()
+        frame.rect = MagicMock(return_value=object())
+        with patch.object(mpv_player, '_MPV_AVAILABLE', True), \
+             patch.object(mpv_player, 'PlayerControlsOverlay', None), \
+             patch('builtins.print') as mock_print:
+            player = mpv_player.EmbeddedMPVPlayer(video_frame=frame)
+            player._attach_overlay(frame, is_fullscreen=False)
+
+            mock_print.assert_any_call(
+                "[EmbeddedMPV] Controls overlay unavailable: failed to import PlayerControlsOverlay."
+            )
+
+    def test_attach_overlay_adds_fullscreen_dialog_as_event_source(self):
+        frame = MagicMock()
+        frame.rect = MagicMock(return_value=object())
+        overlay_instance = MagicMock()
+
+        with patch.object(mpv_player, '_MPV_AVAILABLE', True), \
+             patch.object(mpv_player, 'PlayerControlsOverlay', return_value=overlay_instance):
+            player = mpv_player.EmbeddedMPVPlayer(video_frame=frame)
+            player._fullscreen_dialog = MagicMock()
+            player._attach_overlay(frame, is_fullscreen=True)
+
+            overlay_instance.set_fullscreen.assert_called_with(True)
+            overlay_instance.add_event_source.assert_called_once_with(player._fullscreen_dialog)
+            overlay_instance.set_stream_title.assert_called_with("Stream")
+
 
 if __name__ == '__main__':
     unittest.main()

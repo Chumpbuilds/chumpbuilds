@@ -61,13 +61,13 @@ class PlayerControlsOverlay(QWidget):
         self._known_duration = None
         self._title = "Stream"
         self._shortcuts = []
+        self._controls_visible = False
+        self._event_sources = []
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._host_widget.setMouseTracking(True)
-        self._host_widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self._host_widget.installEventFilter(self)
+        self.add_event_source(self._host_widget)
 
         self._build_ui()
         self._build_shortcuts()
@@ -92,19 +92,36 @@ class PlayerControlsOverlay(QWidget):
         self.fullscreen_btn.setText("🡼" if self._is_fullscreen else "🔲")
 
     def cleanup(self):
-        try:
-            self._host_widget.removeEventFilter(self)
-        except Exception:
-            pass
+        for source in self._event_sources[:]:
+            try:
+                source.removeEventFilter(self)
+            except Exception:
+                pass
+        self._event_sources.clear()
         self._hide_timer.stop()
         self._poll_timer.stop()
         self.hide_controls(show_cursor=False)
         self.deleteLater()
 
+    def add_event_source(self, widget: Optional[QWidget]):
+        if widget is None or widget in self._event_sources:
+            return
+        try:
+            widget.setMouseTracking(True)
+            widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            widget.installEventFilter(self)
+            self._event_sources.append(widget)
+        except Exception:
+            pass
+
     def eventFilter(self, watched, event):  # noqa: N802
         et = event.type()
-        if watched is self._host_widget:
-            if et in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.Move):
+        if watched in self._event_sources:
+            if watched is self._host_widget and et in (
+                QEvent.Type.Resize,
+                QEvent.Type.Show,
+                QEvent.Type.Move,
+            ):
                 self._sync_geometry()
             elif et in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress):
                 self.show_controls()
@@ -532,4 +549,3 @@ class PlayerControlsOverlay(QWidget):
         self.resolution_btn.setText("📺")
         if tracks:
             self.resolution_btn.setText("HD")
-

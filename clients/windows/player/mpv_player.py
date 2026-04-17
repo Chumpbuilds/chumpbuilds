@@ -11,7 +11,10 @@ from .vlc_player import EmbeddedVLCPlayer
 try:
     from ui.player_controls import PlayerControlsOverlay
 except Exception:
-    PlayerControlsOverlay = None
+    try:
+        from clients.windows.ui.player_controls import PlayerControlsOverlay
+    except Exception:
+        PlayerControlsOverlay = None
 
 try:
     import mpv as _mpv
@@ -269,8 +272,10 @@ class EmbeddedMPVPlayer:
 
     def _attach_overlay(self, frame: QFrame, is_fullscreen: bool):
         if PlayerControlsOverlay is None:
+            print("[EmbeddedMPV] Controls overlay unavailable: failed to import PlayerControlsOverlay.")
             return
         if not hasattr(frame, "rect"):
+            print(f"[EmbeddedMPV] Controls overlay attach skipped: invalid frame {frame!r}.")
             return
         self._destroy_overlay()
         try:
@@ -280,7 +285,12 @@ class EmbeddedMPVPlayer:
                 fullscreen_toggle_callback=self.go_fullscreen,
             )
             self._controls_overlay.set_fullscreen(is_fullscreen)
+            if is_fullscreen and self._fullscreen_dialog:
+                self._controls_overlay.add_event_source(self._fullscreen_dialog)
             self._update_overlay_title()
+            print(
+                f"[EmbeddedMPV] Controls overlay attached to {'fullscreen' if is_fullscreen else 'embedded'} frame."
+            )
         except Exception as exc:
             print(f"[EmbeddedMPV] Warning: could not attach controls overlay: {exc}")
             self._controls_overlay = None
