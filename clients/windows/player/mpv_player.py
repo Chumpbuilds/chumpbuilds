@@ -3,6 +3,15 @@ Embedded MPV player module for inline and fullscreen playback.
 Falls back to EmbeddedVLCPlayer when python-mpv/libmpv is unavailable.
 """
 
+import os
+import sys
+
+if sys.platform == 'win32':
+    _app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    os.environ['PATH'] = _app_dir + os.pathsep + os.environ['PATH']
+    if hasattr(os, 'add_dll_directory'):
+        os.add_dll_directory(_app_dir)
+
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFrame
 from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
