@@ -13,7 +13,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QUrl, QPoint
 from PyQt6.QtGui import QFont, QPixmap, QAction, QCursor
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from player.vlc_player import get_vlc_player, get_embedded_vlc_player
+from player.vlc_player import get_vlc_player
+from player.mpv_player import get_embedded_mpv_player
 
 # Add favorites import
 try:
@@ -341,7 +342,7 @@ class SeriesView(QWidget):
 
         layout.addWidget(self.video_frame, stretch=3)
 
-        self.embedded_player = get_embedded_vlc_player(self.video_frame)
+        self.embedded_player = get_embedded_mpv_player(self.video_frame)
 
         # ── 2. Player control bar ─────────────────────────────────────────────
         controls_layout = QHBoxLayout()
