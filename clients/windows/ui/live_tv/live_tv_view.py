@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QPoint
 from PyQt6.QtGui import QFont, QPixmap, QColor, QAction, QCursor
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
-from player.vlc_player import get_vlc_player, get_embedded_vlc_player
+from player.vlc_player import get_vlc_player
+from player.mpv_player import get_embedded_mpv_player
 from epg import EPGCache, EPGParser
 from epg.epg_loader import EPGLoaderThread
 from datetime import datetime
@@ -402,7 +403,7 @@ class LiveTVView(QWidget):
         layout.addWidget(self.video_frame, stretch=3)
 
         # Create the embedded player
-        self.embedded_player = get_embedded_vlc_player(self.video_frame)
+        self.embedded_player = get_embedded_mpv_player(self.video_frame)
 
         # ── 2. Player control bar ─────────────────────────────────────────────
         controls_layout = QHBoxLayout()
