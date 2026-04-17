@@ -14,7 +14,6 @@ if sys.platform == 'win32':
 
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QFrame
 from PyQt6.QtCore import QSettings, Qt, QTimer
-from PyQt6.QtGui import QKeySequence, QShortcut
 
 from .vlc_player import EmbeddedVLCPlayer
 try:
@@ -132,6 +131,7 @@ class EmbeddedMPVPlayer:
             self._fallback_player.go_fullscreen()
             return
         if self._fullscreen_dialog and self._fullscreen_dialog.isVisible():
+            self._destroy_overlay()
             self._fullscreen_dialog.close()
             return
         if not self._current_url:
@@ -156,15 +156,16 @@ class EmbeddedMPVPlayer:
         fs_frame.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
         layout.addWidget(fs_frame)
 
-        esc_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Escape), self._fullscreen_dialog)
-        esc_shortcut.activated.connect(self._fullscreen_dialog.close)
-
         self._fullscreen_dialog.finished.connect(self._on_fullscreen_closed)
         self._fullscreen_dialog.showFullScreen()
 
         def _start_fs():
             try:
-                self._attach_overlay(fs_frame, is_fullscreen=True)
+                self._attach_overlay(
+                    fs_frame,
+                    is_fullscreen=True,
+                    fullscreen_dialog=self._fullscreen_dialog,
+                )
                 self._create_and_attach_player(fs_frame)
                 self._update_overlay_title()
             except Exception as exc:
@@ -185,6 +186,7 @@ class EmbeddedMPVPlayer:
                 )
             return
 
+        self._destroy_overlay()
         self._destroy_active_player()
         self._fullscreen_dialog = None
 
@@ -279,7 +281,7 @@ class EmbeddedMPVPlayer:
         self._update_overlay_title()
         print(f"[EmbeddedMPV] Playing on frame {frame}: {title} ({url})")
 
-    def _attach_overlay(self, frame: QFrame, is_fullscreen: bool):
+    def _attach_overlay(self, frame: QFrame, is_fullscreen: bool, fullscreen_dialog: QDialog = None):
         if PlayerControlsOverlay is None:
             print("[EmbeddedMPV] Controls overlay unavailable: failed to import PlayerControlsOverlay.")
             return
@@ -294,8 +296,7 @@ class EmbeddedMPVPlayer:
                 fullscreen_toggle_callback=self.go_fullscreen,
             )
             self._controls_overlay.set_fullscreen(is_fullscreen)
-            if is_fullscreen and self._fullscreen_dialog:
-                self._controls_overlay.add_event_source(self._fullscreen_dialog)
+            self._controls_overlay.set_fullscreen_dialog(fullscreen_dialog)
             self._update_overlay_title()
             print(
                 f"[EmbeddedMPV] Controls overlay attached to {'fullscreen' if is_fullscreen else 'embedded'} frame."

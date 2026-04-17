@@ -6,9 +6,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PyQt6.QtCore import QEvent, QPoint, QTimer, Qt
-from PyQt6.QtGui import QCursor, QKeySequence, QShortcut
+from PyQt6.QtCore import QEvent, QPoint, QRect, QTimer, Qt
+from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import (
+    QApplication,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -42,6 +43,7 @@ def _track_value(track: dict, *keys):
 class PlayerControlsOverlay(QWidget):
     HIDE_DELAY_MS = 5000
     POLL_INTERVAL_MS = 500
+    MOUSE_POLL_INTERVAL_MS = 100
     ACCENT_COLOR = "#64b5f6"
     ASPECT_MODES = ("Fit", "Zoom", "Stretch", "16:9", "4:3")
 
@@ -51,26 +53,37 @@ class PlayerControlsOverlay(QWidget):
         player_getter: Callable[[], object],
         fullscreen_toggle_callback: Optional[Callable[[], None]] = None,
     ):
-        super().__init__(host_widget)
+        super().__init__(
+            None,
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint,
+        )
         self._host_widget = host_widget
         self._player_getter = player_getter
         self._fullscreen_toggle_callback = fullscreen_toggle_callback
+        self._fullscreen_dialog: Optional[QWidget] = None
         self._is_fullscreen = False
         self._is_dragging_seek = False
         self._aspect_index = 0
         self._known_duration = None
         self._title = "Stream"
-        self._shortcuts = []
         self._controls_visible = False
         self._event_sources = []
+        self._app = QApplication.instance()
+        self._app_filter_installed = False
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setMouseTracking(True)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.add_event_source(self._host_widget)
+        if self._app:
+            self._app.installEventFilter(self)
+            self._app_filter_installed = True
 
         self._build_ui()
-        self._build_shortcuts()
         self._sync_geometry()
 
         self._hide_timer = QTimer(self)
@@ -81,6 +94,11 @@ class PlayerControlsOverlay(QWidget):
         self._poll_timer.timeout.connect(self._poll_player_state)
         self._poll_timer.start(self.POLL_INTERVAL_MS)
 
+        self._mouse_timer = QTimer(self)
+        self._mouse_timer.timeout.connect(self._check_mouse_position)
+        self._mouse_timer.start(self.MOUSE_POLL_INTERVAL_MS)
+        self._last_cursor_pos = QCursor.pos()
+
         self.show_controls()
 
     def set_stream_title(self, title: str):
@@ -90,6 +108,22 @@ class PlayerControlsOverlay(QWidget):
     def set_fullscreen(self, is_fullscreen: bool):
         self._is_fullscreen = bool(is_fullscreen)
         self.fullscreen_btn.setText("🡼" if self._is_fullscreen else "🔲")
+        self._sync_geometry()
+
+    def set_fullscreen_dialog(self, dialog: Optional[QWidget]):
+        if self._fullscreen_dialog and self._fullscreen_dialog in self._event_sources:
+            try:
+                self._fullscreen_dialog.removeEventFilter(self)
+            except RuntimeError:
+                pass
+            try:
+                self._event_sources.remove(self._fullscreen_dialog)
+            except ValueError:
+                pass
+        self._fullscreen_dialog = dialog
+        if dialog:
+            self.add_event_source(dialog)
+        self._sync_geometry()
 
     def cleanup(self):
         for source in self._event_sources[:]:
@@ -100,6 +134,12 @@ class PlayerControlsOverlay(QWidget):
         self._event_sources.clear()
         self._hide_timer.stop()
         self._poll_timer.stop()
+        self._mouse_timer.stop()
+        if self._app and self._app_filter_installed:
+            try:
+                self._app.removeEventFilter(self)
+            except RuntimeError:
+                pass
         self.hide_controls(show_cursor=False)
         self.deleteLater()
 
@@ -117,14 +157,15 @@ class PlayerControlsOverlay(QWidget):
     def eventFilter(self, watched, event):  # noqa: N802
         et = event.type()
         if watched in self._event_sources:
-            if watched is self._host_widget and et in (
+            if et in (
                 QEvent.Type.Resize,
                 QEvent.Type.Show,
                 QEvent.Type.Move,
             ):
                 self._sync_geometry()
-            elif et in (QEvent.Type.MouseMove, QEvent.Type.MouseButtonPress):
-                self.show_controls()
+        if et == QEvent.Type.KeyPress and self._should_handle_key_event(watched):
+            if self._handle_key_event(event):
+                return True
         return super().eventFilter(watched, event)
 
     def mouseMoveEvent(self, event):  # noqa: N802
@@ -140,6 +181,10 @@ class PlayerControlsOverlay(QWidget):
         super().mousePressEvent(event)
 
     def show_controls(self):
+        target = self._target_widget()
+        if target is None or not target.isVisible():
+            return
+        self._sync_geometry()
         self._controls_visible = True
         self.show()
         self.raise_()
@@ -155,8 +200,14 @@ class PlayerControlsOverlay(QWidget):
             self._host_widget.setCursor(QCursor(Qt.CursorShape.BlankCursor))
 
     def _sync_geometry(self):
-        self.setGeometry(self._host_widget.rect())
-        self.raise_()
+        target = self._target_widget()
+        if target is None or not target.isVisible():
+            self.hide()
+            return
+        top_left = target.mapToGlobal(QPoint(0, 0))
+        self.setGeometry(QRect(top_left, target.size()))
+        if self.isVisible():
+            self.raise_()
 
     def _build_ui(self):
         self.setStyleSheet(
@@ -284,23 +335,6 @@ class PlayerControlsOverlay(QWidget):
         bottom_layout.addWidget(self.aspect_btn)
         bottom_layout.addWidget(self.fullscreen_btn)
         root.addWidget(self.bottom_bar)
-
-    def _build_shortcuts(self):
-        keys = [
-            ("Space", self._toggle_pause),
-            ("Left", lambda: self._seek_by(-10)),
-            ("Right", lambda: self._seek_by(30)),
-            ("Up", lambda: self._bump_volume(5)),
-            ("Down", lambda: self._bump_volume(-5)),
-            ("M", self._toggle_mute),
-            ("F", self._toggle_fullscreen),
-            ("F11", self._toggle_fullscreen),
-            ("Escape", self._escape_fullscreen),
-        ]
-        for key, handler in keys:
-            shortcut = QShortcut(QKeySequence(key), self._host_widget)
-            shortcut.activated.connect(handler)
-            self._shortcuts.append(shortcut)
 
     def _player(self):
         try:
@@ -549,3 +583,67 @@ class PlayerControlsOverlay(QWidget):
         self.resolution_btn.setText("📺")
         if tracks:
             self.resolution_btn.setText("HD")
+
+    def _target_widget(self) -> Optional[QWidget]:
+        if self._is_fullscreen and self._fullscreen_dialog and self._fullscreen_dialog.isVisible():
+            return self._fullscreen_dialog
+        return self._host_widget
+
+    def _target_global_rect(self) -> QRect:
+        target = self._target_widget()
+        if target is None:
+            return QRect()
+        return QRect(target.mapToGlobal(QPoint(0, 0)), target.size())
+
+    def _check_mouse_position(self):
+        pos = QCursor.pos()
+        if pos == self._last_cursor_pos:
+            return
+        self._last_cursor_pos = pos
+        target = self._target_widget()
+        if target is None or not target.isVisible():
+            return
+        if self._target_global_rect().contains(pos):
+            self.show_controls()
+
+    def _should_handle_key_event(self, watched) -> bool:
+        if watched is self or watched is self._host_widget or (
+            self._fullscreen_dialog and watched is self._fullscreen_dialog
+        ):
+            return True
+        if isinstance(watched, QWidget):
+            if self.isAncestorOf(watched):
+                return True
+            if self._host_widget and self._host_widget.isAncestorOf(watched):
+                return True
+            if self._fullscreen_dialog and self._fullscreen_dialog.isAncestorOf(watched):
+                return True
+        return False
+
+    def _handle_key_event(self, event) -> bool:
+        key = event.key()
+        if key == Qt.Key.Key_Space:
+            self._toggle_pause()
+            return True
+        if key == Qt.Key.Key_Left:
+            self._seek_by(-10)
+            return True
+        if key == Qt.Key.Key_Right:
+            self._seek_by(30)
+            return True
+        if key == Qt.Key.Key_Up:
+            self._bump_volume(5)
+            return True
+        if key == Qt.Key.Key_Down:
+            self._bump_volume(-5)
+            return True
+        if key == Qt.Key.Key_M:
+            self._toggle_mute()
+            return True
+        if key in (Qt.Key.Key_F, Qt.Key.Key_F11):
+            self._toggle_fullscreen()
+            return True
+        if key == Qt.Key.Key_Escape and self._is_fullscreen:
+            self._escape_fullscreen()
+            return True
+        return False

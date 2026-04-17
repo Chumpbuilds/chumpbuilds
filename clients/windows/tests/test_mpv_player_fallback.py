@@ -129,6 +129,21 @@ class TestEmbeddedMPVFallback(unittest.TestCase):
 
             dialog.close.assert_called_once()
 
+    def test_go_fullscreen_cleans_overlay_before_closing_visible_dialog(self):
+        with patch.object(mpv_player, '_MPV_AVAILABLE', True), \
+             patch.object(mpv_player, 'PlayerControlsOverlay', None):
+            player = mpv_player.EmbeddedMPVPlayer(video_frame=object())
+            dialog = MagicMock()
+            dialog.isVisible.return_value = True
+            player._fullscreen_dialog = dialog
+            overlay = MagicMock()
+            player._controls_overlay = overlay
+
+            player.go_fullscreen()
+
+            overlay.cleanup.assert_called_once()
+            dialog.close.assert_called_once()
+
     def test_attach_overlay_logs_when_overlay_import_unavailable(self):
         frame = MagicMock()
         frame.rect = MagicMock(return_value=object())
@@ -142,7 +157,7 @@ class TestEmbeddedMPVFallback(unittest.TestCase):
                 "[EmbeddedMPV] Controls overlay unavailable: failed to import PlayerControlsOverlay."
             )
 
-    def test_attach_overlay_adds_fullscreen_dialog_as_event_source(self):
+    def test_attach_overlay_sets_fullscreen_dialog_for_overlay(self):
         frame = MagicMock()
         frame.rect = MagicMock(return_value=object())
         overlay_instance = MagicMock()
@@ -151,10 +166,10 @@ class TestEmbeddedMPVFallback(unittest.TestCase):
              patch.object(mpv_player, 'PlayerControlsOverlay', return_value=overlay_instance):
             player = mpv_player.EmbeddedMPVPlayer(video_frame=frame)
             player._fullscreen_dialog = MagicMock()
-            player._attach_overlay(frame, is_fullscreen=True)
+            player._attach_overlay(frame, is_fullscreen=True, fullscreen_dialog=player._fullscreen_dialog)
 
             overlay_instance.set_fullscreen.assert_called_with(True)
-            overlay_instance.add_event_source.assert_called_once_with(player._fullscreen_dialog)
+            overlay_instance.set_fullscreen_dialog.assert_any_call(player._fullscreen_dialog)
             overlay_instance.set_stream_title.assert_called_with("Stream")
 
 
