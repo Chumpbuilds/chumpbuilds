@@ -908,7 +908,7 @@ class MoviesView(QWidget):
             movie_name = movie_data.get('name', 'Unknown')
             if stream_id:
                 stream_url = self.api.get_stream_url(stream_id, 'movie', stream_data=movie_data)
-                self._start_embedded_playback(stream_url, movie_name)
+                self._start_embedded_playback(stream_url, movie_name, movie_data)
 
     def play_movie_embedded(self):
         """Slot: play current movie embedded (triggered by ▶ Play button)."""
@@ -918,7 +918,7 @@ class MoviesView(QWidget):
         movie_name = self.current_movie.get('name', 'Unknown')
         if stream_id:
             stream_url = self.api.get_stream_url(stream_id, 'movie', stream_data=self.current_movie)
-            self._start_embedded_playback(stream_url, movie_name)
+            self._start_embedded_playback(stream_url, movie_name, self.current_movie)
 
     def play_movie_external(self):
         """Slot: open current movie in external VLC (↗ Open in VLC button)."""
@@ -938,13 +938,24 @@ class MoviesView(QWidget):
                 QMessageBox.critical(self, "VLC Error",
                                      "Could not launch VLC. Please make sure VLC Media Player is installed.")
 
-    def _start_embedded_playback(self, stream_url: str, movie_name: str):
+    def _start_embedded_playback(self, stream_url: str, movie_name: str, movie_data: dict = None):
         """Internal helper: begin embedded playback and update UI.
 
         Starts playback of *stream_url* (with content type 'movie') in the
         embedded player, hides the placeholder, enables Stop/Fullscreen buttons,
         and updates the status label to show the playing movie name.
         """
+        metadata = movie_data or self.current_movie or {}
+        if hasattr(self.embedded_player, "set_content_metadata"):
+            self.embedded_player.set_content_metadata(
+                title=movie_name,
+                year=metadata.get('year') or metadata.get('releaseDate'),
+                tmdb_id=metadata.get('tmdb_id') or metadata.get('tmdb'),
+                imdb_id=metadata.get('imdb_id') or metadata.get('imdb'),
+                season=None,
+                episode=None,
+                languages=["en"],
+            )
         self.embedded_player.play(stream_url, movie_name, 'movie')
         self.video_placeholder.hide()
         self.stop_btn.setEnabled(True)

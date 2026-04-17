@@ -46,6 +46,15 @@ class EmbeddedMPVPlayer:
         self._current_url = None
         self._current_title = None
         self._current_content_type = 'live'
+        self._content_metadata = {
+            "title": "Stream",
+            "year": None,
+            "tmdb_id": None,
+            "imdb_id": None,
+            "season": None,
+            "episode": None,
+            "languages": ["en"],
+        }
         self._fullscreen_dialog = None
         self._active_frame = video_frame
         self._controls_overlay = None
@@ -64,7 +73,9 @@ class EmbeddedMPVPlayer:
         self._current_url = url
         self._current_title = title
         self._current_content_type = content_type
+        self._content_metadata["title"] = title or "Stream"
         self._update_overlay_title()
+        self._update_overlay_content_metadata()
 
         if self._fallback_player:
             self._fallback_player.play(url, title, content_type)
@@ -76,6 +87,34 @@ class EmbeddedMPVPlayer:
             print(f"[EmbeddedMPV] Error starting playback: {exc}")
             self._activate_fallback(f"MPV backend unavailable during playback ({exc})")
             self._fallback_player.play(url, title, content_type)
+
+    def set_content_metadata(
+        self,
+        title: str = None,
+        year=None,
+        tmdb_id=None,
+        imdb_id=None,
+        season=None,
+        episode=None,
+        languages=None,
+    ):
+        if title:
+            self._current_title = title
+            self._content_metadata["title"] = title
+        if year is not None:
+            self._content_metadata["year"] = year
+        if tmdb_id is not None:
+            self._content_metadata["tmdb_id"] = tmdb_id
+        if imdb_id is not None:
+            self._content_metadata["imdb_id"] = imdb_id
+        if season is not None:
+            self._content_metadata["season"] = season
+        if episode is not None:
+            self._content_metadata["episode"] = episode
+        if languages is not None:
+            self._content_metadata["languages"] = list(languages) if isinstance(languages, (list, tuple)) else [languages]
+        self._update_overlay_title()
+        self._update_overlay_content_metadata()
 
     def stop(self):
         if self._fallback_player:
@@ -279,6 +318,7 @@ class EmbeddedMPVPlayer:
         self._player.play(url)
         self._active_frame = frame
         self._update_overlay_title()
+        self._update_overlay_content_metadata()
         print(f"[EmbeddedMPV] Playing on frame {frame}: {title} ({url})")
 
     def _attach_overlay(self, frame: QFrame, is_fullscreen: bool, fullscreen_dialog: QDialog = None):
@@ -298,6 +338,7 @@ class EmbeddedMPVPlayer:
             self._controls_overlay.set_fullscreen(is_fullscreen)
             self._controls_overlay.set_fullscreen_dialog(fullscreen_dialog)
             self._update_overlay_title()
+            self._update_overlay_content_metadata()
             print(
                 f"[EmbeddedMPV] Controls overlay attached to {'fullscreen' if is_fullscreen else 'embedded'} frame."
             )
@@ -319,6 +360,22 @@ class EmbeddedMPVPlayer:
             return
         try:
             self._controls_overlay.set_stream_title(self._current_title or "Stream")
+        except Exception:
+            pass
+
+    def _update_overlay_content_metadata(self):
+        if not self._controls_overlay:
+            return
+        try:
+            self._controls_overlay.set_content_metadata(
+                title=self._content_metadata.get("title") or self._current_title or "Stream",
+                year=self._content_metadata.get("year"),
+                tmdb_id=self._content_metadata.get("tmdb_id"),
+                imdb_id=self._content_metadata.get("imdb_id"),
+                season=self._content_metadata.get("season"),
+                episode=self._content_metadata.get("episode"),
+                languages=self._content_metadata.get("languages") or ["en"],
+            )
         except Exception:
             pass
 

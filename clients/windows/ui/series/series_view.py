@@ -927,14 +927,14 @@ class SeriesView(QWidget):
                   (i.e. item.parent() must not be None).
 
         Returns:
-            A tuple (stream_url, full_title) on success, or (None, None) if
+            A tuple (stream_url, full_title, metadata) on success, or (None, None, None) if
             *item* is None/a season node, or if no series is currently selected.
         """
         if not item or not item.parent():
-            return None, None
+            return None, None, None
         episode_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not episode_data or not self.current_series:
-            return None, None
+            return None, None, None
         series_name = self.current_series.get('name', 'Unknown Series')
         series_id = self.current_series.get('series_id')
         season_num = episode_data.get('season', episode_data.get('season_num', 1))
@@ -951,26 +951,35 @@ class SeriesView(QWidget):
                 stream_url = f"{self.api.base_url}/series/{self.api.username}/{self.api.password}/{episode_id}.{container_extension}"
             else:
                 stream_url = f"{self.api.base_url}/series/{self.api.username}/{self.api.password}/{series_id}.{container_extension}"
-            return stream_url, full_title
-        return None, None
+            metadata = {
+                "title": series_name,
+                "year": self.current_series.get('year') or self.current_series.get('releaseDate'),
+                "tmdb_id": self.current_series.get('tmdb_id') or self.current_series.get('tmdb'),
+                "imdb_id": self.current_series.get('imdb_id') or self.current_series.get('imdb'),
+                "season": season_num,
+                "episode": episode_num,
+                "languages": ["en"],
+            }
+            return stream_url, full_title, metadata
+        return None, None, None
 
     def play_episode(self, item, column):
         """Play selected episode in embedded player (called from double-click)."""
-        stream_url, full_title = self._get_episode_stream_info(item)
+        stream_url, full_title, metadata = self._get_episode_stream_info(item)
         if stream_url:
-            self._start_embedded_playback(stream_url, full_title)
+            self._start_embedded_playback(stream_url, full_title, metadata)
 
     def play_episode_embedded(self):
         """Slot: play current episode embedded (triggered by ▶ Play button)."""
         current_item = self.episodes_tree.currentItem()
-        stream_url, full_title = self._get_episode_stream_info(current_item)
+        stream_url, full_title, metadata = self._get_episode_stream_info(current_item)
         if stream_url:
-            self._start_embedded_playback(stream_url, full_title)
+            self._start_embedded_playback(stream_url, full_title, metadata)
 
     def play_episode_external(self):
         """Slot: open current episode in external VLC (↗ Open in VLC button)."""
         current_item = self.episodes_tree.currentItem()
-        stream_url, full_title = self._get_episode_stream_info(current_item)
+        stream_url, full_title, _ = self._get_episode_stream_info(current_item)
         if stream_url:
             self.embedded_player.stop()
             self.video_placeholder.show()
@@ -982,13 +991,24 @@ class SeriesView(QWidget):
                 QMessageBox.critical(self, "VLC Error",
                                      "Could not launch VLC. Please make sure VLC Media Player is installed.")
 
-    def _start_embedded_playback(self, stream_url: str, full_title: str):
+    def _start_embedded_playback(self, stream_url: str, full_title: str, metadata: dict = None):
         """Internal helper: begin embedded playback and update UI.
 
         Starts playback of *stream_url* (with content type 'series') in the
         embedded player, hides the placeholder, enables Stop/Fullscreen buttons,
         and updates the status label to show the playing episode title.
         """
+        if hasattr(self.embedded_player, "set_content_metadata"):
+            data = metadata or {}
+            self.embedded_player.set_content_metadata(
+                title=data.get("title") or self.current_series.get('name', 'Unknown Series'),
+                year=data.get("year"),
+                tmdb_id=data.get("tmdb_id"),
+                imdb_id=data.get("imdb_id"),
+                season=data.get("season"),
+                episode=data.get("episode"),
+                languages=data.get("languages") or ["en"],
+            )
         self.embedded_player.play(stream_url, full_title, 'series')
         self.video_placeholder.hide()
         self.stop_btn.setEnabled(True)
