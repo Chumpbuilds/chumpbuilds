@@ -4,16 +4,21 @@ MPV player controls overlay for embedded/fullscreen playback surfaces.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, List, Optional
 
-from PyQt6.QtCore import QEvent, QPoint, QRect, QTimer, Qt
-from PyQt6.QtGui import QCursor
+from PyQt6.QtCore import QEvent, QPoint, QRect, QSettings, QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtWidgets import (
     QApplication,
+    QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMenu,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QSlider,
@@ -21,6 +26,11 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+try:
+    from services import subtitle_service
+except Exception:
+    from clients.windows.services import subtitle_service
 
 
 def _fmt_time(seconds) -> str:
@@ -38,6 +48,189 @@ def _track_value(track: dict, *keys):
         if key in track and track.get(key) is not None:
             return track.get(key)
     return None
+
+
+def _normalize_subtitle_languages(raw_value) -> List[str]:
+    if isinstance(raw_value, list):
+        values = raw_value
+    elif isinstance(raw_value, str):
+        values = [v.strip() for v in raw_value.replace(";", ",").split(",")]
+    else:
+        values = []
+    normalized = [str(v).strip().lower() for v in values if str(v).strip()]
+    return normalized or ["en"]
+
+
+class SubtitleSearchWorker(QThread):
+    finished = pyqtSignal(object, str)
+
+    def __init__(self, metadata: Dict[str, Any], language: str):
+        super().__init__()
+        self._metadata = dict(metadata or {})
+        self._language = (language or "en").strip().lower() or "en"
+
+    def run(self):
+        title = (self._metadata.get("title") or "").strip()
+        if not title:
+            self.finished.emit([], "Missing content title for subtitle search.")
+            return
+        try:
+            results = subtitle_service.search_subtitles(
+                title=title,
+                lang=self._language,
+                year=self._metadata.get("year"),
+                tmdb_id=self._metadata.get("tmdb_id"),
+                imdb_id=self._metadata.get("imdb_id"),
+                season=self._metadata.get("season"),
+                episode=self._metadata.get("episode"),
+            )
+            self.finished.emit(results or [], "")
+        except Exception as exc:
+            self.finished.emit([], str(exc))
+
+
+class SubtitleDownloadWorker(QThread):
+    finished = pyqtSignal(str, str)
+
+    def __init__(self, file_id):
+        super().__init__()
+        self._file_id = file_id
+
+    def run(self):
+        if not self._file_id:
+            self.finished.emit("", "Invalid subtitle file id.")
+            return
+        try:
+            srt_text = subtitle_service.download_subtitle(self._file_id)
+            path = subtitle_service.save_srt_to_temp(srt_text, self._file_id)
+            self.finished.emit(path, "")
+        except Exception as exc:
+            self.finished.emit("", str(exc))
+
+
+class SubtitleSearchDialog(QDialog):
+    PROVIDER_COLORS = {
+        "opensubtitles": "#4FC3F7",
+        "subs.ro": "#FFD700",
+    }
+    LANGUAGE_OPTIONS = ["en", "ro", "es", "fr", "de", "it", "pt", "tr", "ar"]
+
+    def __init__(self, parent: QWidget, player_getter: Callable[[], object], metadata: Dict[str, Any]):
+        super().__init__(parent)
+        self._player_getter = player_getter
+        self._metadata = dict(metadata or {})
+        self._search_worker: Optional[SubtitleSearchWorker] = None
+        self._download_worker: Optional[SubtitleDownloadWorker] = None
+
+        self.setWindowTitle("Search Online Subtitles")
+        self.resize(760, 420)
+        self._build_ui()
+        self._start_search()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+
+        top_row = QHBoxLayout()
+        top_row.addWidget(QLabel("Language:"))
+        self.language_combo = QComboBox(self)
+        self.language_combo.setEditable(True)
+        for lang in self.LANGUAGE_OPTIONS:
+            self.language_combo.addItem(lang)
+        preferred = self._preferred_languages()
+        self.language_combo.setCurrentText(preferred[0])
+        self.language_combo.currentTextChanged.connect(self._on_language_changed)
+        top_row.addWidget(self.language_combo, 1)
+
+        self.search_btn = QPushButton("Search")
+        self.search_btn.clicked.connect(self._start_search)
+        top_row.addWidget(self.search_btn)
+        root.addLayout(top_row)
+
+        title = self._metadata.get("title") or "Unknown"
+        self.title_label = QLabel(f"Title: {title}")
+        root.addWidget(self.title_label)
+
+        self.status_label = QLabel("Searching...")
+        root.addWidget(self.status_label)
+
+        self.results_list = QListWidget(self)
+        self.results_list.itemClicked.connect(self._on_result_clicked)
+        root.addWidget(self.results_list, 1)
+
+    def _preferred_languages(self) -> List[str]:
+        settings = QSettings("IPTVPlayer", "SubtitleSettings")
+        return _normalize_subtitle_languages(settings.value("subtitle_languages", ["en"]))
+
+    def _on_language_changed(self, value: str):
+        lang = (value or "").strip().lower()
+        if not lang:
+            return
+        settings = QSettings("IPTVPlayer", "SubtitleSettings")
+        settings.setValue("subtitle_languages", [lang])
+
+    def _start_search(self):
+        if self._search_worker and self._search_worker.isRunning():
+            return
+        language = (self.language_combo.currentText() or "en").strip().lower() or "en"
+        self.results_list.clear()
+        self.status_label.setText("Searching...")
+        self.search_btn.setEnabled(False)
+        self._search_worker = SubtitleSearchWorker(self._metadata, language)
+        self._search_worker.finished.connect(self._on_search_finished)
+        self._search_worker.start()
+
+    def _on_search_finished(self, results, error: str):
+        self.search_btn.setEnabled(True)
+        if error:
+            self.status_label.setText(f"Search failed: {error}")
+            QMessageBox.warning(self, "Subtitle Search", f"Failed to search subtitles:\n{error}")
+            return
+        if not results:
+            self.status_label.setText("No subtitle results found.")
+            return
+        self.status_label.setText(f"Found {len(results)} subtitle result(s). Click one to download.")
+        for result in results:
+            lang = str(result.get("language") or "").upper() or "??"
+            release = str(result.get("release") or result.get("filename") or "Unknown release")
+            downloads = result.get("download_count", 0)
+            provider = str(result.get("provider") or "OpenSubtitles")
+            text = f"[{lang}] {release} (↓{downloads})  {provider}"
+            item = QListWidgetItem(text)
+            item.setData(Qt.ItemDataRole.UserRole, result)
+            color_key = provider.strip().lower()
+            item.setForeground(QColor(self.PROVIDER_COLORS.get(color_key, self.PROVIDER_COLORS["opensubtitles"])))
+            self.results_list.addItem(item)
+
+    def _on_result_clicked(self, item: QListWidgetItem):
+        result = item.data(Qt.ItemDataRole.UserRole) or {}
+        file_id = result.get("file_id")
+        if not file_id:
+            QMessageBox.warning(self, "Subtitle Download", "Selected result does not contain a file_id.")
+            return
+        if self._download_worker and self._download_worker.isRunning():
+            return
+        self.status_label.setText("Downloading...")
+        self._download_worker = SubtitleDownloadWorker(file_id)
+        self._download_worker.finished.connect(self._on_download_finished)
+        self._download_worker.start()
+
+    def _on_download_finished(self, subtitle_path: str, error: str):
+        if error:
+            self.status_label.setText(f"Download failed: {error}")
+            QMessageBox.warning(self, "Subtitle Download", f"Failed to download subtitle:\n{error}")
+            return
+        player = self._player_getter() if self._player_getter else None
+        if not player:
+            QMessageBox.warning(self, "Subtitle Download", "Player is not available.")
+            return
+        try:
+            player.sub_add(subtitle_path)
+            self.status_label.setText("Subtitle loaded.")
+            QMessageBox.information(self, "Subtitles", "Subtitle downloaded and loaded successfully.")
+            self.accept()
+        except Exception as exc:
+            self.status_label.setText(f"Could not add subtitle: {exc}")
+            QMessageBox.warning(self, "Subtitles", f"Subtitle downloaded but could not be loaded:\n{exc}")
 
 
 class PlayerControlsOverlay(QWidget):
@@ -68,6 +261,7 @@ class PlayerControlsOverlay(QWidget):
         self._aspect_index = 0
         self._known_duration = None
         self._title = "Stream"
+        self._content_metadata: Dict[str, Any] = {"title": "Stream"}
         self._controls_visible = False
         self._event_sources = []
         self._app = QApplication.instance()
@@ -103,7 +297,30 @@ class PlayerControlsOverlay(QWidget):
 
     def set_stream_title(self, title: str):
         self._title = title or "Stream"
+        self._content_metadata["title"] = self._title
         self.title_label.setText(self._title)
+
+    def set_content_metadata(
+        self,
+        title: Optional[str] = None,
+        year=None,
+        tmdb_id=None,
+        imdb_id=None,
+        season=None,
+        episode=None,
+        languages=None,
+    ):
+        metadata = dict(self._content_metadata or {})
+        if title:
+            metadata["title"] = title
+            self.set_stream_title(title)
+        metadata["year"] = year
+        metadata["tmdb_id"] = tmdb_id
+        metadata["imdb_id"] = imdb_id
+        metadata["season"] = season
+        metadata["episode"] = episode
+        metadata["languages"] = _normalize_subtitle_languages(languages or metadata.get("languages") or ["en"])
+        self._content_metadata = metadata
 
     def set_fullscreen(self, is_fullscreen: bool):
         self._is_fullscreen = bool(is_fullscreen)
@@ -458,9 +675,24 @@ class PlayerControlsOverlay(QWidget):
             act.setChecked(bool(track.get("selected")))
             act.triggered.connect(lambda checked=False, track_id=tid: setattr(player, "sub", track_id))
         menu.addSeparator()
+        search_online = menu.addAction("🔍 Search Online Subtitles...")
+        search_online.triggered.connect(self._open_online_subtitle_search_dialog)
         load_external = menu.addAction("Load external subtitle (.srt)…")
         load_external.triggered.connect(self._load_external_subtitle)
         menu.exec(self.subtitles_btn.mapToGlobal(QPoint(0, self.subtitles_btn.height())))
+
+    def _open_online_subtitle_search_dialog(self):
+        player = self._player()
+        if not player:
+            return
+        metadata = dict(self._content_metadata or {})
+        if not metadata.get("title"):
+            metadata["title"] = self._title or "Stream"
+        metadata["languages"] = _normalize_subtitle_languages(
+            metadata.get("languages") or QSettings("IPTVPlayer", "SubtitleSettings").value("subtitle_languages", ["en"])
+        )
+        dialog = SubtitleSearchDialog(self, player_getter=self._player, metadata=metadata)
+        dialog.exec()
 
     def _open_resolution_menu(self):
         player = self._player()

@@ -144,6 +144,32 @@ class TestEmbeddedMPVFallback(unittest.TestCase):
             overlay.cleanup.assert_called_once()
             dialog.close.assert_called_once()
 
+    def test_set_content_metadata_forwards_to_overlay(self):
+        with patch.object(mpv_player, '_MPV_AVAILABLE', True), \
+             patch.object(mpv_player, 'PlayerControlsOverlay', None):
+            player = mpv_player.EmbeddedMPVPlayer(video_frame=object())
+            player._controls_overlay = MagicMock()
+
+            player.set_content_metadata(
+                title="The Matrix",
+                year=1999,
+                tmdb_id=603,
+                imdb_id="tt0133093",
+                season=1,
+                episode=2,
+                languages=["en"],
+            )
+
+            player._controls_overlay.set_content_metadata.assert_called_with(
+                title="The Matrix",
+                year=1999,
+                tmdb_id=603,
+                imdb_id="tt0133093",
+                season=1,
+                episode=2,
+                languages=["en"],
+            )
+
     def test_attach_overlay_logs_when_overlay_import_unavailable(self):
         frame = MagicMock()
         frame.rect = MagicMock(return_value=object())

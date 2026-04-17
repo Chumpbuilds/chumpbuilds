@@ -927,6 +927,16 @@ class LiveTVView(QWidget):
 
     def _start_embedded_playback(self, stream_url: str, channel_name: str):
         """Internal helper: begin embedded playback and update UI."""
+        if hasattr(self.embedded_player, "set_content_metadata"):
+            self.embedded_player.set_content_metadata(
+                title=channel_name,
+                year=None,
+                tmdb_id=None,
+                imdb_id=None,
+                season=None,
+                episode=None,
+                languages=["en"],
+            )
         self.embedded_player.play(stream_url, channel_name, 'live')
         self.video_placeholder.hide()
         self.stop_btn.setEnabled(True)
