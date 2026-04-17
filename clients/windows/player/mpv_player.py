@@ -8,6 +8,10 @@ from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QKeySequence, QShortcut
 
 from .vlc_player import EmbeddedVLCPlayer
+try:
+    from ui.player_controls import PlayerControlsOverlay
+except Exception:
+    PlayerControlsOverlay = None
 
 try:
     import mpv as _mpv
@@ -32,6 +36,8 @@ class EmbeddedMPVPlayer:
         self._current_title = None
         self._current_content_type = 'live'
         self._fullscreen_dialog = None
+        self._active_frame = video_frame
+        self._controls_overlay = None
 
         settings = QSettings('IPTVPlayer', 'VLCSettings')
         self._network_caching = settings.value('network_caching', 15000, type=int)
@@ -40,11 +46,14 @@ class EmbeddedMPVPlayer:
 
         if not self._mpv_available:
             self._activate_fallback("python-mpv import failed")
+        else:
+            self._attach_overlay(self._video_frame, is_fullscreen=False)
 
     def play(self, url: str, title: str = "Stream", content_type: str = 'live'):
         self._current_url = url
         self._current_title = title
         self._current_content_type = content_type
+        self._update_overlay_title()
 
         if self._fallback_player:
             self._fallback_player.play(url, title, content_type)
@@ -110,10 +119,14 @@ class EmbeddedMPVPlayer:
         if self._fallback_player:
             self._fallback_player.go_fullscreen()
             return
+        if self._fullscreen_dialog and self._fullscreen_dialog.isVisible():
+            self._fullscreen_dialog.close()
+            return
         if not self._current_url:
             return
 
         self._destroy_active_player()
+        self._destroy_overlay()
 
         self._fullscreen_dialog = QDialog()
         self._fullscreen_dialog.setWindowTitle("MPV – Fullscreen")
@@ -139,7 +152,9 @@ class EmbeddedMPVPlayer:
 
         def _start_fs():
             try:
+                self._attach_overlay(fs_frame, is_fullscreen=True)
                 self._create_and_attach_player(fs_frame)
+                self._update_overlay_title()
             except Exception as exc:
                 print(f"[EmbeddedMPV] Error starting fullscreen playback: {exc}")
                 self._activate_fallback(f"MPV fullscreen unavailable ({exc})")
@@ -164,7 +179,9 @@ class EmbeddedMPVPlayer:
         if self._current_url:
             def _resume_embedded():
                 try:
+                    self._attach_overlay(self._video_frame, is_fullscreen=False)
                     self._create_and_attach_player(self._video_frame)
+                    self._update_overlay_title()
                 except Exception as exc:
                     print(f"[EmbeddedMPV] Error resuming embedded playback: {exc}")
                     self._activate_fallback(f"MPV resume unavailable ({exc})")
@@ -192,6 +209,7 @@ class EmbeddedMPVPlayer:
             return
         print(f"[EmbeddedMPV] Warning: {reason}. Falling back to EmbeddedVLCPlayer.")
         self._mpv_available = False
+        self._destroy_overlay()
         self._destroy_active_player()
         self._fallback_player = EmbeddedVLCPlayer(self._video_frame)
         self._fallback_player.set_volume(self._volume)
@@ -245,7 +263,44 @@ class EmbeddedMPVPlayer:
         self._player.volume = self._volume
         self._player.mute = self._is_muted
         self._player.play(url)
+        self._active_frame = frame
+        self._update_overlay_title()
         print(f"[EmbeddedMPV] Playing on frame {frame}: {title} ({url})")
+
+    def _attach_overlay(self, frame: QFrame, is_fullscreen: bool):
+        if PlayerControlsOverlay is None:
+            return
+        if not hasattr(frame, "rect"):
+            return
+        self._destroy_overlay()
+        try:
+            self._controls_overlay = PlayerControlsOverlay(
+                frame,
+                player_getter=lambda: self._player,
+                fullscreen_toggle_callback=self.go_fullscreen,
+            )
+            self._controls_overlay.set_fullscreen(is_fullscreen)
+            self._update_overlay_title()
+        except Exception as exc:
+            print(f"[EmbeddedMPV] Warning: could not attach controls overlay: {exc}")
+            self._controls_overlay = None
+
+    def _destroy_overlay(self):
+        if not self._controls_overlay:
+            return
+        try:
+            self._controls_overlay.cleanup()
+        except Exception:
+            pass
+        self._controls_overlay = None
+
+    def _update_overlay_title(self):
+        if not self._controls_overlay:
+            return
+        try:
+            self._controls_overlay.set_stream_title(self._current_title or "Stream")
+        except Exception:
+            pass
 
 
 def get_embedded_mpv_player(video_frame: QFrame) -> EmbeddedMPVPlayer:
