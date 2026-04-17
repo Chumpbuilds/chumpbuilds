@@ -9,6 +9,14 @@ import sys
 import os
 import time
 import requests
+
+# Ensure bundled DLLs (e.g. libmpv-2.dll) can be found on Windows
+if sys.platform == 'win32':
+    _app_dir = os.path.dirname(os.path.abspath(__file__))
+    os.environ['PATH'] = _app_dir + os.pathsep + os.environ['PATH']
+    if hasattr(os, 'add_dll_directory'):
+        os.add_dll_directory(_app_dir)
+
 from PyQt6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 from PyQt6.QtCore import Qt, QTimer, QEventLoop
 from PyQt6.QtGui import QPixmap, QPainter, QFont, QColor
